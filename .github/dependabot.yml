@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      tanstack:
+        patterns: ['@tanstack/*']
+      prisma:
+        patterns: ['prisma', '@prisma/*']
+      swirls:
+        patterns: ['@swirls/*']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: docker
+    directory: /apps/starter
+    schedule:
+      interval: monthly

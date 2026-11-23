@@ -1,0 +1,25 @@
+# dependencies
+node_modules
+
+# output
+dist
+.output
+.tanstack
+*.tsbuildinfo
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# the database and files of a copy run without any
+.data
+
+# Supabase local
+supabase/.temp
+supabase/.branches
+
+# logs and caches
+*.log
+coverage
+.DS_Store

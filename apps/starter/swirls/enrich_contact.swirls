@@ -1,0 +1,107 @@
+// Runs from the "Enrich with AI" action on a contact (crm.config.json).
+// Searches the web for the contact and their company, summarizes what it finds,
+// and writes the result to the contact's timeline.
+
+workflow enrich_contact {
+  label: "Enrich contact"
+  description: "Web research on a contact and their company"
+
+  root {
+    type: code
+    label: "Build search query"
+    inputSchema: crm_event
+    outputSchema: @json {
+      {
+        "type": "object",
+        "required": ["id", "name", "email", "query"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "query": { "type": "string" }
+        }
+      }
+    }
+    code: @ts {
+      const r = context.nodes.root.input.record ?? {}
+      const name = String(r.name ?? "")
+      const email = String(r.email ?? "")
+      const company = r.company && r.company.name ? String(r.company.name) : ""
+      const domain = email.includes("@") ? email.split("@")[1] : ""
+      const parts = [name, company || domain].filter((p) => p.length > 0)
+      return { id: String(r.id ?? ""), name, email, query: parts.join(" ") }
+    }
+  }
+
+  node research {
+    type: search
+    label: "Search the web"
+    query: @ts { return context.nodes.root.output.query }
+    limit: 5
+  }
+
+  node summarize {
+    type: ai
+    label: "Summarize findings"
+    kind: object
+    model: "google/gemini-2.5-flash"
+    temperature: 0.2
+    prompt: @ts {
+      const c = context.nodes.root.output
+      const results = JSON.stringify(context.nodes.research.output.results ?? []).slice(0, 12000)
+      return [
+        "Summarize what is publicly known about this sales contact and their company.",
+        "Only use facts from the search results. If results look unrelated, say so.",
+        "",
+        "Contact: " + c.name + " <" + c.email + ">",
+        "Search results JSON:",
+        results
+      ].join("\n")
+    }
+    schema: @json {
+      {
+        "type": "object",
+        "required": ["summary", "confidence"],
+        "properties": {
+          "summary": { "type": "string" },
+          "role": { "type": "string" },
+          "companyDescription": { "type": "string" },
+          "confidence": { "type": "string", "enum": ["low", "medium", "high"] }
+        }
+      }
+    }
+  }
+
+  node save {
+    type: http
+    label: "Write enrichment to timeline"
+    method: "POST"
+    secrets: { crm_app: [CRM_APP_URL, CRM_APP_TOKEN] }
+    url: @ts { return context.secrets.crm_app.CRM_APP_URL + "/api/swirls/tools/add_note" }
+    headers: @ts {
+      return {
+        "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN,
+        "Content-Type": "application/json"
+      }
+    }
+    body: @ts {
+      const s = context.nodes.summarize.output
+      const lines = [s.summary]
+      if (s.role) lines.push("Role: " + s.role)
+      if (s.companyDescription) lines.push("Company: " + s.companyDescription)
+      return JSON.stringify({
+        objectKey: "contacts",
+        id: context.nodes.root.output.id,
+        summary: "AI enrichment (" + s.confidence + " confidence)",
+        body: lines.join("\n\n")
+      })
+    }
+    schema: tool_result
+  }
+
+  flow {
+    root -> research
+    research -> summarize
+    summarize -> save
+  }
+}

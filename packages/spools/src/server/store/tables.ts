@@ -1,0 +1,303 @@
+import {
+  type AnyTable,
+  createdAt,
+  date,
+  defineTable,
+  float,
+  id,
+  integer,
+  optional,
+  text,
+  timestamp,
+  updatedAt,
+  withDefault,
+} from './table'
+
+/**
+ * The system tables: what the CRM keeps besides the objects in the config.
+ * Every Spool has them. They aren't CRM objects: no hooks or automations, and
+ * their keys can't be used as object keys.
+ *
+ * To add one: describe it here, list it in `systemTables`, and run
+ * `bun run crm:gen` and `bun run db:push`.
+ */
+
+export const Activity = defineTable({
+  model: 'Activity',
+  name: 'activities',
+  doc: 'Timeline entries for any record: calls, meetings, notes, emails, form submissions, agent actions.',
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    objectKey: text(),
+    recordId: text(),
+    kind: text(),
+    summary: text(),
+    body: optional(text()),
+    actor: optional(text()),
+    actorId: optional(
+      text({
+        doc: "The teammate who did it (the auth provider's user id), for per-person reports. `actor` is their name as shown.",
+      }),
+    ),
+    occurredAt: optional(
+      timestamp({
+        doc: 'When it happened, if that differs from when it was logged (a call entered the next day).',
+      }),
+    ),
+    outcome: optional(
+      text({
+        doc: 'How it went: a call or meeting outcome, or sent / received / not_sent for an email.',
+      }),
+    ),
+    externalId: optional(
+      text({
+        doc: 'Identifies the email or calendar event this came from, so syncing it twice logs it once.',
+      }),
+    ),
+  },
+  unique: [['objectKey', 'recordId', 'externalId']],
+  indexes: [['objectKey', 'recordId'], ['createdAt']],
+  search: { name: 'activities_search', columns: ['summary', 'body'] },
+})
+
+export const Task = defineTable({
+  model: 'Task',
+  name: 'tasks',
+  doc: 'To-dos, optionally linked to a record and assigned to a teammate.',
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    title: text(),
+    dueDate: optional(date()),
+    completedAt: optional(timestamp()),
+    completedBy: optional(text()),
+    assigneeId: optional(text()),
+    objectKey: optional(text()),
+    recordId: optional(text()),
+    createdBy: optional(text()),
+  },
+  indexes: [['assigneeId'], ['objectKey', 'recordId']],
+})
+
+export const Note = defineTable({
+  model: 'Note',
+  name: 'notes',
+  doc: 'Titled notes, optionally attached to a record.',
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    title: text(),
+    body: text(),
+    objectKey: optional(text()),
+    recordId: optional(text()),
+    authorId: optional(text()),
+    authorName: optional(text()),
+  },
+  indexes: [['objectKey', 'recordId']],
+  search: { name: 'notes_search', columns: ['title', 'body'] },
+})
+
+export const SavedView = defineTable({
+  model: 'SavedView',
+  name: 'saved_views',
+  doc: 'Views created or customised in the app. When key is set, it overrides the config view with that id.',
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    objectKey: text(),
+    key: optional(text()),
+    label: text(),
+    type: text(),
+    settings: text({ doc: 'JSON: columns, sort, filters, groupBy, cardFields, calculations' }),
+    createdBy: optional(text()),
+  },
+  indexes: [['objectKey']],
+})
+
+export const Favorite = defineTable({
+  model: 'Favorite',
+  name: 'favorites',
+  doc: 'Records a user has starred; shown in their sidebar.',
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    userId: text(),
+    objectKey: text(),
+    recordId: text(),
+  },
+  indexes: [['userId']],
+})
+
+export const Suppression = defineTable({
+  model: 'Suppression',
+  name: 'email_suppressions',
+  doc: 'Addresses that must never receive campaign email (unsubscribes, bounces, complaints).',
+  primary: 'email',
+  columns: { email: text(), reason: text(), createdAt: createdAt() },
+})
+
+export const MailboxSync = defineTable({
+  model: 'MailboxSync',
+  name: 'mailbox_sync',
+  doc: `How far the mail and calendar sync has read one of a teammate's mailboxes: the
+account they sign in with, or one connected on the Integrations page.
+Holds no credentials (see src/server/mailbox.ts).`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    userId: text(),
+    provider: text(),
+    accountEmail: text(),
+    lastSyncedAt: optional(timestamp()),
+    lastError: optional(text()),
+  },
+  unique: [['userId', 'provider', 'accountEmail']],
+})
+
+export const Integration = defineTable({
+  model: 'Integration',
+  name: 'integrations',
+  doc: `An account a teammate connected on the Integrations page: another mailbox, or
+a service an extension adds. A person can connect several accounts per provider.`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    userId: text(),
+    provider: text(),
+    account: text({
+      doc: 'Which account at the provider: the email address of a mailbox, lower-cased.',
+    }),
+    credentials: text({
+      doc: `The OAuth access and refresh tokens, encrypted by the vault before they reach
+the database. Never plaintext: see src/server/runtime/vault.ts.`,
+    }),
+    scopes: text(),
+    status: text(),
+    lastError: optional(text()),
+  },
+  unique: [['userId', 'provider', 'account']],
+})
+
+export const RecordFolder = defineTable({
+  model: 'RecordFolder',
+  name: 'record_folders',
+  doc: `The folder in the file store that holds a record's files. The store is where
+folders and files live; this row is how the CRM finds a record's folder again.
+Two records may share one folder. See src/server/files.ts.`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    objectKey: text(),
+    recordId: text(),
+    driveId: text(),
+    folderId: text(),
+    path: text({
+      doc: "Where the folder was created, from the drive's top level. It may have been moved since.",
+    }),
+  },
+  unique: [['objectKey', 'recordId']],
+  indexes: [['folderId']],
+})
+
+export const FileUpload = defineTable({
+  model: 'FileUpload',
+  name: 'file_uploads',
+  doc: `A file on its way into the store: reserved, not yet confirmed. Removed once
+the store has the file, and forgotten if the upload is abandoned.`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    driveId: text(),
+    uploadId: text(),
+    folderId: optional(
+      text({ doc: "The folder it is going into; null for the drive's top level." }),
+    ),
+    name: text(),
+    sizeBytes: float(),
+    transport: text({
+      doc: '"direct" when the browser sends the bytes to the store, "relay" when this server passes them on.',
+    }),
+    objectKey: optional(
+      text({ doc: "The record whose Files tab it was added from, for that record's timeline." }),
+    ),
+    recordId: optional(text()),
+    uploadedBy: text(),
+    uploadedByName: text(),
+  },
+})
+
+export const SequenceRun = defineTable({
+  model: 'SequenceRun',
+  name: 'sequence_runs',
+  doc: `One record's way through an email sequence (a campaign in crm.config.json):
+which email is next and when it is due. See src/server/campaigns.ts.`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    campaignKey: text(),
+    objectKey: text(),
+    recordId: text(),
+    status: text({ doc: '"active", "finished" or "stopped".' }),
+    nextStep: optional(
+      text({ doc: 'The id of the step to send next; null once the run is over.' }),
+    ),
+    dueAt: optional(
+      timestamp({
+        doc: `When that step is due. While a step is being sent this is pushed a few
+minutes ahead, so a second sender leaves the run alone.`,
+      }),
+    ),
+    attempts: withDefault(
+      integer({ doc: 'How many times in a row sending the next step has failed.' }),
+      0,
+    ),
+    note: optional(
+      text({ doc: 'What happened last: why the run stopped, or the error from a failed send.' }),
+    ),
+    enrolledBy: optional(text()),
+  },
+  unique: [['campaignKey', 'objectKey', 'recordId']],
+  indexes: [['status', 'dueAt']],
+})
+
+export const GuideProgress = defineTable({
+  model: 'GuideProgress',
+  name: 'guide_progress',
+  doc: `The guides (src/crm/guides.ts) a teammate has finished or dismissed, so each
+is offered to them once, on whatever device they sign in.`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    userId: text(),
+    guideId: text({
+      doc: 'A guide\'s id, or "*" when the person asked not to be offered guides at all.',
+    }),
+    outcome: text({ doc: '"finished" or "dismissed".' }),
+  },
+  unique: [['userId', 'guideId']],
+})
+
+/** Every system table, in the order they are written to the schema. */
+export const systemTables: readonly AnyTable[] = [
+  Activity,
+  Task,
+  Note,
+  SavedView,
+  Favorite,
+  Suppression,
+  MailboxSync,
+  Integration,
+  RecordFolder,
+  FileUpload,
+  SequenceRun,
+  GuideProgress,
+]

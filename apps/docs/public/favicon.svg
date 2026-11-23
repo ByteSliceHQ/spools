@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <style>path,ellipse{stroke:#171717}@media(prefers-color-scheme:dark){path,ellipse{stroke:#e4f0fb}}</style>
+  <ellipse cx="16" cy="7" rx="11" ry="4" stroke-width="2"/>
+  <path d="M5 25c0 2.2 4.9 4 11 4s11-1.8 11-4" stroke-width="2"/>
+  <path d="M8.500 10v13M23.500 10v13" stroke-width="2"/>
+  <path d="M8.500 13.500c1.500 1.600 4.300 2.500 7.500 2.500s6-.9 7.500-2.500M8.500 18c1.500 1.600 4.300 2.500 7.500 2.500s6-.9 7.500-2.500M8.500 22.500c1.500 1.600 4.300 2.500 7.500 2.500s6-.9 7.500-2.500" stroke-width="1.600"/>
+</svg>

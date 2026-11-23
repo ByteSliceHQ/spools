@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible problem in Spools.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Spools. Please remove credentials, customer data, and private record content from your report.
+        For suspected vulnerabilities, email security@swirls.ai instead of opening a public issue. See our [security policy](https://github.com/ByteSliceHQ/spools/blob/main/SECURITY.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can we reproduce it?
+      description: Include a small example or a link to a minimal repository, plus the commands or steps to reproduce the problem. If you cannot isolate it yet, explain what you have tried.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Packages and environment
+      description: Include the Spools packages and versions (or commit), the Bun version, the operating system or hosting platform, and the adapters in `src/spool.server.ts`.
+      placeholder: |
+        Spools packages / versions or commit:
+        Bun version:
+        OS / hosting platform:
+        Adapters (auth, database, files, email, vault, agents):
+        Other relevant dependencies:
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add relevant redacted logs, related issues, or a workaround. The lines that start with `[env]` in the server log say which services are on. Share only synthetic or redacted records.

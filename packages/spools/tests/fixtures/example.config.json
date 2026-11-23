@@ -1,0 +1,294 @@
+{
+  "$schema": "./crm.config.schema.json",
+  "version": 1,
+  "app": {
+    "name": "Acme"
+  },
+  "access": {
+    "allowedDomains": ["example.com"],
+    "allowedEmails": []
+  },
+  "objects": {
+    "companies": {
+      "label": "Company",
+      "labelPlural": "Companies",
+      "titleField": "name",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        "domain": {
+          "type": "url",
+          "searchable": true
+        },
+        "industry": {
+          "type": "select",
+          "options": [
+            {
+              "value": "software",
+              "label": "Software",
+              "color": "blue"
+            },
+            {
+              "value": "finance",
+              "label": "Finance",
+              "color": "green"
+            },
+            {
+              "value": "health",
+              "label": "Healthcare",
+              "color": "pink"
+            },
+            {
+              "value": "other",
+              "label": "Other",
+              "color": "gray"
+            }
+          ]
+        },
+        "employees": {
+          "type": "number"
+        }
+      },
+      "views": [
+        {
+          "id": "all",
+          "label": "All companies",
+          "type": "table",
+          "columns": ["name", "domain", "industry", "employees"]
+        }
+      ]
+    },
+    "contacts": {
+      "label": "Contact",
+      "labelPlural": "Contacts",
+      "titleField": "name",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": true,
+          "searchable": true,
+          "encrypted": "match"
+        },
+        "email": {
+          "type": "email",
+          "searchable": true,
+          "encrypted": "search"
+        },
+        "phone": {
+          "type": "phone",
+          "encrypted": "storage"
+        },
+        "company": {
+          "type": "relation",
+          "to": "companies"
+        },
+        "status": {
+          "type": "select",
+          "default": "lead",
+          "options": [
+            {
+              "value": "lead",
+              "label": "Lead",
+              "color": "amber"
+            },
+            {
+              "value": "qualified",
+              "label": "Qualified",
+              "color": "blue"
+            },
+            {
+              "value": "customer",
+              "label": "Customer",
+              "color": "green"
+            },
+            {
+              "value": "churned",
+              "label": "Churned",
+              "color": "gray"
+            }
+          ]
+        },
+        "source": {
+          "type": "select",
+          "options": [
+            {
+              "value": "website",
+              "label": "Website form"
+            },
+            {
+              "value": "referral",
+              "label": "Referral"
+            },
+            {
+              "value": "outbound",
+              "label": "Outbound"
+            }
+          ]
+        },
+        "owner": {
+          "type": "user"
+        },
+        "notes": {
+          "type": "longtext"
+        }
+      },
+      "views": [
+        {
+          "id": "all",
+          "label": "All contacts",
+          "type": "table",
+          "columns": ["name", "email", "company", "status", "createdAt"],
+          "sort": {
+            "field": "createdAt",
+            "dir": "desc"
+          }
+        },
+        {
+          "id": "pipeline",
+          "label": "By status",
+          "type": "board",
+          "groupBy": "status",
+          "cardFields": ["email", "company"]
+        }
+      ],
+      "actions": [
+        {
+          "id": "enrich",
+          "label": "Enrich with AI",
+          "run": "swirls:enrich_contact"
+        },
+        {
+          "id": "startOnboarding",
+          "label": "Start onboarding drip",
+          "run": "campaign:onboarding",
+          "confirm": "Send the onboarding email sequence to this contact?"
+        },
+        {
+          "id": "markCustomer",
+          "label": "Mark as customer",
+          "run": "local:markCustomer"
+        }
+      ]
+    },
+    "deals": {
+      "label": "Deal",
+      "labelPlural": "Deals",
+      "titleField": "title",
+      "fields": {
+        "title": {
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        "value": {
+          "type": "currency",
+          "currency": "USD"
+        },
+        "stage": {
+          "type": "select",
+          "default": "discovery",
+          "options": [
+            {
+              "value": "discovery",
+              "label": "Discovery",
+              "color": "gray",
+              "probability": 10
+            },
+            {
+              "value": "proposal",
+              "label": "Proposal",
+              "color": "blue",
+              "probability": 40
+            },
+            {
+              "value": "negotiation",
+              "label": "Negotiation",
+              "color": "amber",
+              "probability": 70
+            },
+            {
+              "value": "won",
+              "label": "Won",
+              "color": "green",
+              "probability": 100
+            },
+            {
+              "value": "lost",
+              "label": "Lost",
+              "color": "red",
+              "probability": 0
+            }
+          ]
+        },
+        "company": {
+          "type": "relation",
+          "to": "companies"
+        },
+        "contact": {
+          "type": "relation",
+          "to": "contacts"
+        },
+        "closeDate": {
+          "type": "date"
+        },
+        "owner": {
+          "type": "user"
+        }
+      },
+      "views": [
+        {
+          "id": "pipeline",
+          "label": "Pipeline",
+          "type": "board",
+          "groupBy": "stage",
+          "cardFields": ["value", "company", "closeDate"]
+        },
+        {
+          "id": "all",
+          "label": "All deals",
+          "type": "table",
+          "columns": ["title", "value", "stage", "company", "closeDate"]
+        }
+      ]
+    }
+  },
+  "automations": [
+    {
+      "on": "contacts.created",
+      "run": "swirls:new_contact"
+    }
+  ],
+  "campaigns": {
+    "onboarding": {
+      "label": "Onboarding",
+      "object": "contacts",
+      "emailField": "email",
+      "stopWhen": {
+        "status": ["customer", "churned"]
+      },
+      "steps": [
+        {
+          "id": "welcome",
+          "wait": "0m",
+          "subject": "Welcome, {{name}}",
+          "body": "Hi {{name}},\n\nThanks for your interest in Acme. Over the next week we'll send a couple of short notes on how teams like yours get started.\n\nReply to this email any time; it goes straight to a person.\n\nThe Acme team"
+        },
+        {
+          "id": "tips",
+          "wait": "3d",
+          "subject": "Three ways teams use Acme",
+          "body": "Hi {{name}},\n\nHere are the three setups we see most often:\n\n1. One shared pipeline for the whole team\n2. AI enrichment on every new lead\n3. Automated follow-ups like this one\n\nWant a walkthrough? Just reply.\n\nThe Acme team"
+        },
+        {
+          "id": "checkIn",
+          "wait": "4d",
+          "subject": "Anything we can help with?",
+          "body": "Hi {{name}},\n\nJust checking in. If now isn't the right time, no problem; you won't hear from us again in this sequence.\n\nThe Acme team"
+        }
+      ]
+    }
+  }
+}

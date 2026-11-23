@@ -1,0 +1,17 @@
+{
+  // Use Effect-patched TypeScript 7 (tsgo) via the TypeScript 7 extension.
+  // Requires: typescriptteam.native-preview (see extensions.json).
+  "js/ts.experimental.useTsgo": true,
+  "js/ts.tsdk.path": "./node_modules/typescript/bin",
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+  "js/ts.tsdk.additionalLocations": ["./node_modules/typescript/bin"],
+
+  // Bun workspace — avoid Cursor's npm script scanner (known false "failed to parse").
+  "npm.packageManager": "bun",
+  "npm.autoDetect": "off",
+
+  // Oxc formatter (oxfmt) — requires oxc.oxc-vscode (see extensions.json).
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file"
+}

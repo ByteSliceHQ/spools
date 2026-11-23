@@ -1,0 +1,32 @@
+schema-version = "1.13.0"
+
+[install]
+bun.pkg-path = "bun"
+nodejs.pkg-path = "nodejs"
+# Optional: the integration tests run on PGlite without it
+postgresql.pkg-path = "postgresql"
+
+[hook]
+on-activate = '''
+  PGDATA="$FLOX_ENV_CACHE/postgres"
+  mkdir -p "$PGDATA"
+  if [ ! -f "$PGDATA/PG_VERSION" ]; then
+    initdb -D "$PGDATA" --auth=trust --username=spools
+  fi
+
+  echo "Spools: bun install && bun run verify"
+  echo "Starter and website:  bun run dev"
+'''
+
+[services]
+# Optional Postgres for the integration tests:
+#   TEST_STORE=postgres DATABASE_URL=postgresql://spools@127.0.0.1:5432/spools_test
+postgres.command = '''
+  PGDATA="$FLOX_ENV_CACHE/postgres"
+  pg_ctl -D "$PGDATA" -o "-p 5432 -h 127.0.0.1" start -w
+  createdb -h 127.0.0.1 -p 5432 -U spools spools_test 2>/dev/null || true
+  tail -f /dev/null
+'''
+
+[options]
+# systems left default

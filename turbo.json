@@ -1,0 +1,56 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalDependencies": [
+    "tsconfig.base.json",
+    "bunfig.toml",
+    "apps/starter/crm.config.json",
+    "apps/starter/prisma/schema.json"
+  ],
+  "globalPassThroughEnv": [
+    "PATH",
+    "HOME",
+    "HOST",
+    "PORT",
+    "DOCS_PORT",
+    "DATABASE_URL",
+    "POSTGRES_URL",
+    "TEST_STORE",
+    "EXAMPLES_DATABASE_URL",
+    "SERVERLESS",
+    "DEV_AUTH_EMAIL",
+    "DEV_AUTH_SIGNED_OUT",
+    "DEV_ALLOWED_HOSTS",
+    "CRM_GUIDES",
+    "E2E_ASSISTANT"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "scripts/**",
+        "tsconfig.json",
+        "package.json",
+        "vite.config.ts",
+        "wrangler.json"
+      ],
+      "outputs": ["dist/**", ".output/**"]
+    },
+    "check-types": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "tests/**", "scripts/**", "tsconfig.json", "package.json"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "tests/**", "tsconfig.json", "package.json"]
+    },
+    "test:integration": {
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

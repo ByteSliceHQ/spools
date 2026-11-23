@@ -1,0 +1,410 @@
+{
+  "$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
+  "extends": ["./node_modules/@effect/tsgo/oxlint-presets/recommended.json"],
+  "plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/.build/**",
+    "**/.output/**",
+    "**/.prerender/**",
+    "**/.wrangler/**",
+    "**/node_modules/**",
+    "**/.flox/**",
+    "**/routeTree.gen.ts",
+    "**/prisma/schema.d.ts",
+    "**/migrations/**",
+    "packages/create-spools/template/**",
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**",
+    "tools/oxlint/anti-slop/**"
+  ],
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    },
+    {
+      "name": "anti-slop-effect",
+      "specifier": "./tools/oxlint/anti-slop/effect/index.ts"
+    },
+    {
+      "name": "@stylistic",
+      "specifier": "@stylistic/eslint-plugin"
+    },
+    {
+      "name": "spools",
+      "specifier": "./packages/spools/src/oxlint/index.ts"
+    }
+  ],
+  "rules": {
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-shape-in-symbol-names": "off",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "anti-slop-effect/no-bare-try-promise": "error",
+    "anti-slop-effect/no-service-constructor-imports": "error",
+    "curly": "error",
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": ["_tag"]
+      }
+    ],
+    "typescript/consistent-type-imports": [
+      "error",
+      {
+        "disallowTypeAnnotations": true
+      }
+    ],
+    "@stylistic/padding-line-between-statements": [
+      "error",
+      {
+        "blankLine": "always",
+        "prev": "*",
+        "next": [
+          "multiline-block-like",
+          "multiline-expression",
+          "multiline-const",
+          "multiline-let",
+          "multiline-var"
+        ]
+      },
+      {
+        "blankLine": "always",
+        "prev": [
+          "multiline-block-like",
+          "multiline-expression",
+          "multiline-const",
+          "multiline-let",
+          "multiline-var"
+        ],
+        "next": "*"
+      }
+    ],
+    "react/react-in-jsx-scope": "off",
+    "react/set-state-in-effect": "off",
+    "react/refs": "off",
+    "react/purity": "off",
+    "react/hooks": "off",
+    "react/exhaustive-effect-dependencies": "off",
+    "react/memo-dependencies": "off",
+    "react/no-unstable-nested-components": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "jsx-a11y/control-has-associated-label": "off",
+    "jsx-a11y/no-noninteractive-element-interactions": "off",
+    "effecttsgo/unstable-api-usage": "off",
+    "effecttsgo/schema-class-missing-brand": "off",
+    "spools/server-function-handlers": "error",
+    "spools/server-function-files": "off",
+    "spools/route-adapters": "off",
+    "spools/effect-modules": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "packages/*/tests/**"],
+      "rules": {
+        "anti-slop/no-conditional-empty-object-spread": "off",
+        "anti-slop/no-known-value-widening": "off",
+        "anti-slop/no-runtime-typeof": "off",
+        "anti-slop/no-unknown-parameters": "off",
+        "anti-slop/no-unknown-returns": "off",
+        "anti-slop/no-unsafe-dictionary-type": "off",
+        "anti-slop/require-safety-comment-for-type-assertion": "off",
+        "anti-slop/no-chained-type-assertions": "off",
+        "effecttsgo/any-unknown-in-error-context": "off",
+        "effecttsgo/all-of-map-to-for-each": "off",
+        "effecttsgo/async-function": "off",
+        "effecttsgo/global-date": "off",
+        "effecttsgo/global-console": "off",
+        "effecttsgo/global-error-in-effect-catch": "off",
+        "effecttsgo/global-error-in-effect-failure": "off",
+        "effecttsgo/global-fetch": "off",
+        "effecttsgo/global-timers": "off",
+        "effecttsgo/new-promise": "off",
+        "effecttsgo/node-builtin-import": "off",
+        "effecttsgo/process-env": "off",
+        "effecttsgo/unsafe-effect-type-assertion": "off",
+        "no-shadow": "off",
+        "no-useless-concat": "off",
+        "typescript/await-thenable": "off",
+        "typescript/no-base-to-string": "off",
+        "typescript/no-unsafe-type-assertion": "off",
+        "typescript/require-array-sort-compare": "off",
+        "typescript/restrict-template-expressions": "off",
+        "unicorn/consistent-function-scoping": "off",
+        "unicorn/no-array-reverse": "off",
+        "unicorn/no-array-sort": "off",
+        "no-unused-vars": "off"
+      }
+    },
+    {
+      "files": [
+        "scripts/**/*.ts",
+        "**/scripts/**/*.ts",
+        "**/scripts/**/*.tsx",
+        "apps/demo/src/verify.ts"
+      ],
+      "rules": {
+        "effecttsgo/async-function": "off",
+        "effecttsgo/global-console": "off",
+        "effecttsgo/global-error-in-effect-failure": "off",
+        "effecttsgo/global-fetch": "off",
+        "effecttsgo/node-builtin-import": "off",
+        "effecttsgo/process-env": "off"
+      }
+    },
+    {
+      "files": ["**/*.config.ts", "**/*.config.e2e.ts"],
+      "rules": {
+        "effecttsgo/node-builtin-import": "off",
+        "effecttsgo/process-env": "off"
+      }
+    },
+    {
+      "files": ["apps/docs/**", "apps/starter/**", "packages/create-spools/**"],
+      "rules": {
+        "effecttsgo/async-function": "off",
+        "effecttsgo/global-console": "off",
+        "effecttsgo/global-date": "off",
+        "effecttsgo/global-fetch": "off",
+        "effecttsgo/global-timers": "off",
+        "effecttsgo/new-promise": "off",
+        "effecttsgo/node-builtin-import": "off",
+        "effecttsgo/process-env": "off",
+        "effecttsgo/global-error-in-effect-failure": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/spools/src/crm/extensions.ts",
+        "packages/spools/src/server/runtime/agents.ts",
+        "packages/spools/src/server/store/objects.ts"
+      ],
+      "rules": {
+        "anti-slop/no-unsafe-dictionary-type": "off"
+      }
+    },
+    {
+      "files": ["packages/spools/src/crm/filters.ts", "packages/spools/src/crm/options.ts"],
+      "rules": {
+        "anti-slop/no-unknown-parameters": "off",
+        "anti-slop/no-known-value-widening": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/spools/src/server/store/store.ts",
+        "packages/spools/src/server/integrations.ts",
+        "packages/spools/src/adapters/database/prisma/server.ts"
+      ],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      "files": ["packages/spools/src/server/**", "apps/starter/src/routes/api/**"],
+      "excludeFiles": [
+        "packages/spools/src/server/runtime/**",
+        "packages/spools/src/server/env.ts",
+        "packages/spools/src/server/entry.ts",
+        "packages/spools/src/server/spool.ts",
+        "packages/spools/src/server/store/sql.ts"
+      ],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "process",
+            "message": "Read environment variables through Config (packages/spools/src/server/runtime/config.ts), so tests can set them and secrets stay redacted."
+          },
+          {
+            "name": "fetch",
+            "message": "Call outside services through their service in packages/spools/src/server/runtime, which applies the time limit and retries in policies.ts."
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/spools/src/server/**"],
+      "excludeFiles": [
+        "packages/spools/src/server/runtime/**",
+        "packages/spools/src/server/env.ts",
+        "packages/spools/src/server/entry.ts",
+        "packages/spools/src/server/spool.ts",
+        "packages/spools/src/server/store/sql.ts"
+      ],
+      "rules": {
+        "spools/effect-modules": "error",
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@tanstack/react-start/server",
+                "message": "The request belongs to the boundary (packages/spools/src/server/runtime/boundary.ts); a program reads it from CurrentRequest."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["**/app/extensions", "**/spool.server"],
+                "message": "The framework never imports the app. Read it from the Spool (packages/spools/src/server/spool.ts)."
+              },
+              {
+                "group": ["**/adapters/**"],
+                "message": "The framework never imports an adapter. It asks for the port, and the Spool provides the adapter; see docs/adapters.md."
+              },
+              {
+                "group": ["@prisma/**", "@effect/sql-*", "@electric-sql/**"],
+                "message": "Only an adapter (packages/spools/src/adapters/database) talks to a database. Ask for the Store service (packages/spools/src/server/store/store.ts), so reads get a time limit and failures a type."
+              },
+              {
+                "group": [
+                  "@clerk/**",
+                  "resend",
+                  "@swirls/sdk",
+                  "@swirls/sdk/*",
+                  "@cipherstash/**",
+                  "better-auth",
+                  "better-auth/*"
+                ],
+                "message": "Only an adapter (packages/spools/src/adapters) talks to a vendor's SDK. Ask for the port; see docs/adapters.md."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/spools/src/server/runtime/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/app/extensions", "**/spool.server"],
+                "message": "The framework never imports the app. Read it from the Spool (packages/spools/src/server/spool.ts)."
+              },
+              {
+                "group": ["**/adapters/**"],
+                "message": "The framework never imports an adapter. It asks for the port, and the Spool provides the adapter; see docs/adapters.md."
+              },
+              {
+                "group": ["@prisma/**", "@effect/sql-*", "@electric-sql/**"],
+                "message": "Only an adapter (packages/spools/src/adapters/database) talks to a database. Ask for the Store service (packages/spools/src/server/store/store.ts), so reads get a time limit and failures a type."
+              },
+              {
+                "group": [
+                  "@clerk/**",
+                  "resend",
+                  "@swirls/sdk",
+                  "@swirls/sdk/*",
+                  "@cipherstash/**",
+                  "better-auth",
+                  "better-auth/*"
+                ],
+                "message": "Only an adapter (packages/spools/src/adapters) talks to a vendor's SDK. Ask for the port; see docs/adapters.md."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/spools/src/server/*.functions.ts"],
+      "rules": {
+        "spools/server-function-files": "error"
+      }
+    },
+    {
+      "files": ["packages/spools/src/api/**", "apps/starter/src/routes/**"],
+      "rules": {
+        "spools/route-adapters": "error"
+      }
+    },
+    {
+      "files": [
+        "packages/spools/src/crm/**",
+        "packages/spools/src/pages/**",
+        "packages/spools/src/views/**",
+        "apps/starter/src/routes/**",
+        "apps/starter/src/router.tsx",
+        "apps/starter/src/start.ts",
+        "apps/starter/src/spool.ui.ts"
+      ],
+      "excludeFiles": ["apps/starter/src/routes/api/**", "packages/spools/src/crm/codegen.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["effect", "effect/*"],
+                "message": "Effect is server-only: it must not reach the browser bundle. Call a server function instead; see docs/server-code.md."
+              },
+              {
+                "group": ["@clerk/**", "better-auth", "better-auth/*"],
+                "message": "Pages reach the auth provider with useAuth() (packages/spools/src/crm/ui/auth.tsx), so any adapter works; see docs/adapters.md."
+              },
+              {
+                "group": [
+                  "**/adapters/**",
+                  "@swirls/spools/database/*",
+                  "@swirls/spools/vault/*",
+                  "@swirls/spools/agents/*",
+                  "@swirls/spools/email/*",
+                  "@swirls/spools/files/*"
+                ],
+                "message": "Pages never import an adapter. The app chooses its adapters in src/spool.server.ts and src/spool.ui.ts; see docs/adapters.md."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/starter/src/app/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["effect", "effect/*"],
+                "message": "src/app is your code and stays plain TypeScript: hooks and handlers return promises. See docs/server-code.md."
+              },
+              {
+                "group": ["@swirls/spools/server/*"],
+                "message": "src/app reaches the framework through @swirls/spools/extensions, which returns promises. The modules themselves return Effects, and awaiting one does nothing."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

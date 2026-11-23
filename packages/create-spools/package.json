@@ -1,0 +1,37 @@
+{
+  "name": "@swirls/create-spools",
+  "version": "0.0.0",
+  "description": "Make a new Spool, a CRM your coding agents build on @swirls/spools",
+  "homepage": "https://spools.codes",
+  "bugs": {
+    "url": "https://github.com/ByteSliceHQ/spools/issues"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByteSliceHQ/spools.git",
+    "directory": "packages/create-spools"
+  },
+  "bin": {
+    "create-spools": "./src/main.ts"
+  },
+  "files": [
+    "src",
+    "template",
+    "LICENSE"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "template": "bun scripts/template.ts",
+    "prepack": "bun scripts/template.ts",
+    "postpack": "rm -rf template",
+    "check-types": "tsc --noEmit",
+    "test": "bun test tests"
+  },
+  "engines": {
+    "bun": ">=1.4"
+  }
+}

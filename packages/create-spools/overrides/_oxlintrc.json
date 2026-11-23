@@ -1,0 +1,78 @@
+{
+  "jsPlugins": [
+    {
+      "name": "spools",
+      "specifier": "@swirls/spools/oxlint"
+    }
+  ],
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": [
+    "dist/**",
+    ".output/**",
+    "migrations/**",
+    "prisma/schema.d.ts",
+    "src/routeTree.gen.ts"
+  ],
+  "rules": {
+    "spools/server-function-handlers": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.functions.ts"],
+      "rules": {
+        "spools/server-function-files": "error"
+      }
+    },
+    {
+      "files": ["src/routes/**"],
+      "rules": {
+        "spools/route-adapters": "error"
+      }
+    },
+    {
+      "files": ["src/routes/**", "src/router.tsx", "src/spool.ui.ts"],
+      "excludeFiles": ["src/routes/api/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["effect", "effect/*"],
+                "message": "Effect is server-only: it must not reach the browser bundle. Call a server function instead."
+              },
+              {
+                "group": [
+                  "@swirls/spools/database/*",
+                  "@swirls/spools/vault/*",
+                  "@swirls/spools/agents/*",
+                  "@swirls/spools/email/*",
+                  "@swirls/spools/files/*"
+                ],
+                "message": "Pages never import an adapter. The app chooses its adapters in src/spool.server.ts and src/spool.ui.ts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/app/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@swirls/spools/server/*"],
+                "message": "src/app reaches the framework through @swirls/spools/extensions, which returns promises. The modules themselves return Effects, and awaiting one does nothing."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

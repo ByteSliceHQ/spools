@@ -1,0 +1,327 @@
+{
+  "lockfile-version": 1,
+  "manifest": {
+    "schema-version": "1.13.0",
+    "install": {
+      "bun": {
+        "pkg-path": "bun"
+      },
+      "nodejs": {
+        "pkg-path": "nodejs"
+      },
+      "postgresql": {
+        "pkg-path": "postgresql"
+      }
+    },
+    "hook": {
+      "on-activate": "  PGDATA=\"$FLOX_ENV_CACHE/postgres\"\n  mkdir -p \"$PGDATA\"\n  if [ ! -f \"$PGDATA/PG_VERSION\" ]; then\n    initdb -D \"$PGDATA\" --auth=trust --username=spools\n  fi\n\n  echo \"Spools: bun install && bun run verify\"\n  echo \"Starter and website:  bun run dev\"\n"
+    },
+    "options": {},
+    "services": {
+      "postgres": {
+        "command": "  PGDATA=\"$FLOX_ENV_CACHE/postgres\"\n  pg_ctl -D \"$PGDATA\" -o \"-p 5432 -h 127.0.0.1\" start -w\n  createdb -h 127.0.0.1 -p 5432 -U spools spools_test 2>/dev/null || true\n  tail -f /dev/null\n"
+      }
+    }
+  },
+  "packages": [
+    {
+      "attr_path": "bun",
+      "broken": false,
+      "derivation": "/nix/store/350dvzvkhbr3wdnkrzs42wq6wzcj9j2m-bun-1.4.4.drv",
+      "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
+      "install_id": "bun",
+      "license": "[ MIT, LGPL-2.1-only ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "bun-1.4.4",
+      "pname": "bun",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T05:47:30.485183Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.4.4",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/6l3zg6ifzw9148s3qswbv6nxfvdmcrl5-bun-1.4.4"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bun",
+      "broken": false,
+      "derivation": "/nix/store/r7mssxcyb627qb6s0jy5yhih5m4gfw3l-bun-1.4.4.drv",
+      "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
+      "install_id": "bun",
+      "license": "[ MIT, LGPL-2.1-only ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "bun-1.4.4",
+      "pname": "bun",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T06:13:34.287589Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.4.4",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/h7a4iym1r9hwicz8c7qcw13z7l4g4bfz-bun-1.4.4"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "bun",
+      "broken": false,
+      "derivation": "/nix/store/mr3j90mynhxd0zzv11pg64a8xkbwlb1y-bun-1.4.4.drv",
+      "description": "Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one",
+      "install_id": "bun",
+      "license": "[ MIT, LGPL-2.1-only ]",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "bun-1.4.4",
+      "pname": "bun",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T06:41:47.739181Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "1.4.4",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/0gk371kgjyv7s0az07hxjrl8g9k0pf3m-bun-1.4.4"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nodejs",
+      "broken": false,
+      "derivation": "/nix/store/255rbcvs2q5vqyy7pjqsrki6scc39bkl-nodejs-24.22.2.drv",
+      "description": "Event-driven I/O framework for the V8 JavaScript engine",
+      "install_id": "nodejs",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "nodejs-24.22.2",
+      "pname": "nodejs",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T05:47:30.691613Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.22.2",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/vxh4ylwcdwyqhils1q6084ih7l5qinwk-nodejs-24.22.2"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nodejs",
+      "broken": false,
+      "derivation": "/nix/store/l19p5v6lqdx0p188xkqayxld6b3iqgdp-nodejs-24.22.2.drv",
+      "description": "Event-driven I/O framework for the V8 JavaScript engine",
+      "install_id": "nodejs",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "nodejs-24.22.2",
+      "pname": "nodejs",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T06:13:34.540432Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.22.2",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/pl77fywj3l09rzgsssy5drc52lpk9n0d-nodejs-24.22.2"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "nodejs",
+      "broken": false,
+      "derivation": "/nix/store/my4m3k693hpr9cf87fnlidwqc84z1vvj-nodejs-24.22.2.drv",
+      "description": "Event-driven I/O framework for the V8 JavaScript engine",
+      "install_id": "nodejs",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "nodejs-24.22.2",
+      "pname": "nodejs",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T06:41:47.915716Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "24.22.2",
+      "outputs_to_install": [
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/3kfmdqn711fqcc2y1qnjssancqf7b36l-nodejs-24.22.2"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql",
+      "broken": false,
+      "derivation": "/nix/store/cmhj6cv1vqwawn5g2r88dzvrvd1h54mg-postgresql-18.7.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "postgresql-18.7",
+      "pname": "postgresql",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T05:47:30.742227Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "18.7",
+      "outputs_to_install": [
+        "man",
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "dev": "/nix/store/p4za3zscx55h8wd0xyvb8wbfffxkr4r8-postgresql-18.7-dev",
+        "doc": "/nix/store/v0g772x257xsasgdgh8z4ivnf2i4mb28-postgresql-18.7-doc",
+        "jit": "/nix/store/n1rh6bdanh00q2lgkxrhlbk5s5zilryx-postgresql-18.7-jit",
+        "lib": "/nix/store/i34fymrlkqyasq3zq8ncqw2sjybf61fr-postgresql-18.7-lib",
+        "man": "/nix/store/6lyp4zyi7dvhq6pcvj2gxznxhn68zi7x-postgresql-18.7-man",
+        "out": "/nix/store/2dh0znrqyxvriv95wv0h238md4mqrrl3-postgresql-18.7",
+        "plperl": "/nix/store/4xcw31fdmq5gm9z8s4n2wchwmp0jzvjv-postgresql-18.7-plperl",
+        "plpython3": "/nix/store/g672zsn2gnfsb8z0wg48km50gjms295h-postgresql-18.7-plpython3",
+        "pltcl": "/nix/store/sjvm4rzl3532k6l5qc07dlhviaw0gnkw-postgresql-18.7-pltcl"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql",
+      "broken": false,
+      "derivation": "/nix/store/4c1gnqinq0qrmvcpwan50jyjffx14zhw-postgresql-18.7.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "postgresql-18.7",
+      "pname": "postgresql",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T06:13:34.577695Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "18.7",
+      "outputs_to_install": [
+        "man",
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/5yzilr4v9hwyy5f5cb08k6qgkab3hg3b-postgresql-18.7-debug",
+        "dev": "/nix/store/jwmnn3l6g0pl78r6qdr01a258sn51hnk-postgresql-18.7-dev",
+        "doc": "/nix/store/762gn1dakqqa84bwssm6iy4377x8c8w1-postgresql-18.7-doc",
+        "jit": "/nix/store/zvw9sw278vg6jin50d9chgym3vngw0a5-postgresql-18.7-jit",
+        "lib": "/nix/store/lpr30ybpiwhw2zxfz4hrw57jvsq7bkg7-postgresql-18.7-lib",
+        "man": "/nix/store/syx2sis117kklw00sjfl5mg6fsyzwsns-postgresql-18.7-man",
+        "out": "/nix/store/fczz6wqw6m79yddszs13qvv0l5krcg8f-postgresql-18.7",
+        "plperl": "/nix/store/0sm962k9vjvs044nvlg7x45plky8mi0z-postgresql-18.7-plperl",
+        "plpython3": "/nix/store/wl78wd1vzw7dp9xxqdfnwbnamyj4c9sr-postgresql-18.7-plpython3",
+        "pltcl": "/nix/store/033ad42ih3929k2rwqm2zyf57m5shff5-postgresql-18.7-pltcl"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "postgresql",
+      "broken": false,
+      "derivation": "/nix/store/q97j6c4hmv5qvmaf0qlvzbwr181f3xdb-postgresql-18.7.drv",
+      "description": "Powerful, open source object-relational database system",
+      "install_id": "postgresql",
+      "license": "PostgreSQL",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "name": "postgresql-18.7",
+      "pname": "postgresql",
+      "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
+      "rev_count": 1125864,
+      "rev_date": "2026-11-21T04:16:29Z",
+      "scrape_date": "2026-11-22T06:41:47.951456Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "18.7",
+      "outputs_to_install": [
+        "man",
+        "out",
+        "out"
+      ],
+      "outputs": {
+        "debug": "/nix/store/b96jw0y46ra1g34dy22m5c19bhj59kpq-postgresql-18.7-debug",
+        "dev": "/nix/store/ishbqc87yk2vfmxc1smmmvq48hjjqga8-postgresql-18.7-dev",
+        "doc": "/nix/store/v19p26czhmqsgzqbad5v8b3vgnaw062y-postgresql-18.7-doc",
+        "jit": "/nix/store/7mdfkfjs0y8jgkirckc8axg7lbc82dgf-postgresql-18.7-jit",
+        "lib": "/nix/store/pid0p7vlw6an302ig8y8yxgffzi97y5j-postgresql-18.7-lib",
+        "man": "/nix/store/wcrd5y8r3h5c1xxsghiycfijd810zp8b-postgresql-18.7-man",
+        "out": "/nix/store/0azp22fcrwvhv8liw9hxg4hlwf0sk2qk-postgresql-18.7",
+        "plperl": "/nix/store/751c0s8dl8skkikwvp8x19c1dq1fk2ms-postgresql-18.7-plperl",
+        "plpython3": "/nix/store/f4vm57lz2505yqbvaw92fz5z5fzxwd4h-postgresql-18.7-plpython3",
+        "pltcl": "/nix/store/d67whii5q8yryd8nf95cr0z1917b8xr3-postgresql-18.7-pltcl"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+node_modules/
+dist/
+.build/
+.turbo/
+.DS_Store
+*.log
+*.tgz
+*.tsbuildinfo
+coverage/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+**/.dev.vars
+
+# Builds. Tailwind reads classes from everything that isn't ignored, so a build left out of
+# here ends up in the next one's styles.
+.output/
+**/.output/
+.prerender/
+**/.prerender/
+.tanstack/
+**/.tanstack/
+.wrangler/
+**/.wrangler/
+
+# The database and files of a Spool run without any (PGlite, localBlobs)
+.data/
+**/.data/
+
+# What the browser tests leave behind (their databases are in e2e/.data)
+playwright-report/
+test-results/
+
+# Supabase local
+**/supabase/.temp
+**/supabase/.branches
+
+# Built from apps/starter when the package is packed
+packages/create-spools/template/
+
+# Flox
+.flox/.cache/
+.flox/cache/
+
+!.changeset/config.json
+
+# Editors
+.idea/

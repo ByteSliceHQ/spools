@@ -1,0 +1,94 @@
+import { useNavigate } from '@tanstack/react-router'
+import { FileText, Search } from 'lucide-react'
+import { useState, useEffect } from 'react'
+
+import pages from '../docs-manifest.json'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from './ui/command'
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from './ui/dialog'
+
+export function DocsSearch() {
+  const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setOpen((current) => !current)
+      }
+    }
+
+    window.addEventListener('keydown', shortcut)
+    return () => window.removeEventListener('keydown', shortcut)
+  }, [])
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="text-muted hover:text-foreground hover:bg-background-subtle ml-auto inline-flex cursor-pointer items-center gap-[0.6rem] rounded-[5px] px-2 py-[0.4rem] text-[0.8rem]"
+          aria-label="Search documentation"
+          aria-keyshortcuts="Meta+K Control+K"
+        >
+          <Search size={15} aria-hidden="true" />
+          <span className="max-[480px]:hidden">Search docs</span>
+          <kbd className="border-line rounded-[3px] border px-[0.3rem] py-[0.1rem] font-mono text-[0.7rem] max-[480px]:hidden">
+            ⌘ K
+          </kbd>
+        </button>
+      </DialogTrigger>
+      <DialogContent className="command-dialog border-line overflow-hidden rounded-[0.65rem] p-0">
+        <DialogTitle className="sr-only">Search documentation</DialogTitle>
+        <DialogDescription className="sr-only">
+          Find Spools guides and API reference. Use arrow keys to choose a page and Enter to open
+          it.
+        </DialogDescription>
+        <Command
+          filter={(value, search, keywords) => {
+            const title = value.toLowerCase()
+            const query = search.toLowerCase().trim()
+
+            if (title.includes(query)) {
+              return 1
+            }
+
+            const content = `${title} ${keywords?.join(' ') ?? ''}`.toLowerCase()
+            return query.split(/\s+/).every((term) => content.includes(term)) ? 0.5 : 0
+          }}
+        >
+          <CommandInput placeholder="Search documentation…" />
+          <CommandList>
+            <CommandEmpty>No pages found. Try “adapters” or “email sequences”.</CommandEmpty>
+            <CommandGroup heading="Documentation">
+              {pages.map((page) => (
+                <CommandItem
+                  key={page.path}
+                  value={page.title}
+                  keywords={[page.text]}
+                  onSelect={() => {
+                    setOpen(false)
+                    void navigate({ to: page.path })
+                  }}
+                >
+                  <FileText aria-hidden="true" className="mt-0.5" />
+                  <div>
+                    <strong>{page.title}</strong>
+                    <p>{page.description}</p>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </DialogContent>
+    </Dialog>
+  )
+}

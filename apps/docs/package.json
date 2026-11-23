@@ -1,0 +1,48 @@
+{
+  "name": "@spools/docs",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Spools website and documentation",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run index-docs && bunx --bun vite dev",
+    "build": "bun run index-docs && bun run build:worker && bun run build:prerender && bun scripts/merge-prerender-output.ts",
+    "build:worker": "bunx --bun vite build",
+    "build:prerender": "bunx --bun vite build --mode prerender",
+    "preview": "wrangler dev --config .output/server/wrangler.json",
+    "deploy": "bun run build && wrangler deploy --config .output/server/wrangler.json",
+    "check-types": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test src",
+    "illustrations:export": "bun scripts/export-illustrations.tsx",
+    "index-docs": "bun scripts/index-docs.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.170.46",
+    "@tanstack/react-start": "^1.169.5",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "lucide-react": "^1.72.0",
+    "radix-ui": "^1.8.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "shiki": "^4.6.0",
+    "tailwind-merge": "^3.7.1"
+  },
+  "devDependencies": {
+    "@swirls/spools": "workspace:*",
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/bun": "^1.4.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "github-slugger": "^2.0.0",
+    "marked": "^18.2.1",
+    "nitro": "3.0.260903-beta",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "wrangler": "^4.166.0"
+  }
+}

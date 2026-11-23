@@ -1,0 +1,387 @@
+@import 'tailwindcss';
+
+@plugin '@tailwindcss/typography';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-background-subtle: var(--bg-subtle);
+  --color-foreground: var(--text);
+  --color-body: var(--text-body);
+  --color-muted: var(--muted);
+  --color-muted-light: var(--muted-light);
+  --color-line: var(--line);
+  --color-line-subtle: var(--line-subtle);
+  --color-code-bg: var(--code-bg);
+  --color-line-number: var(--line-number);
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--line-subtle);
+  --color-accent-foreground: var(--text);
+  --color-border: var(--line);
+  --color-secondary: var(--code-bg);
+  --color-secondary-foreground: var(--text);
+  --color-input: var(--line);
+  --color-ring: var(--muted-light);
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+}
+
+:root {
+  --neutral-50: #fafafa;
+  --neutral-100: #f5f5f5;
+  --neutral-200: #e5e5e5;
+  --neutral-300: #d4d4d4;
+  --neutral-400: #a3a3a3;
+  --neutral-500: #737373;
+  --neutral-600: #525252;
+  --neutral-700: #404040;
+  --neutral-800: #262626;
+  --neutral-900: #171717;
+  --neutral-950: #0a0a0a;
+
+  --bg: #ffffff;
+  --bg-subtle: var(--neutral-50);
+  --text: var(--neutral-950);
+  --text-body: var(--neutral-700);
+  --muted: var(--neutral-600);
+  --muted-light: var(--neutral-400);
+  --line: var(--neutral-200);
+  --line-subtle: var(--neutral-100);
+  --code-bg: var(--neutral-50);
+  --line-number: var(--neutral-400);
+
+  --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html.light {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-subtle: var(--neutral-50);
+  --text: var(--neutral-950);
+  --text-body: var(--neutral-700);
+  --muted: var(--neutral-600);
+  --muted-light: var(--neutral-400);
+  --line: var(--neutral-200);
+  --line-subtle: var(--neutral-100);
+  --code-bg: var(--neutral-50);
+  --line-number: var(--neutral-400);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    color-scheme: dark;
+    --bg: #12141a;
+    --bg-subtle: #181b24;
+    --text: #e4f0fb;
+    --text-body: #a6accd;
+    --muted: #a1a8bf;
+    --muted-light: #8e98b0;
+    --line: #262b36;
+    --line-subtle: #1b202c;
+    --code-bg: #1b1e28;
+    --line-number: #506477;
+  }
+}
+
+html.dark {
+  color-scheme: dark;
+  --bg: #12141a;
+  --bg-subtle: #181b24;
+  --text: #e4f0fb;
+  --text-body: #a6accd;
+  --muted: #a1a8bf;
+  --muted-light: #8e98b0;
+  --line: #262b36;
+  --line-subtle: #1b202c;
+  --code-bg: #1b1e28;
+  --line-number: #506477;
+}
+
+@layer base {
+  html,
+  body {
+    @apply m-0 min-h-full;
+  }
+
+  body {
+    @apply bg-background text-body font-sans leading-relaxed antialiased;
+  }
+
+  h1,
+  h2 {
+    text-wrap: balance;
+  }
+
+  a {
+    @apply text-foreground underline decoration-neutral-300 underline-offset-[3px] transition-[text-decoration-color] duration-150;
+  }
+
+  a:hover {
+    @apply decoration-foreground;
+  }
+
+  code {
+    @apply bg-code-bg text-foreground rounded px-[0.35em] py-[0.15em] font-mono text-[0.86em] font-normal;
+  }
+}
+
+.spool-labels {
+  font-family: var(--mono);
+  font-size: 15px;
+}
+
+.spool-thread-config {
+  stroke: #bd785e;
+}
+
+.spool-thread-services {
+  stroke: #7c8fb9;
+}
+
+.spool-thread-code {
+  stroke: #6c9b8b;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-spool .spool-turn {
+    animation: spool-wind 0.9s ease-out backwards;
+  }
+}
+
+@keyframes spool-wind {
+  from {
+    stroke-opacity: 0.2;
+  }
+  to {
+    stroke-opacity: 1;
+  }
+}
+
+/* Wins over utility text-muted: TanStack Link sets these when the route matches */
+nav a[data-status='active'],
+nav a[aria-current='page'] {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Code blocks and Shiki-generated markup */
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.8rem 0;
+  margin: 1.5rem 0 2rem;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+pre.shiki {
+  counter-reset: line;
+}
+
+pre.shiki code {
+  display: block;
+  min-width: 100%;
+}
+
+pre.shiki .line {
+  display: block;
+  min-height: 1.45em;
+  line-height: 1.45;
+}
+
+pre.shiki .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 1.75rem;
+  margin-right: 1.25rem;
+  text-align: right;
+  color: var(--line-number);
+  font-size: 0.7rem;
+  opacity: 0.6;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not(.light) pre {
+    background: #1b1e28 !important;
+    border-color: #303340 !important;
+  }
+
+  html:not(.light) pre.shiki .line::before {
+    color: #767c9d;
+    opacity: 0.65;
+  }
+
+  html:not(.light) .shiki,
+  html:not(.light) .shiki span {
+    color: var(--shiki-dark) !important;
+    font-style: var(--shiki-dark-font-style) !important;
+    font-weight: var(--shiki-dark-font-weight) !important;
+    text-decoration: var(--shiki-dark-text-decoration) !important;
+  }
+}
+
+html.dark pre {
+  background: #1b1e28 !important;
+  border-color: #303340 !important;
+}
+
+html.dark pre.shiki .line::before {
+  color: #767c9d;
+  opacity: 0.65;
+}
+
+html.dark .shiki,
+html.dark .shiki span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.75rem 0 2.25rem;
+  font-size: 0.9rem;
+}
+
+th {
+  text-align: left;
+  vertical-align: bottom;
+  padding: 0.6rem 1rem 0.6rem 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.75rem 1rem 0.75rem 0;
+  border-bottom: 1px solid var(--line-subtle);
+  color: var(--text-body);
+}
+
+td strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.prose {
+  --tw-prose-body: var(--text-body);
+  --tw-prose-headings: var(--text);
+  --tw-prose-lead: var(--muted);
+  --tw-prose-links: var(--text);
+  --tw-prose-bold: var(--text);
+  --tw-prose-counters: var(--muted);
+  --tw-prose-bullets: var(--muted);
+  --tw-prose-hr: var(--line);
+  --tw-prose-quotes: var(--text-body);
+  --tw-prose-quote-borders: var(--line);
+  --tw-prose-captions: var(--muted);
+  --tw-prose-kbd: var(--text);
+  --tw-prose-code: var(--text);
+  --tw-prose-pre-code: var(--text);
+  --tw-prose-pre-bg: var(--code-bg);
+  --tw-prose-th-borders: var(--line);
+  --tw-prose-td-borders: var(--line-subtle);
+}
+
+/* A quotation in the docs is a note. */
+.prose :where(blockquote) {
+  font-style: normal;
+  font-weight: 400;
+}
+
+.prose :where(blockquote p)::before,
+.prose :where(blockquote p)::after {
+  content: none;
+}
+
+.prose :where(h1, h2) {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.prose :where(code):not(:where([class~='not-prose'], [class~='not-prose'] *))::before,
+.prose :where(code):not(:where([class~='not-prose'], [class~='not-prose'] *))::after {
+  content: none;
+}
+
+.prose :where(code):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+  font-weight: 400;
+}
+
+/* Reading and navigation */
+:where(h1, h2, h3)[id] {
+  scroll-margin-top: 2rem;
+}
+.heading-anchor {
+  margin-left: 0.65rem;
+  font-size: 0.8em;
+  color: var(--muted);
+  text-decoration: none;
+}
+.heading-anchor:hover,
+.heading-anchor:focus-visible {
+  color: var(--text);
+}
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+.prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.command-dialog [cmdk-input-wrapper] {
+  padding-right: 3rem;
+}
+.command-dialog [cmdk-input]:focus-visible {
+  outline: none;
+}
+.command-dialog [cmdk-item] {
+  cursor: pointer;
+  align-items: flex-start;
+}
+.command-dialog [cmdk-item] strong {
+  display: block;
+  font-weight: 500;
+}
+.command-dialog [cmdk-item] p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin-top: 0.2rem;
+}
+.command-dialog [cmdk-input-wrapper] {
+  border-color: var(--line);
+}
+.command-dialog [cmdk-item] p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}

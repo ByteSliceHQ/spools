@@ -1,0 +1,39 @@
+// Payload the CRM app sends when it runs a workflow from a config action or automation
+// (see src/server/actions.ts). `record` is the record as stored, relations included.
+
+schema crm_event {
+  label: "CRM record event"
+  schema: @json {
+    {
+      "type": "object",
+      "required": ["objectKey", "record", "trigger"],
+      "properties": {
+        "objectKey": { "type": "string" },
+        "trigger": { "type": "string" },
+        "record": { "type": "object" },
+        "actor": {
+          "type": ["object", "null"],
+          "properties": {
+            "id": { "type": "string" },
+            "email": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
+
+schema tool_result {
+  label: "CRM tool result"
+  schema: @json {
+    {
+      "type": "object",
+      "properties": {
+        "ok": { "type": "boolean" },
+        "data": {},
+        "note": { "type": "string" },
+        "error": { "type": "string" }
+      }
+    }
+  }
+}

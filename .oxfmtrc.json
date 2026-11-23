@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "sortImports": {
+    "internalPattern": ["~/", "@/", "#", "@swirls/spools"]
+  },
+  "sortTailwindcss": {
+    "functions": ["clsx", "cn", "cva", "twMerge"]
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/.build/**",
+    "**/.output/**",
+    "**/.prerender/**",
+    "**/.data/**",
+    "**/node_modules/**",
+    "**/.flox/**",
+    "**/.turbo/**",
+    "**/.tanstack/**",
+    "**/.wrangler/**",
+    "**/coverage/**",
+    "**/routeTree.gen.ts",
+    "**/prisma/schema.*",
+    "**/crm.config.schema.json",
+    "**/migrations/**",
+    "**/supabase/**",
+    "**/docs-manifest.json",
+    "packages/create-spools/template/**",
+    "tools/oxlint/anti-slop/**",
+    "bun.lock",
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**"
+  ]
+}
