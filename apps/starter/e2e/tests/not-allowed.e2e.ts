@@ -8,6 +8,8 @@ for (const path of ['/', '/contacts']) {
     page,
   }) => {
     const response = await page.goto(path)
+    // A refusal, not a fault of the server's.
+    expect(response?.status()).toBe(403)
 
     await expect(
       page.getByRole('heading', { name: "You don't have access to this CRM" }),

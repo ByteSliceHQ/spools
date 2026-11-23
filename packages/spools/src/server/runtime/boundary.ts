@@ -1,4 +1,4 @@
-import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
+import { getRequest, setResponseHeader, setResponseStatus } from '@tanstack/react-start/server'
 import { Cause, Duration, Effect, Exit, type ManagedRuntime, Option } from 'effect'
 
 import { spool } from '../spool'
@@ -122,6 +122,23 @@ function settleFailure(name: string, ms: number, cause: Cause.Cause<StaffError>)
 }
 
 /**
+ * Says 403 for a page asked for by someone who is signed in but not on the
+ * access list. The page that says so is drawn all the same; without this its
+ * failed loaders would make it a 500, and a refusal would read as a fault of
+ * the server's. A server function called from the browser keeps its own answer.
+ */
+const refusedPage = (request: Request) => (error: StaffError) =>
+  Effect.sync(() => {
+    if (
+      error._tag === 'Unauthorized' &&
+      error.reason === 'not-allowed' &&
+      !request.headers.has('x-tsr-serverFn')
+    ) {
+      setResponseStatus(403)
+    }
+  })
+
+/**
  * A server function for signed-in staff. The program gets the validated
  * `data` and the signed-in `user`; there is no other way to learn who is asking.
  */
@@ -131,7 +148,8 @@ export function crmHandler<I, A, E extends StaffError>(
   options: { headers?: Record<string, string> } = {},
 ): (ctx: { data: I }) => Promise<A> {
   return async ({ data }) => {
-    const session = await sessionOf(getRequest())
+    const asked = getRequest()
+    const session = await sessionOf(asked)
     const request = currentRequest(session)
 
     // Response headers belong to the request too: set here, never from inside the program.
@@ -143,7 +161,10 @@ export function crmHandler<I, A, E extends StaffError>(
       runtime(),
       name,
       request,
-      signedIn(session?.userId).pipe(Effect.flatMap((user) => program({ data, user }))),
+      signedIn(session?.userId).pipe(
+        Effect.tapError(refusedPage(asked)),
+        Effect.flatMap((user) => program({ data, user })),
+      ),
     )
   }
 }
