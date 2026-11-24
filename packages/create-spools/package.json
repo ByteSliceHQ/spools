@@ -1,6 +1,6 @@
 {
   "name": "@swirls/create-spools",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Make a new Spool, a CRM your coding agents build on @swirls/spools",
   "homepage": "https://spools.codes",
   "bugs": {
