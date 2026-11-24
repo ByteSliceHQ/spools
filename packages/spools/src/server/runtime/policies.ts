@@ -37,6 +37,10 @@ export const policies = {
   agentsRead: { service: 'The agent engine', timeout: '10 seconds', retries: 2 },
   /** Starting a workflow, or a chat call. Not retried: a second start is a second run. */
   agentsRun: { service: 'The agent engine', timeout: '15 seconds', retries: 0 },
+  /** Reading the business's own website for its tracking tags. A read: retried once. */
+  website: { service: 'The website', timeout: '15 seconds', retries: 1 },
+  /** Posting to a social network and reading an ad account. Only reads are retried: a second post is a second post. */
+  marketingApi: { service: 'The network', timeout: '20 seconds', retries: 2 },
   /** Sealing and opening secrets. Not retried: a failure is the vault's answer. */
   vault: { service: 'The vault', timeout: '10 seconds', retries: 0 },
   /** Passing a file's bytes on to the file store (a relayed upload). A stream can't be replayed. */

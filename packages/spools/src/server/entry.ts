@@ -5,6 +5,8 @@ import { startSequences } from './campaigns'
 import { logEnvironment } from './env'
 import { withSecurityHeaders } from './headers'
 import { validateIntegrations } from './integrations'
+import { startMarketing } from './marketing'
+import { validateMarketing } from './marketing-networks'
 import { runtime } from './runtime/app'
 import { startSync } from './sync'
 
@@ -40,6 +42,10 @@ export function serveSpool(start: Handler): Handler {
     console.error(`[config] ${message}`)
   }
 
+  for (const problem of validateMarketing()) {
+    console.warn(`[marketing] ${problem}`)
+  }
+
   for (const problem of validateIntegrations()) {
     console.warn(`[integrations] ${problem}; it is not offered`)
   }
@@ -48,6 +54,8 @@ export function serveSpool(start: Handler): Handler {
   schedule('sequence', runtime().runPromise(startSequences()))
   // Read teammates' mailboxes and calendars on a schedule (a no-op until an account grants access).
   schedule('mailbox sync', runtime().runPromise(startSync()))
+  // Publish scheduled posts as they fall due (a no-op without `marketing.channels` in the config).
+  schedule('marketing', runtime().runPromise(startMarketing()))
 
   return {
     async fetch(request) {

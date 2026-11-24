@@ -345,6 +345,34 @@ compare against the previous value, use [hooks](extending.md#hooks-react-to-reco
 
 See [Campaigns](campaigns.md) for delivery, unsubscribes and operations.
 
+## Marketing
+
+```json
+"marketing": {
+  "website": "https://acme.com",
+  "tags": { "ga4": "G-ABCDE12345", "metaPixel": "1234567890123456" },
+  "channels": {
+    "company": { "label": "LinkedIn page", "network": "linkedin", "account": "urn:li:organization:12345" }
+  },
+  "ads": {
+    "meta": { "label": "Meta Ads", "network": "meta", "account": "1234567890" }
+  }
+}
+```
+
+- `website` is the business's site, as an `https://` address. It is the only required part.
+- `tags` are the tracking tags the business uses, by id: `gtm`, `ga4`, `googleAds`,
+  `metaPixel`, `linkedinInsight`. Each id must be in its vendor's form.
+- `channels` are where posts can go. `network` is `linkedin`, `facebook`, `x`, or one your
+  app adds.
+- `ads` are the ad accounts whose results are shown. `network` is `meta`, `google`, or one
+  your app adds.
+- `via` on a channel or an ad account says who calls the network: `"direct"` (the CRM,
+  the default where it can) or `"swirls"` (a workflow).
+
+With this block the sidebar gains a Marketing page. `marketing` can no longer be used as
+an object's key. See [Marketing](marketing.md).
+
 ## The assistant's page
 
 `assistant` changes how the Ask page presents the assistant. What the assistant

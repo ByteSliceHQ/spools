@@ -86,11 +86,12 @@ bun run start
 Set `SERVERLESS=1`. The server then keeps no timers, and cron jobs call these instead, with
 `CRON_SECRET` as a bearer token:
 
-| Route                 | What it does                                                                     |
-| --------------------- | -------------------------------------------------------------------------------- |
-| `/api/cron/sequences` | Sends the sequence emails that are due. See [Campaigns](campaigns.md#operations) |
-| `/api/cron/mail-sync` | Reads teammates' mailboxes. See [Mailbox](mailbox.md#the-schedule)               |
-| `/api/cron/warm`      | Does one small database read, to keep an instance from going cold                |
+| Route                 | What it does                                                                              |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| `/api/cron/sequences` | Sends the sequence emails that are due. See [Campaigns](campaigns.md#operations)          |
+| `/api/cron/mail-sync` | Reads teammates' mailboxes. See [Mailbox](mailbox.md#the-schedule)                        |
+| `/api/cron/marketing` | Publishes the scheduled posts that are due. See [Marketing](marketing.md#scheduled-posts) |
+| `/api/cron/warm`      | Does one small database read, to keep an instance from going cold                         |
 
 Files need [a bucket or FlashDrive](files.md), because `localBlobs()` needs a disk that lasts.
 

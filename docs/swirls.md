@@ -10,7 +10,8 @@ enriches leads, the emails those workflows send, and the CRM assistant. The
 | `schemas.swirls`        | `crm_event` (what the app sends) and `tool_result` (what the app returns)                                   |
 | `new_contact.swirls`    | Qualify a new contact with AI, alert the team, auto-reply to website leads, write a summary to the timeline |
 | `enrich_contact.swirls` | Web search on a contact and summarize the results to the timeline                                           |
-| `assistant.swirls`      | The `crm_assistant` agent, its six tool workflows, and the `crm_web` chat channel                           |
+| `assistant.swirls`      | The `crm_assistant` agent, its eight tool workflows, and the `crm_web` chat channel                         |
+| `marketing.swirls`      | Reads the business's website for the Marketing page. See [Marketing](marketing.md)                          |
 
 ## How the app and Swirls talk
 

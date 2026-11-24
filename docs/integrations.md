@@ -11,8 +11,12 @@ CRM works with on their behalf, and connects more:
   in.
 - **Other services** your app adds, such as an accounting or phone system. See
   [Add a provider](#add-a-provider).
+- **The accounts your marketing posts through** (LinkedIn, X, Google Ads), once a channel
+  or an ad account in the config uses one. These are shared: whoever connects one, any
+  teammate can publish through it from the Marketing page. See [Marketing](marketing.md).
 
-Each person connects their own accounts. Nobody else can see, use or remove them.
+Each person connects their own accounts. Nobody else can see or remove them, and nobody
+else can use them, except a marketing account, which is connected for the team.
 
 > **Status:** built and tested against stubbed providers and a stand-in for
 > CipherStash. It has not yet been run against live Google, Microsoft or
@@ -192,7 +196,9 @@ export default defineExtensions({
 
 - Register `{APP_URL}/api/integrations/<id>/callback` as the redirect URI with
   the provider.
-- The provider must issue a refresh token; a connection without one is refused.
+- The provider must issue a refresh token; a connection without one is refused. For a
+  provider that only gives a long-lived access token, set `refreshToken: 'optional'`: the
+  connection then works until that token runs out, and shows "Needs reconnecting" after.
 - An id is lower-case letters, digits, `-` or `_`. `google` and `microsoft` are
   taken. A provider with a bad id is left out, with a warning at start-up.
 - `findConnections` and `getAccessToken` are for server code. Never return a

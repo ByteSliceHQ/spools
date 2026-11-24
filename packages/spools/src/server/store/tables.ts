@@ -286,6 +286,90 @@ is offered to them once, on whatever device they sign in.`,
   unique: [['userId', 'guideId']],
 })
 
+export const MarketingSite = defineTable({
+  model: 'MarketingSite',
+  name: 'marketing_sites',
+  doc: `What the CRM knows about the business's website (\`marketing.website\` in
+crm.config.json): the tracking tags its pages carry, and what the agent engine
+learned about the business from it. See src/server/marketing.ts.`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    website: text(),
+    tags: optional(
+      text({ doc: 'JSON: the ids of each tracking tag found in the page, from the last scan.' }),
+    ),
+    scannedAt: optional(timestamp()),
+    scanError: optional(text({ doc: 'Why the last scan could not read the site.' })),
+    summary: optional(text({ doc: 'What the business does, in two or three sentences.' })),
+    audience: optional(text()),
+    voice: optional(text({ doc: 'How the business writes: the tone a post should keep.' })),
+    offers: optional(text({ doc: 'JSON: what it sells, as short names.' })),
+    profiledAt: optional(timestamp()),
+    profileRequestedAt: optional(
+      timestamp({ doc: 'When a teammate last asked the agent engine to read the site.' }),
+    ),
+  },
+  unique: [['website']],
+})
+
+export const MarketingPost = defineTable({
+  model: 'MarketingPost',
+  name: 'marketing_posts',
+  doc: `A post for one social channel (\`marketing.channels\` in crm.config.json):
+a draft, one waiting for its time, or one that went out. See src/server/marketing.ts.`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    channel: text({ doc: "The channel's key in the config." }),
+    body: text(),
+    link: optional(text()),
+    status: text({ doc: '"draft", "scheduled", "publishing", "published" or "failed".' }),
+    scheduledAt: optional(timestamp()),
+    startedAt: optional(timestamp({ doc: 'When it was handed to the agent engine to publish.' })),
+    publishedAt: optional(timestamp()),
+    executionId: optional(text({ doc: "The agent engine's run that is publishing it." })),
+    externalId: optional(text({ doc: "The network's id for the published post." })),
+    externalUrl: optional(text()),
+    note: optional(text({ doc: 'Why it failed, or what happened last.' })),
+    createdBy: optional(text()),
+    createdByName: optional(text()),
+    approvedBy: optional(
+      text({
+        doc: 'The teammate who scheduled or published it. A post never goes out without one.',
+      }),
+    ),
+  },
+  indexes: [['status', 'scheduledAt'], ['createdAt']],
+})
+
+export const MarketingAd = defineTable({
+  model: 'MarketingAd',
+  name: 'marketing_ads',
+  doc: `One ad campaign's results over the last \`periodDays\`, as the agent engine
+last read them from the network. A copy to look at: the network is where it is changed.`,
+  columns: {
+    id: id(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    account: text({ doc: "The ad account's key in the config (`marketing.ads`)." }),
+    externalId: text({ doc: "The network's id for the campaign." }),
+    name: text(),
+    status: text({ doc: 'As the network names it, lower-cased: "active", "paused" and so on.' }),
+    currency: optional(text()),
+    spend: withDefault(float(), 0),
+    impressions: withDefault(integer(), 0),
+    clicks: withDefault(integer(), 0),
+    conversions: withDefault(float(), 0),
+    dailyBudget: optional(float()),
+    periodDays: withDefault(integer(), 30),
+    syncedAt: timestamp(),
+  },
+  unique: [['account', 'externalId']],
+})
+
 /** Every system table, in the order they are written to the schema. */
 export const systemTables: readonly AnyTable[] = [
   Activity,
@@ -300,4 +384,7 @@ export const systemTables: readonly AnyTable[] = [
   FileUpload,
   SequenceRun,
   GuideProgress,
+  MarketingSite,
+  MarketingPost,
+  MarketingAd,
 ]

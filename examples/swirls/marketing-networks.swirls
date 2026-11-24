@@ -1,0 +1,575 @@
+// Posts and ad results through Swirls connections, for the CRM's Marketing page.
+// Use this when a channel or an ad account in crm.config.json says "via": "swirls":
+// the account is then a connection of your Swirls project, and the CRM stores
+// no token for it. Copy this file into your Spool's swirls/ folder, beside
+// schemas.swirls, which declares `tool_result`. Keep the workflows you use.
+//
+//   publish_linkedin   sends one post to LinkedIn
+//   publish_x          sends one post to X
+//   publish_facebook   sends one post to a Facebook page
+//   ads_meta           reads one Meta ad account's campaigns and results
+//   ads_google         reads one Google Ads account's campaigns and results
+//
+// The CRM starts `publish_<network>` and `ads_<network>` by name, so a network
+// of your own is one more workflow named that way.
+//
+// LinkedIn and X are in the built-in Swirls catalog. Facebook and Google Ads
+// are providers a project gets through Composio: `swirls doctor` warns about
+// them, and a deploy that includes them fails, until yours has them.
+//
+// A `{name}` in an action's path is filled from the node's params of that name.
+//
+// Not yet run against live accounts. Three things to check with yours:
+//   - a page post needs the page's own token, which the connection must supply;
+//   - Google Ads wants a developer token with every request;
+//   - the Google Ads API version in `google_ads_search` is retired a year after its release.
+
+connection linkedin_page {
+  provider: linkedin
+  label: "LinkedIn"
+  description: "Posts to the company page (needs w_organization_social for a page, w_member_social for a person)"
+}
+
+connection x_account {
+  provider: x
+  label: "X"
+  description: "Posts from the company's X account (tweet.write)"
+}
+
+connection facebook_page {
+  provider: facebook
+  label: "Facebook"
+  description: "Posts to the Facebook page and reads Meta ad results (pages_manage_posts, ads_read)"
+}
+
+connection google_ads {
+  provider: googleads
+  label: "Google Ads"
+  description: "Reads campaign results (adwords scope)"
+}
+
+action linkedin_create_post {
+  provider: linkedin
+  method: POST
+  path: "/v2/ugcPosts"
+  description: "Publish a text post as a person or an organization"
+  scopes: ["w_organization_social"]
+}
+
+action x_create_post {
+  provider: x
+  method: POST
+  path: "/2/tweets"
+  description: "Publish a post"
+  scopes: ["tweet.write"]
+}
+
+action facebook_create_page_post {
+  provider: facebook
+  method: POST
+  path: "/{page_id}/feed"
+  description: "Publish a post to a page"
+  scopes: ["pages_manage_posts"]
+}
+
+action meta_list_campaigns {
+  provider: facebook
+  method: GET
+  path: "/act_{ad_account_id}/campaigns"
+  description: "List an ad account's campaigns"
+  scopes: ["ads_read"]
+}
+
+action meta_campaign_insights {
+  provider: facebook
+  method: GET
+  path: "/act_{ad_account_id}/insights"
+  description: "Read an ad account's results by campaign"
+  scopes: ["ads_read"]
+}
+
+action google_ads_search {
+  provider: googleads
+  method: POST
+  path: "/v26/customers/{customer_id}/googleAds:search"
+  description: "Run a Google Ads query"
+  scopes: ["https://www.googleapis.com/auth/adwords"]
+}
+
+schema marketing_post_event {
+  label: "A post to publish"
+  schema: @json {
+    {
+      "type": "object",
+      "required": ["post", "channel"],
+      "properties": {
+        "trigger": { "type": "string" },
+        "actor": { "type": ["object", "null"] },
+        "post": {
+          "type": "object",
+          "required": ["id", "text"],
+          "properties": {
+            "id": { "type": "string" },
+            "text": { "type": "string" },
+            "body": { "type": "string" },
+            "link": { "type": ["string", "null"] }
+          }
+        },
+        "channel": {
+          "type": "object",
+          "required": ["key", "network", "account"],
+          "properties": {
+            "key": { "type": "string" },
+            "network": { "type": "string" },
+            "account": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
+
+workflow publish_linkedin {
+  label: "Publish to LinkedIn"
+  description: "Send one post to LinkedIn and tell the CRM how it went"
+
+  root {
+    type: code
+    label: "Post"
+    inputSchema: marketing_post_event
+    outputSchema: @json {
+      {
+        "type": "object",
+        "required": ["postId", "text", "network", "account"],
+        "properties": {
+          "postId": { "type": "string" },
+          "text": { "type": "string" },
+          "body": { "type": "string" },
+          "link": { "type": "string" },
+          "network": { "type": "string" },
+          "account": { "type": "string" }
+        }
+      }
+    }
+    code: @ts {
+      const i = context.nodes.root.input
+      return {
+        postId: String(i.post.id),
+        text: String(i.post.text),
+        body: String(i.post.body ?? i.post.text),
+        link: i.post.link ? String(i.post.link) : "",
+        network: String(i.channel.network),
+        account: String(i.channel.account)
+      }
+    }
+  }
+
+  node linkedin_send {
+    type: integration
+    label: "Post to LinkedIn"
+    connection: linkedin_page
+    action: linkedin_create_post
+    params: @ts {
+      const p = context.nodes.root.output
+      return {
+        author: p.account,
+        lifecycleState: "PUBLISHED",
+        specificContent: {
+          "com.linkedin.ugc.ShareContent": {
+            shareCommentary: { text: p.text },
+            shareMediaCategory: "NONE"
+          }
+        },
+        visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" }
+      }
+    }
+  }
+
+  node linkedin_result {
+    type: http
+    label: "Tell the CRM"
+    method: "POST"
+    secrets: { crm_app: [CRM_APP_URL, CRM_APP_TOKEN] }
+    url: @ts { return context.secrets.crm_app.CRM_APP_URL + "/api/swirls/tools/post_result" }
+    headers: @ts {
+      return { "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN, "Content-Type": "application/json" }
+    }
+    body: @ts {
+      const r = context.nodes.linkedin_send.output ?? {}
+      const b = r.body ?? {}
+      const ok = Number(r.status ?? 0) >= 200 && Number(r.status ?? 0) < 300 && !!b.id
+      return JSON.stringify(ok
+        ? { postId: context.nodes.root.output.postId, ok: true, externalId: String(b.id), url: "https://www.linkedin.com/feed/update/" + String(b.id) }
+        : { postId: context.nodes.root.output.postId, ok: false, error: ("LinkedIn answered " + String(r.status ?? "nothing") + ": " + JSON.stringify(b)).slice(0, 1500) })
+    }
+    schema: tool_result
+  }
+
+  flow {
+    root -> linkedin_send
+    linkedin_send -> linkedin_result
+  }
+}
+
+workflow publish_x {
+  label: "Publish to X"
+  description: "Send one post to X and tell the CRM how it went"
+
+  root {
+    type: code
+    label: "Post"
+    inputSchema: marketing_post_event
+    outputSchema: @json {
+      {
+        "type": "object",
+        "required": ["postId", "text", "network", "account"],
+        "properties": {
+          "postId": { "type": "string" },
+          "text": { "type": "string" },
+          "body": { "type": "string" },
+          "link": { "type": "string" },
+          "network": { "type": "string" },
+          "account": { "type": "string" }
+        }
+      }
+    }
+    code: @ts {
+      const i = context.nodes.root.input
+      return {
+        postId: String(i.post.id),
+        text: String(i.post.text),
+        body: String(i.post.body ?? i.post.text),
+        link: i.post.link ? String(i.post.link) : "",
+        network: String(i.channel.network),
+        account: String(i.channel.account)
+      }
+    }
+  }
+
+  node x_send {
+    type: integration
+    label: "Post to X"
+    connection: x_account
+    action: x_create_post
+    params: @ts { return { text: context.nodes.root.output.text } }
+  }
+
+  node x_result {
+    type: http
+    label: "Tell the CRM"
+    method: "POST"
+    secrets: { crm_app: [CRM_APP_URL, CRM_APP_TOKEN] }
+    url: @ts { return context.secrets.crm_app.CRM_APP_URL + "/api/swirls/tools/post_result" }
+    headers: @ts {
+      return { "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN, "Content-Type": "application/json" }
+    }
+    body: @ts {
+      const r = context.nodes.x_send.output ?? {}
+      const b = r.body ?? {}
+      const id = b.data && b.data.id ? String(b.data.id) : ""
+      const ok = Number(r.status ?? 0) >= 200 && Number(r.status ?? 0) < 300 && id.length > 0
+      return JSON.stringify(ok
+        ? { postId: context.nodes.root.output.postId, ok: true, externalId: id, url: "https://x.com/i/web/status/" + id }
+        : { postId: context.nodes.root.output.postId, ok: false, error: ("X answered " + String(r.status ?? "nothing") + ": " + JSON.stringify(b)).slice(0, 1500) })
+    }
+    schema: tool_result
+  }
+
+  flow {
+    root -> x_send
+    x_send -> x_result
+  }
+}
+
+workflow publish_facebook {
+  label: "Publish to Facebook"
+  description: "Send one post to a Facebook page and tell the CRM how it went"
+
+  root {
+    type: code
+    label: "Post"
+    inputSchema: marketing_post_event
+    outputSchema: @json {
+      {
+        "type": "object",
+        "required": ["postId", "text", "network", "account"],
+        "properties": {
+          "postId": { "type": "string" },
+          "text": { "type": "string" },
+          "body": { "type": "string" },
+          "link": { "type": "string" },
+          "network": { "type": "string" },
+          "account": { "type": "string" }
+        }
+      }
+    }
+    code: @ts {
+      const i = context.nodes.root.input
+      return {
+        postId: String(i.post.id),
+        text: String(i.post.text),
+        body: String(i.post.body ?? i.post.text),
+        link: i.post.link ? String(i.post.link) : "",
+        network: String(i.channel.network),
+        account: String(i.channel.account)
+      }
+    }
+  }
+
+  node facebook_send {
+    type: integration
+    label: "Post to the Facebook page"
+    connection: facebook_page
+    action: facebook_create_page_post
+    params: @ts {
+      const p = context.nodes.root.output
+      return p.link
+        ? { page_id: p.account, message: p.body, link: p.link }
+        : { page_id: p.account, message: p.body }
+    }
+  }
+
+  node facebook_result {
+    type: http
+    label: "Tell the CRM"
+    method: "POST"
+    secrets: { crm_app: [CRM_APP_URL, CRM_APP_TOKEN] }
+    url: @ts { return context.secrets.crm_app.CRM_APP_URL + "/api/swirls/tools/post_result" }
+    headers: @ts {
+      return { "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN, "Content-Type": "application/json" }
+    }
+    body: @ts {
+      const r = context.nodes.facebook_send.output ?? {}
+      const b = r.body ?? {}
+      const ok = Number(r.status ?? 0) >= 200 && Number(r.status ?? 0) < 300 && !!b.id
+      return JSON.stringify(ok
+        ? { postId: context.nodes.root.output.postId, ok: true, externalId: String(b.id), url: "https://www.facebook.com/" + String(b.id) }
+        : { postId: context.nodes.root.output.postId, ok: false, error: ("Facebook answered " + String(r.status ?? "nothing") + ": " + JSON.stringify(b)).slice(0, 1500) })
+    }
+    schema: tool_result
+  }
+
+  flow {
+    root -> facebook_send
+    facebook_send -> facebook_result
+  }
+}
+
+workflow ads_meta {
+  label: "Read a Meta ad account"
+  description: "Read one Meta ad account's campaigns and the last 30 days of results, and hand them to the CRM"
+
+  root {
+    type: code
+    label: "Account"
+    inputSchema: @json {
+      {
+        "type": "object",
+        "required": ["account"],
+        "properties": {
+          "trigger": { "type": "string" },
+          "actor": { "type": ["object", "null"] },
+          "account": {
+            "type": "object",
+            "required": ["key", "network", "account"],
+            "properties": {
+              "key": { "type": "string" },
+              "network": { "type": "string" },
+              "account": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+    outputSchema: @json {
+      {
+        "type": "object",
+        "required": ["key", "network", "account"],
+        "properties": {
+          "key": { "type": "string" },
+          "network": { "type": "string" },
+          "account": { "type": "string" }
+        }
+      }
+    }
+    code: @ts {
+      const a = context.nodes.root.input.account
+      return { key: String(a.key), network: String(a.network), account: String(a.account) }
+    }
+  }
+
+  node meta_campaigns {
+    type: integration
+    label: "Meta: campaigns"
+    connection: facebook_page
+    action: meta_list_campaigns
+    params: @ts {
+      return {
+        ad_account_id: context.nodes.root.output.account,
+        fields: "id,name,effective_status,daily_budget",
+        limit: 200
+      }
+    }
+  }
+
+  node meta_insights {
+    type: integration
+    label: "Meta: results"
+    connection: facebook_page
+    action: meta_campaign_insights
+    params: @ts {
+      return {
+        ad_account_id: context.nodes.root.output.account,
+        level: "campaign",
+        date_preset: "last_30d",
+        fields: "campaign_id,spend,impressions,clicks,actions,account_currency",
+        limit: 200
+      }
+    }
+  }
+
+  node meta_save {
+    type: http
+    label: "Tell the CRM"
+    method: "POST"
+    secrets: { crm_app: [CRM_APP_URL, CRM_APP_TOKEN] }
+    url: @ts { return context.secrets.crm_app.CRM_APP_URL + "/api/swirls/tools/save_ads" }
+    headers: @ts {
+      return { "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN, "Content-Type": "application/json" }
+    }
+    body: @ts {
+      const campaigns = ((context.nodes.meta_campaigns.output ?? {}).body ?? {}).data ?? []
+      const insights = ((context.nodes.meta_insights.output ?? {}).body ?? {}).data ?? []
+      const results = {}
+      for (const row of insights) results[String(row.campaign_id)] = row
+      return JSON.stringify({
+        account: context.nodes.root.output.key,
+        periodDays: 30,
+        campaigns: campaigns.slice(0, 500).map((c) => {
+          const r = results[String(c.id)] ?? {}
+          const leads = (r.actions ?? []).filter((a) => a.action_type === "lead")
+          return {
+            externalId: String(c.id),
+            name: String(c.name ?? c.id),
+            status: String(c.effective_status ?? "unknown"),
+            currency: r.account_currency ? String(r.account_currency) : null,
+            spend: Number(r.spend ?? 0),
+            impressions: Number(r.impressions ?? 0),
+            clicks: Number(r.clicks ?? 0),
+            conversions: leads.length > 0 ? Number(leads[0].value ?? 0) : 0,
+            dailyBudget: c.daily_budget ? Number(c.daily_budget) / 100 : null
+          }
+        })
+      })
+    }
+    schema: tool_result
+  }
+
+  flow {
+    root -> meta_campaigns
+    meta_campaigns -> meta_insights
+    meta_insights -> meta_save
+  }
+}
+
+workflow ads_google {
+  label: "Read a Google Ads account"
+  description: "Read one Google Ads account's campaigns and the last 30 days of results, and hand them to the CRM"
+
+  root {
+    type: code
+    label: "Account"
+    inputSchema: @json {
+      {
+        "type": "object",
+        "required": ["account"],
+        "properties": {
+          "trigger": { "type": "string" },
+          "actor": { "type": ["object", "null"] },
+          "account": {
+            "type": "object",
+            "required": ["key", "network", "account"],
+            "properties": {
+              "key": { "type": "string" },
+              "network": { "type": "string" },
+              "account": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+    outputSchema: @json {
+      {
+        "type": "object",
+        "required": ["key", "network", "account"],
+        "properties": {
+          "key": { "type": "string" },
+          "network": { "type": "string" },
+          "account": { "type": "string" }
+        }
+      }
+    }
+    code: @ts {
+      const a = context.nodes.root.input.account
+      return { key: String(a.key), network: String(a.network), account: String(a.account) }
+    }
+  }
+
+  node google_search {
+    type: integration
+    label: "Google Ads: campaigns and results"
+    connection: google_ads
+    action: google_ads_search
+    params: @ts {
+      return {
+        customer_id: context.nodes.root.output.account,
+        query: [
+          "SELECT campaign.id, campaign.name, campaign.status, customer.currency_code,",
+          "campaign_budget.amount_micros, metrics.cost_micros, metrics.impressions,",
+          "metrics.clicks, metrics.conversions",
+          "FROM campaign WHERE segments.date DURING LAST_30_DAYS"
+        ].join(" ")
+      }
+    }
+  }
+
+  node google_save {
+    type: http
+    label: "Tell the CRM"
+    method: "POST"
+    secrets: { crm_app: [CRM_APP_URL, CRM_APP_TOKEN] }
+    url: @ts { return context.secrets.crm_app.CRM_APP_URL + "/api/swirls/tools/save_ads" }
+    headers: @ts {
+      return { "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN, "Content-Type": "application/json" }
+    }
+    body: @ts {
+      const rows = ((context.nodes.google_search.output ?? {}).body ?? {}).results ?? []
+      return JSON.stringify({
+        account: context.nodes.root.output.key,
+        periodDays: 30,
+        campaigns: rows.slice(0, 500).map((row) => {
+          const c = row.campaign ?? {}
+          const m = row.metrics ?? {}
+          const budget = (row.campaignBudget ?? {}).amountMicros
+          return {
+            externalId: String(c.id),
+            name: String(c.name ?? c.id),
+            status: String(c.status ?? "unknown"),
+            currency: (row.customer ?? {}).currencyCode ? String(row.customer.currencyCode) : null,
+            spend: Number(m.costMicros ?? 0) / 1000000,
+            impressions: Number(m.impressions ?? 0),
+            clicks: Number(m.clicks ?? 0),
+            conversions: Number(m.conversions ?? 0),
+            dailyBudget: budget ? Number(budget) / 1000000 : null
+          }
+        })
+      })
+    }
+    schema: tool_result
+  }
+
+  flow {
+    root -> google_search
+    google_search -> google_save
+  }
+}

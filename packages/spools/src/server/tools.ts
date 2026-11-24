@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import type { CrmField } from '../crm/field-types'
 import { cleanFilters } from '../crm/filters'
+import * as marketing from './marketing'
 import * as records from './records'
 import { Invalid, messageOf, NotFound } from './runtime/errors'
 import type { Json } from './runtime/json'
@@ -256,6 +257,32 @@ const tools = {
 
         return note
       }),
+  ),
+  // Marketing (src/server/marketing.ts). The workflows in swirls/marketing.swirls answer here.
+  save_site_profile: tool(marketing.siteProfileInput, marketing.saveSiteProfile),
+  post_result: tool(marketing.postResultInput, marketing.postResult),
+  save_ads: tool(marketing.adsInput, marketing.saveAds),
+  /** What a post should sound like and where it can go, for the assistant to write one. */
+  marketing_context: tool(z.object({}), () =>
+    Effect.gen(function* () {
+      const { website, profile } = yield* marketing.site()
+      const channels = (yield* marketing.current())?.channels ?? {}
+
+      return {
+        website,
+        profile,
+        channels: Object.entries(channels).map(([key, c]) => ({
+          key,
+          label: c.label,
+          network: c.network,
+        })),
+      }
+    }),
+  ),
+  // The assistant writes drafts and nothing more: a teammate schedules or publishes
+  // each one on the Marketing page. Text the model read could have written the post.
+  draft_post: tool(marketing.draftInput, (i) =>
+    marketing.draftPost(i, { id: AGENT_ACTOR.id, name: AGENT_ACTOR.name }),
   ),
 } as const
 

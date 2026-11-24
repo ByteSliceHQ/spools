@@ -1,5 +1,6 @@
 import { ConfigProvider, Effect, Layer, ManagedRuntime } from 'effect'
 
+import { MarketingSource } from '../marketing-source'
 import { Sequences } from '../sequences'
 import { SignIns } from '../sign-ins'
 import { spool } from '../spool'
@@ -34,6 +35,7 @@ export function appLayer(
     email?: Layer.Layer<Email>
     agents?: Layer.Layer<Agents>
     sequences?: Layer.Layer<Sequences>
+    marketing?: Layer.Layer<MarketingSource>
   } = {},
 ) {
   return Layer.mergeAll(
@@ -42,6 +44,7 @@ export function appLayer(
     swap.signIns ?? SignIns.layer,
     swap.email ?? spool().email?.layer ?? Email.log,
     swap.sequences ?? Sequences.layer,
+    swap.marketing ?? MarketingSource.layer,
     swap.agents ?? spool().agents?.layer ?? Agents.none,
   ).pipe(
     Layer.provideMerge(Users.layer),

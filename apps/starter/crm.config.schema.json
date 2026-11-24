@@ -1388,6 +1388,119 @@
         ]
       }
     },
+    "marketing": {
+      "type": "object",
+      "properties": {
+        "website": {
+          "type": "string",
+          "maxLength": 300,
+          "format": "uri"
+        },
+        "tags": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "gtm": {
+              "type": "string",
+              "pattern": "^GTM-[A-Z0-9]{4,12}$"
+            },
+            "ga4": {
+              "type": "string",
+              "pattern": "^G-[A-Z0-9]{4,14}$"
+            },
+            "googleAds": {
+              "type": "string",
+              "pattern": "^AW-[0-9]{6,14}$"
+            },
+            "metaPixel": {
+              "type": "string",
+              "pattern": "^[0-9]{8,20}$"
+            },
+            "linkedinInsight": {
+              "type": "string",
+              "pattern": "^[0-9]{4,12}$"
+            }
+          }
+        },
+        "channels": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "network": {
+                "type": "string",
+                "enum": [
+                  "linkedin",
+                  "facebook",
+                  "x"
+                ]
+              },
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9:_.-]+$"
+              }
+            },
+            "required": [
+              "label",
+              "network",
+              "account"
+            ]
+          }
+        },
+        "ads": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "network": {
+                "type": "string",
+                "enum": [
+                  "meta",
+                  "google",
+                  "linkedin"
+                ]
+              },
+              "account": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[A-Za-z0-9:_.-]+$"
+              }
+            },
+            "required": [
+              "label",
+              "network",
+              "account"
+            ]
+          }
+        }
+      },
+      "required": [
+        "website"
+      ]
+    },
     "assistant": {
       "type": "object",
       "properties": {

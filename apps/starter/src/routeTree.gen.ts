@@ -16,6 +16,7 @@ import { Route as CrmObjectRouteRouteImport } from './routes/_crm/$object/route'
 import { Route as CrmAssistantRouteImport } from './routes/_crm/assistant'
 import { Route as CrmFilesRouteImport } from './routes/_crm/files'
 import { Route as CrmIntegrationsRouteImport } from './routes/_crm/integrations'
+import { Route as CrmMarketingRouteImport } from './routes/_crm/marketing'
 import { Route as CrmNotesRouteImport } from './routes/_crm/notes'
 import { Route as CrmReportsRouteImport } from './routes/_crm/reports'
 import { Route as CrmTasksRouteImport } from './routes/_crm/tasks'
@@ -27,6 +28,7 @@ import { Route as CrmObjectIndexRouteImport } from './routes/_crm/$object/index'
 import { Route as CrmObjectIdRouteImport } from './routes/_crm/$object/$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth.$'
 import { Route as ApiCronMailSyncRouteImport } from './routes/api/cron/mail-sync'
+import { Route as ApiCronMarketingRouteImport } from './routes/api/cron/marketing'
 import { Route as ApiCronSequencesRouteImport } from './routes/api/cron/sequences'
 import { Route as ApiCronWarmRouteImport } from './routes/api/cron/warm'
 import { Route as ApiFilesIdRouteImport } from './routes/api/files/$id'
@@ -70,6 +72,11 @@ const CrmFilesRoute = CrmFilesRouteImport.update({
 const CrmIntegrationsRoute = CrmIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
+  getParentRoute: () => CrmRouteRoute,
+} as any)
+const CrmMarketingRoute = CrmMarketingRouteImport.update({
+  id: '/marketing',
+  path: '/marketing',
   getParentRoute: () => CrmRouteRoute,
 } as any)
 const CrmNotesRoute = CrmNotesRouteImport.update({
@@ -125,6 +132,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 const ApiCronMailSyncRoute = ApiCronMailSyncRouteImport.update({
   id: '/api/cron/mail-sync',
   path: '/api/cron/mail-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCronMarketingRoute = ApiCronMarketingRouteImport.update({
+  id: '/api/cron/marketing',
+  path: '/api/cron/marketing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCronSequencesRoute = ApiCronSequencesRouteImport.update({
@@ -188,6 +200,7 @@ export interface FileRoutesByFullPath {
   '/assistant': typeof CrmAssistantRoute
   '/files': typeof CrmFilesRoute
   '/integrations': typeof CrmIntegrationsRoute
+  '/marketing': typeof CrmMarketingRoute
   '/notes': typeof CrmNotesRoute
   '/reports': typeof CrmReportsRoute
   '/tasks': typeof CrmTasksRoute
@@ -198,6 +211,7 @@ export interface FileRoutesByFullPath {
   '/$object/$id': typeof CrmObjectIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/mail-sync': typeof ApiCronMailSyncRoute
+  '/api/cron/marketing': typeof ApiCronMarketingRoute
   '/api/cron/sequences': typeof ApiCronSequencesRoute
   '/api/cron/warm': typeof ApiCronWarmRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -215,6 +229,7 @@ export interface FileRoutesByTo {
   '/assistant': typeof CrmAssistantRoute
   '/files': typeof CrmFilesRoute
   '/integrations': typeof CrmIntegrationsRoute
+  '/marketing': typeof CrmMarketingRoute
   '/notes': typeof CrmNotesRoute
   '/reports': typeof CrmReportsRoute
   '/tasks': typeof CrmTasksRoute
@@ -226,6 +241,7 @@ export interface FileRoutesByTo {
   '/$object/$id': typeof CrmObjectIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/mail-sync': typeof ApiCronMailSyncRoute
+  '/api/cron/marketing': typeof ApiCronMarketingRoute
   '/api/cron/sequences': typeof ApiCronSequencesRoute
   '/api/cron/warm': typeof ApiCronWarmRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -246,6 +262,7 @@ export interface FileRoutesById {
   '/_crm/assistant': typeof CrmAssistantRoute
   '/_crm/files': typeof CrmFilesRoute
   '/_crm/integrations': typeof CrmIntegrationsRoute
+  '/_crm/marketing': typeof CrmMarketingRoute
   '/_crm/notes': typeof CrmNotesRoute
   '/_crm/reports': typeof CrmReportsRoute
   '/_crm/tasks': typeof CrmTasksRoute
@@ -257,6 +274,7 @@ export interface FileRoutesById {
   '/_crm/$object/$id': typeof CrmObjectIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/cron/mail-sync': typeof ApiCronMailSyncRoute
+  '/api/cron/marketing': typeof ApiCronMarketingRoute
   '/api/cron/sequences': typeof ApiCronSequencesRoute
   '/api/cron/warm': typeof ApiCronWarmRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -278,6 +296,7 @@ export interface FileRouteTypes {
     | '/assistant'
     | '/files'
     | '/integrations'
+    | '/marketing'
     | '/notes'
     | '/reports'
     | '/tasks'
@@ -288,6 +307,7 @@ export interface FileRouteTypes {
     | '/$object/$id'
     | '/api/auth/$'
     | '/api/cron/mail-sync'
+    | '/api/cron/marketing'
     | '/api/cron/sequences'
     | '/api/cron/warm'
     | '/api/files/$id'
@@ -305,6 +325,7 @@ export interface FileRouteTypes {
     | '/assistant'
     | '/files'
     | '/integrations'
+    | '/marketing'
     | '/notes'
     | '/reports'
     | '/tasks'
@@ -316,6 +337,7 @@ export interface FileRouteTypes {
     | '/$object/$id'
     | '/api/auth/$'
     | '/api/cron/mail-sync'
+    | '/api/cron/marketing'
     | '/api/cron/sequences'
     | '/api/cron/warm'
     | '/api/files/$id'
@@ -335,6 +357,7 @@ export interface FileRouteTypes {
     | '/_crm/assistant'
     | '/_crm/files'
     | '/_crm/integrations'
+    | '/_crm/marketing'
     | '/_crm/notes'
     | '/_crm/reports'
     | '/_crm/tasks'
@@ -346,6 +369,7 @@ export interface FileRouteTypes {
     | '/_crm/$object/$id'
     | '/api/auth/$'
     | '/api/cron/mail-sync'
+    | '/api/cron/marketing'
     | '/api/cron/sequences'
     | '/api/cron/warm'
     | '/api/files/$id'
@@ -367,6 +391,7 @@ export interface RootRouteChildren {
   SignInSplatRoute: typeof SignInSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCronMailSyncRoute: typeof ApiCronMailSyncRoute
+  ApiCronMarketingRoute: typeof ApiCronMarketingRoute
   ApiCronSequencesRoute: typeof ApiCronSequencesRoute
   ApiCronWarmRoute: typeof ApiCronWarmRoute
   ApiFilesIdRoute: typeof ApiFilesIdRoute
@@ -427,6 +452,13 @@ declare module '@tanstack/react-router' {
       path: '/integrations'
       fullPath: '/integrations'
       preLoaderRoute: typeof CrmIntegrationsRouteImport
+      parentRoute: typeof CrmRouteRoute
+    }
+    '/_crm/marketing': {
+      id: '/_crm/marketing'
+      path: '/marketing'
+      fullPath: '/marketing'
+      preLoaderRoute: typeof CrmMarketingRouteImport
       parentRoute: typeof CrmRouteRoute
     }
     '/_crm/notes': {
@@ -504,6 +536,13 @@ declare module '@tanstack/react-router' {
       path: '/api/cron/mail-sync'
       fullPath: '/api/cron/mail-sync'
       preLoaderRoute: typeof ApiCronMailSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/marketing': {
+      id: '/api/cron/marketing'
+      path: '/api/cron/marketing'
+      fullPath: '/api/cron/marketing'
+      preLoaderRoute: typeof ApiCronMarketingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/cron/sequences': {
@@ -598,6 +637,7 @@ interface CrmRouteRouteChildren {
   CrmAssistantRoute: typeof CrmAssistantRoute
   CrmFilesRoute: typeof CrmFilesRoute
   CrmIntegrationsRoute: typeof CrmIntegrationsRoute
+  CrmMarketingRoute: typeof CrmMarketingRoute
   CrmNotesRoute: typeof CrmNotesRoute
   CrmReportsRoute: typeof CrmReportsRoute
   CrmTasksRoute: typeof CrmTasksRoute
@@ -610,6 +650,7 @@ const CrmRouteRouteChildren: CrmRouteRouteChildren = {
   CrmAssistantRoute: CrmAssistantRoute,
   CrmFilesRoute: CrmFilesRoute,
   CrmIntegrationsRoute: CrmIntegrationsRoute,
+  CrmMarketingRoute: CrmMarketingRoute,
   CrmNotesRoute: CrmNotesRoute,
   CrmReportsRoute: CrmReportsRoute,
   CrmTasksRoute: CrmTasksRoute,
@@ -641,6 +682,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInSplatRoute: SignInSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCronMailSyncRoute: ApiCronMailSyncRoute,
+  ApiCronMarketingRoute: ApiCronMarketingRoute,
   ApiCronSequencesRoute: ApiCronSequencesRoute,
   ApiCronWarmRoute: ApiCronWarmRoute,
   ApiFilesIdRoute: ApiFilesIdRoute,
