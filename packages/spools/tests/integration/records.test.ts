@@ -334,12 +334,15 @@ exampleTest(
     // Every word typed must be in the title, wherever it falls: "051" is in 0051 as well as 0510 to 0519.
     const few = await go(searchTitles('companies', `Bulk ${tag} 051`))
 
-    expect(few.options.map((o) => o.title)).toEqual([
-      ...names.slice(51, 52),
-      ...names.slice(510, 520),
-    ])
+    // The tag is the time in digits, so now and then "051" is in it and every name matches.
+    const with051 = names.filter((name) => name.slice('Bulk '.length).includes('051'))
 
-    expect(few.more).toBe(false)
+    expect(
+      [names.slice(51, 52), names.slice(510, 520)].flat().every((n) => with051.includes(n)),
+    ).toBe(true)
+
+    expect(few.options.map((o) => o.title)).toEqual(with051.slice(0, TITLE_PAGE))
+    expect(few.more).toBe(with051.length > TITLE_PAGE)
   },
   60_000,
 )
