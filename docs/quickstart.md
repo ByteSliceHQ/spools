@@ -3,10 +3,6 @@
 Make a CRM, add a field and a board, and create a task when a deal is won. You need
 [Bun](https://bun.sh) 1.4 or newer and no accounts.
 
-> `@swirls/spools` is not on npm yet. Until it is, clone
-> [the repository](https://github.com/ByteSliceHQ/spools) and work in the Spool it
-> contains. Everything from [Look around](#look-around) on is the same.
-
 ## Make a Spool
 
 ```bash

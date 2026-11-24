@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { AskPanel } from '../components/ask-panel'
 import { CodeBlock } from '../components/code-block'
+import { CopyPrompt } from '../components/copy-prompt'
 import { LandingCrm } from '../components/landing-crm'
 import { SpoolBuilder } from '../components/spool-builder'
 import { Illustration } from '../illustrations/illustration'
@@ -117,16 +118,10 @@ function Landing() {
             Spools gives your coding agents the sign-in, data layer, security, search, email and
             tests, so they only write what is specific to your business.
           </p>
-          <CodeBlock lang="bash" className="mb-0!">
-            {'bun create @swirls/spools my-crm'}
-          </CodeBlock>
-          <div className="my-7 flex flex-wrap items-center gap-5">
-            <Link
-              className="bg-foreground text-background cursor-pointer rounded-[5px] px-4 py-[0.65rem] text-[0.9rem] font-medium no-underline"
-              to="/docs/$slug"
-              params={{ slug: 'quickstart' }}
-            >
-              Get started →
+          <CopyPrompt className="mt-7" />
+          <div className="my-7 flex flex-wrap items-center gap-5 text-[0.9rem]">
+            <Link to="/docs/$slug" params={{ slug: 'quickstart' }}>
+              Start by hand →
             </Link>
             <Link to="/docs/$slug" params={{ slug: 'when-to-use' }}>
               When to use Spools
@@ -263,16 +258,16 @@ function Landing() {
           Make your first Spool
         </h2>
         <p className="mb-4 max-w-[44rem] leading-[1.75]">
-          It runs on your machine with demo data and no accounts. Open it in your agent and ask for
-          your first change.
+          Give your agent the prompt, or run one command yourself. It runs on your machine with demo
+          data and no accounts.
         </p>
+        <CopyPrompt className="mt-7" />
+        <CodeBlock lang="bash" className="mb-0! max-w-[34rem]">
+          {'bun create @swirls/spools my-crm'}
+        </CodeBlock>
         <div className="my-7 flex flex-wrap items-center gap-5">
-          <Link
-            className="bg-foreground text-background cursor-pointer rounded-[5px] px-4 py-[0.65rem] text-[0.9rem] font-medium no-underline"
-            to="/docs/$slug"
-            params={{ slug: 'quickstart' }}
-          >
-            Get started →
+          <Link to="/docs/$slug" params={{ slug: 'quickstart' }} className="text-[0.9rem]">
+            Quickstart →
           </Link>
           <Link to="/docs/$slug" params={{ slug: 'deployment' }} className="text-[0.9rem]">
             Deployment guide

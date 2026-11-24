@@ -7,6 +7,10 @@
     {
       "pattern": "spools.codes",
       "custom_domain": true
+    },
+    {
+      "pattern": "md.spools.codes",
+      "custom_domain": true
     }
   ]
 }
