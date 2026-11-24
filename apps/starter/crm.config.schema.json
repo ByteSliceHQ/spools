@@ -1439,17 +1439,20 @@
               },
               "network": {
                 "type": "string",
-                "enum": [
-                  "linkedin",
-                  "facebook",
-                  "x"
-                ]
+                "pattern": "^[a-z][a-zA-Z0-9]*$"
               },
               "account": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200,
                 "pattern": "^[A-Za-z0-9:_.-]+$"
+              },
+              "via": {
+                "type": "string",
+                "enum": [
+                  "direct",
+                  "swirls"
+                ]
               }
             },
             "required": [
@@ -1476,17 +1479,20 @@
               },
               "network": {
                 "type": "string",
-                "enum": [
-                  "meta",
-                  "google",
-                  "linkedin"
-                ]
+                "pattern": "^[a-z][a-zA-Z0-9]*$"
               },
               "account": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200,
                 "pattern": "^[A-Za-z0-9:_.-]+$"
+              },
+              "via": {
+                "type": "string",
+                "enum": [
+                  "direct",
+                  "swirls"
+                ]
               }
             },
             "required": [
