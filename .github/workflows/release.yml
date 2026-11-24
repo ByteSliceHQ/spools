@@ -36,12 +36,14 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
       - name: Open version PR or publish
-        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        # v2 of the action is the one that works with Changesets 3: it reads the tags to push
+        # and the releases to open from the file the CLI writes to CHANGESETS_OUTPUT.
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: bun run version-packages
-          publish: bun run release
-          title: 'chore(release): publish @swirls/spools'
-          commit: 'chore(release): publish @swirls/spools'
-          createGithubReleases: true
+          version-script: bun run version-packages
+          publish-script: bun run release
+          pr-title: 'chore(release): publish @swirls/spools'
+          commit-message: 'chore(release): publish @swirls/spools'
+          create-github-releases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

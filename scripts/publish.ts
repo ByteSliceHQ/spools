@@ -8,10 +8,10 @@ import { join, resolve } from 'node:path'
 async function run(command: readonly string[], cwd: string): Promise<void> {
   const child = Bun.spawn([...command], {
     cwd,
+    // The environment carries CHANGESETS_OUTPUT, the file the Changesets CLI lists its new
+    // tags in. changesets/action reads it to push the tags and open the GitHub releases.
     env: process.env,
     stderr: 'inherit',
-    // Forward stdout so changesets/action can parse `New tag:` lines and
-    // push git tags / create GitHub releases.
     stdout: 'inherit',
   })
 
@@ -36,9 +36,9 @@ const published = await Promise.all(['packages/spools', 'packages/create-spools'
 
 if (published.every(Boolean)) {
   // `changeset publish` skips already-published versions and does not create
-  // tags. `changeset tag` still emits `New tag:` for missing tags so the
-  // action can push them and open the GitHub release.
-  await run(['bun', 'x', 'changeset', 'tag'], root)
+  // tags. `changeset git-tag` still reports the missing tags, so the action can
+  // push them and open the GitHub release.
+  await run(['bun', 'x', 'changeset', 'git-tag'], root)
   process.exit(0)
 }
 
