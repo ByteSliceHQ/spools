@@ -5,6 +5,17 @@ page covers what the agent edits and what checks its work.
 
 ## Start
 
+Paste this into your agent. It asks about your business, makes the Spool and builds your CRM in it:
+
+```text
+Read https://md.spools.codes/prompt.md and follow it to build my CRM with Spools
+```
+
+[The page it reads](https://md.spools.codes/prompt.md) is plain text, so you can see what your agent
+is told before you paste.
+
+Or make the Spool yourself:
+
 ```bash
 bun create @swirls/spools my-crm
 cd my-crm
@@ -12,7 +23,7 @@ bun run db:seed
 bun run dev
 ```
 
-Open the folder in your agent and ask:
+Then open the folder in your agent and ask:
 
 > Build our CRM. We sell commercial insurance, and we track companies, the people at them, policies
 > with a renewal date, and claims. Policies move from quoted to bound to renewed or lost. Email the

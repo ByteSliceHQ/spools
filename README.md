@@ -36,10 +36,13 @@ bun run dev
 
 Open http://localhost:3000. You need no accounts. Until you choose real services, records go in a Postgres inside the server and you are signed straight in. A production build refuses to start that way.
 
-> [!NOTE]
-> The packages are not on npm yet. Until they are, clone this repository and run `bun install`, then `bun run db:seed` and `bun run dev` in `apps/starter`.
+Or let your coding agent do all of it. Paste this into Claude Code, Cursor or Codex:
 
-Open the folder in Claude Code, Cursor or Codex and say what you need:
+```text
+Read https://md.spools.codes/prompt.md and follow it to build my CRM with Spools
+```
+
+Once you have a Spool, open the folder in your agent and say what you need:
 
 > Build our CRM. We sell commercial insurance, and we track companies, the people at them, policies with a renewal date, and claims. Policies move from quoted to bound to renewed or lost.
 
