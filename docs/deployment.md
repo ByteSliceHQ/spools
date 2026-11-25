@@ -108,6 +108,6 @@ Deploy `swirls/` and set its secrets (see [Swirls](swirls.md)), with
 - [ ] `access` in `crm.config.json` lists your domain or emails
 - [ ] Sign-ups restricted at your auth provider
 - [ ] `APP_SECRET` and `SWIRLS_APP_TOKEN` are 32+ random characters, unique per environment
-- [ ] On a serverless host: `CRON_SECRET` set and cron jobs for `/api/cron/sequences` and `/api/cron/mail-sync`
+- [ ] On a serverless host: `CRON_SECRET` set and cron jobs for `/api/cron/sequences`, `/api/cron/mail-sync` and, if you schedule posts, `/api/cron/marketing`
 - [ ] Email domain verified and the delivery webhook (`/api/webhooks/email`) configured
 - [ ] Supabase backups enabled

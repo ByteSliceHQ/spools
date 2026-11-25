@@ -178,20 +178,23 @@ activities and tasks so that lists can filter and sort by them:
 `last_activity_at`, `last_contacted_at` and `next_task_due` (`refreshStats` in
 `server/records.ts`). These system tables are always present (`server/store/tables.ts`), and an adapter may add its own:
 
-| Table                | Holds                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `activities`         | The timeline for any record. Full-text indexed (`activities_search`) for search                                           |
-| `tasks`              | To-dos with a due date and assignee, optionally linked to a record                                                        |
-| `notes`              | Titled notes, optionally linked to a record. Full-text indexed (`notes_search`) for search                                |
-| `saved_views`        | Views created in the app, and in-app changes to config views                                                              |
-| `favorites`          | Each user's starred records                                                                                               |
-| `email_suppressions` | Addresses that bounced, complained or unsubscribed                                                                        |
-| `mailbox_sync`       | How far the mail and calendar sync has read each of a teammate's mailboxes. No credentials                                |
-| `record_folders`     | Which folder in the file store is a record's own. The folders and files themselves are in the store                       |
-| `file_uploads`       | A file on its way into the store, until the store confirms it                                                             |
-| `integrations`       | Accounts teammates connected on the Integrations page, with their OAuth tokens sealed by the vault before they are stored |
-| `sequence_runs`      | Each record's place in an email [sequence](campaigns.md): which email is next and when it is due                          |
-| `guide_progress`     | Which [guides](guides.md) each person has finished or dismissed, so each is offered once                                  |
+| Table                | Holds                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `activities`         | The timeline for any record. Full-text indexed (`activities_search`) for search                                            |
+| `tasks`              | To-dos with a due date and assignee, optionally linked to a record                                                         |
+| `notes`              | Titled notes, optionally linked to a record. Full-text indexed (`notes_search`) for search                                 |
+| `saved_views`        | Views created in the app, and in-app changes to config views                                                               |
+| `favorites`          | Each user's starred records                                                                                                |
+| `email_suppressions` | Addresses that bounced, complained or unsubscribed                                                                         |
+| `mailbox_sync`       | How far the mail and calendar sync has read each of a teammate's mailboxes. No credentials                                 |
+| `record_folders`     | Which folder in the file store is a record's own. The folders and files themselves are in the store                        |
+| `file_uploads`       | A file on its way into the store, until the store confirms it                                                              |
+| `integrations`       | Accounts teammates connected on the Integrations page, with their OAuth tokens sealed by the vault before they are stored  |
+| `sequence_runs`      | Each record's place in an email [sequence](campaigns.md): which email is next and when it is due                           |
+| `guide_progress`     | Which [guides](guides.md) each person has finished or dismissed, so each is offered once                                   |
+| `marketing_sites`    | What the last check of the business's website found, and what the assistant learned from it. See [Marketing](marketing.md) |
+| `marketing_posts`    | Social posts: drafts, the ones waiting for their time, and what went out                                                   |
+| `marketing_ads`      | Each ad campaign's results as last read from its network                                                                   |
 
 All tables have row-level security enabled with no policies. The app connects as a
 privileged role, which bypasses RLS. Supabase's Data API roles get nothing.

@@ -15,6 +15,7 @@ Your agents write a config, choose the services and add your own code. Spools ha
 - **Access checked on every request.** Pages and endpoints check the session and the access list. Lint refuses one your agent writes without the check.
 - **Typed Postgres tables.** Each object is a table in your database, with migrations and row-level security.
 - **Each email sent once.** Sequences keep their place through a restart, and two servers never send the same email.
+- **Each post sent once.** Social posts go out when a teammate approves them, to LinkedIn, X, Facebook or a network you add, and never twice.
 - **Secrets kept on the server.** Tokens are sealed before they are stored, and the build fails if server code built on Effect reaches the browser.
 - **Time limits on outside calls.** Failures are typed with [Effect](https://effect.website), and calls are retried where that is safe.
 - **More than 500 tests.** The server tests run on all three database adapters.
@@ -112,6 +113,7 @@ Spools is early software (0.x). It works end to end, and minor versions may incl
 | Interface                                                                      | Browser tests cover access, records, the board, search, import, tasks and the assistant         |
 | Swirls workflows, assistant, tool API                                          | `swirls doctor` clean and the tool API tested; not yet run against a live project               |
 | Better Auth, Resend, FlashDrive, S3, the AES vault                             | Tested against stand-ins; not yet run against live accounts                                     |
+| Marketing: the website check, posts, ad results, and each built-in network     | Tested against stand-ins; not yet run against live LinkedIn, X, Meta or Google Ads accounts     |
 | Clerk, CipherStash, the Swirls adapter                                         | Only the code around the service is tested; not yet run against live accounts                   |
 | Field encryption in the database                                               | Not yet                                                                                         |
 

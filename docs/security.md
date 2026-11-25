@@ -8,14 +8,14 @@ what to know before putting customer data in it. To report a vulnerability, see 
 
 These are the boundaries the code enforces:
 
-| Who                                       | Can do                                                                                            | Enforced by                                                                                                                                                |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Anyone                                    | See the sign-in page, unsubscribe with a valid signed link                                        | The only public routes; the unsubscribe token is signed with `APP_SECRET`                                                                                  |
-| Signed-in person **not** on the allowlist | Nothing in the CRM                                                                                | The boundary checks a _verified_ email against `access` in `crm.config.json`. An auth adapter hands over an address only when its provider has verified it |
-| CRM user                                  | Read and write every record, run actions, use the assistant                                       | Every CRM server function and API route goes through the boundary (`crmHandler`, `apiRoute`); lint refuses one that doesn't                                |
-| Swirls (workflows, assistant tools)       | Call `/api/swirls/tools/*`                                                                        | Bearer `SWIRLS_APP_TOKEN` (32+ chars, constant-time compare). Fails closed when unset                                                                      |
-| A cron job                                | Run one pass of the mailbox sync or the sequences, or keep the server warm, through `/api/cron/*` | Bearer `CRON_SECRET` (16+ chars, constant-time compare). Fails closed when unset                                                                           |
-| The email provider                        | Report bounces and complaints to `/api/webhooks/email`                                            | The email adapter checks the signature (Resend: Svix, with `RESEND_WEBHOOK_SECRET`). Refused when no secret is set                                         |
+| Who                                       | Can do                                                                                                                 | Enforced by                                                                                                                                                |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anyone                                    | See the sign-in page, unsubscribe with a valid signed link                                                             | The only public routes; the unsubscribe token is signed with `APP_SECRET`                                                                                  |
+| Signed-in person **not** on the allowlist | Nothing in the CRM                                                                                                     | The boundary checks a _verified_ email against `access` in `crm.config.json`. An auth adapter hands over an address only when its provider has verified it |
+| CRM user                                  | Read and write every record, run actions, use the assistant                                                            | Every CRM server function and API route goes through the boundary (`crmHandler`, `apiRoute`); lint refuses one that doesn't                                |
+| Swirls (workflows, assistant tools)       | Call `/api/swirls/tools/*`                                                                                             | Bearer `SWIRLS_APP_TOKEN` (32+ chars, constant-time compare). Fails closed when unset                                                                      |
+| A cron job                                | Run one pass of the mailbox sync, the sequences or the scheduled posts, or keep the server warm, through `/api/cron/*` | Bearer `CRON_SECRET` (16+ chars, constant-time compare). Fails closed when unset                                                                           |
+| The email provider                        | Report bounces and complaints to `/api/webhooks/email`                                                                 | The email adapter checks the signature (Resend: Svix, with `RESEND_WEBHOOK_SECRET`). Refused when no secret is set                                         |
 
 There are no per-user roles inside the CRM: every allowed user has the same access.
 Use separate deployments if you need hard separation.
@@ -61,6 +61,15 @@ Use separate deployments if you need hard separation.
   teammate and is tied to their browser by a cookie. A teammate removed from
   `access` keeps their stored tokens until they are deleted, but their mailboxes
   stop being read. See [docs/integrations.md](integrations.md).
+- **Marketing.** An account connected for marketing (LinkedIn, X, Google Ads) is the
+  one kind of connection that is shared: any CRM user can publish through it from the
+  Marketing page, whoever connected it. Its tokens are sealed like any other, and no
+  browser is sent one. `META_ACCESS_TOKEN` is a token for the business's page and ad
+  account: treat it as you treat the database's password. Only a CRM user can schedule or
+  publish a post. The tool API can save a draft and nothing more, so text the assistant
+  read can't put a post out. The website check fetches the address in `crm.config.json`
+  and no other, and the install code it shows is built only from ids that match their
+  vendor's form. See [docs/marketing.md](marketing.md).
 - **Files.** The file store's keys stay on the server; a browser is only ever given a
   transfer URL for the one file it is sending, or a five-minute link to the one file it
   is opening, after the CRM session is checked. Anyone who may use the CRM can open,
