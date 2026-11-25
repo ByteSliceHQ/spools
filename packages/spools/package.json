@@ -70,7 +70,7 @@
     "test:integration": "bun test tests/integration"
   },
   "dependencies": {
-    "@ai-sdk/react": "^3",
+    "@ai-sdk/react": "^4",
     "@swirls/sdk": "^2.2.0",
     "ai": "^6",
     "lucide-react": "^1.72.0",
