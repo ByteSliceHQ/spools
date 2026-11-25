@@ -15,7 +15,7 @@ import {
 } from '../../src/crm/files'
 import { filesConfigured } from '../../src/server/extension-api'
 import { FileStore } from '../../src/server/runtime/files'
-import { installLiveServices, installStandIns, run } from '../support/run'
+import { installLiveServices, installStandIns, run } from '../../src/testing/run'
 
 const config = (files: unknown) => ({
   version: 1,

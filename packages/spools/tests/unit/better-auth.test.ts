@@ -33,8 +33,8 @@ import { defineSpool, type Spool, spool } from '../../src/server/spool'
 import { allTables, schemaSql } from '../../src/server/store/schema-sql'
 import { makeStore, Store } from '../../src/server/store/store'
 import { isAllowed, Users } from '../../src/server/users'
+import { db, failure, installStandIns, run, testRuntime } from '../../src/testing/run'
 import example from '../fixtures/example.config.json' with { type: 'json' }
-import { db, failure, installStandIns, run, testRuntime } from '../support/run'
 
 // Sign-in kept in the Spool's own database, on Postgres in this process. Google
 // and Microsoft are stand-ins for `fetch`; nothing here reaches the network.

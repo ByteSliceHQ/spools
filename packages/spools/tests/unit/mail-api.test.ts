@@ -6,7 +6,7 @@ import { apiGet, apiPost } from '../../src/server/mailbox'
 import { appLayer } from '../../src/server/runtime/app'
 import { Auth } from '../../src/server/runtime/auth'
 import type { Fetch } from '../../src/server/runtime/http'
-import { testRuntime } from '../support/run'
+import { testRuntime } from '../../src/testing/run'
 
 // Calls to Gmail, Google Calendar and Microsoft Graph: when they are tried
 // again, and when they never are. A stand-in answers each request in turn.

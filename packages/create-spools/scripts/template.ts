@@ -27,6 +27,7 @@ const FILES = [
   'supabase/config.toml',
   'swirls',
   'tests',
+  'vercel.json',
   'vite.config.ts',
 ]
 

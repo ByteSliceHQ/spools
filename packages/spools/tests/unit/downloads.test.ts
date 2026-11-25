@@ -6,7 +6,7 @@ import { fileHandlers } from '../../src/api/file'
 import { fileResponse, servedAs } from '../../src/server/downloads'
 import { FilesError } from '../../src/server/runtime/errors'
 import { FileStore, type OpenedFile } from '../../src/server/runtime/files'
-import { installLiveServices, installStandIns } from '../support/run'
+import { installLiveServices, installStandIns } from '../../src/testing/run'
 
 // Files people uploaded, handed to a browser on the CRM's own origin: nothing
 // anyone uploads may run there with the session of whoever opens it.

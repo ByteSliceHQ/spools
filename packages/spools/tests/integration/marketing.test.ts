@@ -18,7 +18,14 @@ import {
   MarketingSite,
 } from '../../src/server/store/tables'
 import { runTool } from '../../src/server/tools'
-import { bodyText, db, failure, installLiveServices, installStandIns, run } from '../support/run'
+import {
+  bodyText,
+  db,
+  failure,
+  installLiveServices,
+  installStandIns,
+  run,
+} from '../../src/testing/run'
 
 // Marketing against a real database. Channels are reached both ways: through
 // a stand-in agent engine (what it was asked to start is recorded; its answers

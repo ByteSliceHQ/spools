@@ -12,7 +12,7 @@ import {
 } from '../../src/server/email'
 import { type AppServices, appLayer } from '../../src/server/runtime/app'
 import { Auth } from '../../src/server/runtime/auth'
-import { testRuntime } from '../support/run'
+import { testRuntime } from '../../src/testing/run'
 
 const rt = testRuntime(appLayer({ auth: Auth.layerTest([]) }))
 const run = <A, E>(program: Effect.Effect<A, E, AppServices>) => rt.runPromise(program)

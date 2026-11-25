@@ -15,7 +15,7 @@ import {
 import { withPolicy } from '../../src/server/runtime/policies'
 import { crmConfig } from '../../src/server/spool'
 import { Users } from '../../src/server/users'
-import { runWithEnv, testRuntime } from '../support/run'
+import { runWithEnv, testRuntime } from '../../src/testing/run'
 
 // The boundary between TanStack Start and Effect programs, run on a runtime
 // built from fake layers: no auth provider, no database.

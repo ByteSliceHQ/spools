@@ -13,7 +13,7 @@ import {
 import { devAuth } from '../../src/adapters/auth/dev/server'
 import { environmentProblems } from '../../src/server/env'
 import { Auth } from '../../src/server/runtime/auth'
-import { testRuntime } from '../support/run'
+import { testRuntime } from '../../src/testing/run'
 
 const clerkUser = (change: Partial<ClerkUser> = {}): ClerkUser => ({
   id: 'user_1',

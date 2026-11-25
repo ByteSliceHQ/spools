@@ -67,7 +67,7 @@ no wait is always sent at once, because someone has just asked for it.
 - **What sends.** `tick` in `packages/spools/src/server/campaigns.ts` sends every email that is
   due. A server that stays up calls it once a minute. A serverless host has no
   process to keep a timer in, so with
-  `SERVERLESS=1` a cron job calls `/api/cron/sequences` with `CRON_SECRET` as a
+  `SERVERLESS=1`, or on Vercel, a cron job calls `/api/cron/sequences` with `CRON_SECRET` as a
   bearer token. An email goes out within one interval of being due. An email with
   no wait is sent in the request that enrolls the record.
 - **Any number of instances.** Two instances, or a cron job overlapping the

@@ -15,7 +15,7 @@ import { Email } from '../../src/server/runtime/email'
 import { type SequenceSource, Sequences } from '../../src/server/sequences'
 import { crmConfig } from '../../src/server/spool'
 import { SequenceRun } from '../../src/server/store/tables'
-import { db, run as go, installLiveServices, installStandIns } from '../support/run'
+import { db, run as go, installLiveServices, installStandIns } from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Email sequences against the local Supabase database (`bun run db:start`), with

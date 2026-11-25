@@ -23,8 +23,8 @@ import * as records from '../../src/server/records'
 import { crmConfig } from '../../src/server/spool'
 import { FileUpload, RecordFolder } from '../../src/server/store/tables'
 import type { CrmUser } from '../../src/server/users'
-import { createFakeStore } from '../support/fake-file-store'
-import { db, installLiveServices, installStandIns, run } from '../support/run'
+import { createFakeStore } from '../../src/testing/fake-file-store'
+import { db, installLiveServices, installStandIns, run } from '../../src/testing/run'
 import { isExampleApp, exampleTest as test } from './example-app'
 
 // The file browser against a real database, with the file store's HTTP API

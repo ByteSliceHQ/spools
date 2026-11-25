@@ -13,7 +13,7 @@ import {
   TITLE_PAGE,
   updateRecord,
 } from '../../src/server/records'
-import { run as go } from '../support/run'
+import { run as go } from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Integration test against the local Supabase database (`bun run db:start`).
@@ -197,7 +197,7 @@ exampleTest(
 
 exampleTest('the keep-warm ping reaches the database', async () => {
   const { Store } = await import('../../src/server/store/store')
-  const { run } = await import('../support/run')
+  const { run } = await import('../../src/testing/run')
   expect(await run(Store.use((store) => store.ping))).toBe(true)
 })
 

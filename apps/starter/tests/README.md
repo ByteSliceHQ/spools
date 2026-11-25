@@ -12,3 +12,16 @@ import { pglite } from '@swirls/spools/database/pglite'
 
 defineSpool({ crm, extensions, auth: devAuth(), database: pglite({ dataDir: 'memory' }) })
 ```
+
+`@swirls/spools/testing` then runs server code on that Spool, and stands in for the services
+outside it:
+
+```ts
+import { createFakeStore, installStandIns, run } from '@swirls/spools/testing'
+
+const rows = await run(program) // an Effect program, on the Spool above
+await installStandIns({ fetch: createFakeStore().handle }) // a file store held in memory
+```
+
+The guides the CRM offers are in `@swirls/spools/guides` (`resolveGuides`, `checkGuides`), for
+a test that checks the ones in your config.

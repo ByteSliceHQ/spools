@@ -512,11 +512,11 @@ export const activeRuns = Effect.fn('campaigns.activeRuns')(function* () {
 
 /**
  * Whether anything will call `tick` on this server. A server that stays up
- * ticks itself. A serverless host (SERVERLESS=1) needs a cron job calling /api/cron/sequences,
+ * ticks itself. A serverless host (SERVERLESS=1, or Vercel) needs a cron job calling /api/cron/sequences,
  * which needs CRON_SECRET; without it only emails with no wait are ever sent.
  */
 export function sequencesTick(env: Record<string, string | undefined>): boolean {
-  return !config.isOn(env['SERVERLESS']) || (env['CRON_SECRET']?.length ?? 0) >= 16
+  return !config.isServerless(env) || (env['CRON_SECRET']?.length ?? 0) >= 16
 }
 
 /** The built-in schedule: a tick now, for what fell due while the server was down, then once a minute. */
@@ -531,7 +531,7 @@ export const sequenceSchedule = tick({ budgetMs: 50_000 }).pipe(
  * keep a timer in: a cron job calls /api/cron/sequences instead (docs/campaigns.md).
  */
 export const startSequences = Effect.fn('campaigns.startSequences')(function* () {
-  if (yield* config.flag('SERVERLESS')) {
+  if (yield* config.serverless) {
     return
   }
 

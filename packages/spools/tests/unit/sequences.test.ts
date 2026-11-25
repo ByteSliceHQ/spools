@@ -134,6 +134,13 @@ describe('what calls the tick', () => {
     expect(sequencesTick({ SERVERLESS: 'false' })).toBe(true)
     expect(sequencesTick({ SERVERLESS: '' })).toBe(true)
   })
+
+  test('Vercel is serverless without being told', () => {
+    expect(sequencesTick({ VERCEL: '1' })).toBe(false)
+    expect(sequencesTick({ VERCEL: '1', SERVERLESS: '0' })).toBe(false)
+    expect(sequencesTick({ VERCEL: '1', CRON_SECRET: 'x'.repeat(32) })).toBe(true)
+    expect(sequencesTick({ VERCEL: '' })).toBe(true)
+  })
 })
 
 describe("a record's values in an email", () => {

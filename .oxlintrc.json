@@ -11,6 +11,7 @@
     "**/.build/**",
     "**/.output/**",
     "**/.prerender/**",
+    "**/.vercel/**",
     "**/.wrangler/**",
     "**/node_modules/**",
     "**/.flox/**",
@@ -125,7 +126,12 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/*.test.tsx", "packages/*/tests/**"],
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "packages/*/tests/**",
+        "packages/spools/src/testing/**"
+      ],
       "rules": {
         "anti-slop/no-conditional-empty-object-spread": "off",
         "anti-slop/no-known-value-widening": "off",

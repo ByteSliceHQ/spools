@@ -38,7 +38,7 @@ TypeScript.
 
 |          |                                                                           |
 | -------- | ------------------------------------------------------------------------- |
-| Runtime  | [Bun](https://bun.sh) 1.4 or newer, in a container or on a VM             |
+| Runtime  | [Bun](https://bun.sh) 1.4 or newer, in a container, on a VM, or on Vercel |
 | Database | Postgres 15 or newer (tested on 17)                                       |
 | Sign-in  | Clerk, or Better Auth in your own database                                |
 | Optional | A mail provider, a place for files, a key for the vault, a Swirls project |

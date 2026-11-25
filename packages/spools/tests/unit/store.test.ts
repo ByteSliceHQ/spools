@@ -21,8 +21,8 @@ import { allTables, schemaSql } from '../../src/server/store/schema-sql'
 import { placeholders, selectSql, updateSql } from '../../src/server/store/sql'
 import { Store, type StoreShape } from '../../src/server/store/store'
 import { GuideProgress, Note, SequenceRun, Task } from '../../src/server/store/tables'
+import { testRuntime } from '../../src/testing/run'
 import example from '../fixtures/example.config.json' with { type: 'json' }
-import { testRuntime } from '../support/run'
 
 // The store's promises, on Postgres in this process. The integration tests put
 // every adapter through the same server code (TEST_STORE); these are the parts

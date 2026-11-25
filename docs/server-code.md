@@ -212,6 +212,11 @@ logged as `[server] <name> took <ms> ms`.
 
 ## Tests
 
+The helpers below come from `@swirls/spools/testing`, in this repository's tests and in
+your app's: `run`, `failure`, `db`, `testRuntime`, `withEnv`, `runWithEnv`,
+`installStandIns`, `installLiveServices`, `bodyText`, and `createFakeStore` (a file store
+held in memory).
+
 - **Unit tests** build a runtime from the app layer with stand-ins
   (`testRuntime(appLayer({ fetch: fake, auth: Auth.layerTest(users) }))`, where `fake` answers every outside HTTP call)
   or read configuration from an object (`runWithEnv({ CRON_SECRET: "..." }, program)`).
@@ -229,7 +234,7 @@ logged as `[server] <name> took <ms> ms`.
   `fetch` answers every outside call, so route by URL when a test plays more
   than one provider, and read bodies with `bodyText(init)`: Effect's client
   sends them as bytes; `packages/spools/tests/integration/files.test.ts` does this with
-  `packages/spools/tests/support/fake-file-store.ts`. Each call starts from fresh services, so
+  `createFakeStore()`. Each call starts from fresh services, so
   nothing cached leaks into the next test.
 - `packages/spools/tests/unit/guardrails.test.ts` lints code written the old way with this
   repository's lint rules and checks that each one fires.
@@ -255,4 +260,6 @@ leaves out. The rules are in `packages/spools/src/oxlint`:
   routes and `src/app/**`).
 
 `bun run build` then fails if Effect reached the browser bundle anyway
-(`spools check-client`, which looks for Effect's internal ids in `dist/client`).
+(`spools check-client`, which looks for Effect's internal ids in `dist/client`, and in
+`.vercel/output/static` for a Vercel build. Name a folder to check that one instead:
+`spools check-client build/public`).

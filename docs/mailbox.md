@@ -88,7 +88,7 @@ schedule off), the first time going back `MAILBOX_LOOKBACK_DAYS` (default 30).
 Accounts that have waited longest go first.
 
 The schedule is a timer in the server process. On a host with no long-lived process
-(`SERVERLESS=1`) the timer is off. Set `CRON_SECRET` (16+ random characters) and have a
+(`SERVERLESS=1`, or Vercel) the timer is off. Set `CRON_SECRET` (16+ random characters) and have a
 cron job call `/api/cron/mail-sync` with it as a bearer token.
 
 Each call reads for about 45 seconds and leaves any remaining accounts for the

@@ -195,7 +195,7 @@ have shaped the post, so each one waits for a teammate.
 ### Scheduled posts
 
 A server that stays up publishes what is due once a minute. On a serverless host
-(`SERVERLESS=1`), point a cron job at `/api/cron/marketing` with
+(`SERVERLESS=1`, or Vercel), point a cron job at `/api/cron/marketing` with
 `Authorization: Bearer $CRON_SECRET`, as for [sequences](campaigns.md#operations).
 
 A channel reached directly needs nothing more. For one that goes through Swirls, nobody

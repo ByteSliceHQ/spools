@@ -12,7 +12,7 @@ import {
 } from '../../src/server/integrations'
 import { Vault } from '../../src/server/runtime/vault'
 import { Integration } from '../../src/server/store/tables'
-import { bodyText, db, installLiveServices, installStandIns, run } from '../support/run'
+import { bodyText, db, installLiveServices, installStandIns, run } from '../../src/testing/run'
 
 // Connecting, refreshing and disconnecting accounts against a real database,
 // with the providers' HTTP APIs and CipherStash both stubbed. Integrations are a

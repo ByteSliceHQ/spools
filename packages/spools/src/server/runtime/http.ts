@@ -9,7 +9,7 @@ import { FetchHttpClient } from 'effect/http'
  * `HttpClientResponse`.
  *
  * The client is Effect's fetch client. Tests replace the `fetch` underneath
- * it (`httpLayer(fake)`), so a stand-in such as tests/support/fake-file-store.ts
+ * it (`httpLayer(fake)`), so a stand-in such as src/testing/fake-file-store.ts
  * answers every outside call while the services run exactly as they do live.
  */
 

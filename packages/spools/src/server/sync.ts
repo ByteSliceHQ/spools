@@ -939,11 +939,11 @@ export const syncSchedule = Effect.gen(function* () {
 /**
  * Start the built-in schedule. Called once when the server boots; a second call
  * (a dev-server reload) is a no-op. A serverless host has no long-lived process
- * to keep a timer in, so with SERVERLESS=1 the schedule is a cron job that calls
+ * to keep a timer in, so with SERVERLESS=1 or on Vercel the schedule is a cron job that calls
  * /api/cron/mail-sync instead (docs/mailbox.md).
  */
 export const startSync = Effect.fn('sync.startSync')(function* () {
-  if (yield* config.flag('SERVERLESS')) {
+  if (yield* config.serverless) {
     return
   }
 

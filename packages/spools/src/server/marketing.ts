@@ -763,7 +763,7 @@ export const marketingSchedule = tick({ budgetMs: 50_000 }).pipe(
  * server boots. On a serverless host a cron job calls /api/cron/marketing instead.
  */
 export const startMarketing = Effect.fn('marketing.startMarketing')(function* () {
-  if (yield* config.flag('SERVERLESS')) {
+  if (yield* config.serverless) {
     return
   }
 

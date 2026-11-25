@@ -10,7 +10,7 @@ import type { Session } from '../../src/server/runtime/auth'
 import { httpLayer } from '../../src/server/runtime/http'
 import { CurrentRequest } from '../../src/server/runtime/request'
 import { makeStore, Store } from '../../src/server/store/store'
-import { testRuntime, withEnv } from '../support/run'
+import { testRuntime, withEnv } from '../../src/testing/run'
 
 // The Swirls adapter against a stand-in Swirls on this machine: its API (the
 // SDK's RPC endpoints and the web chat) and its token exchange. The SDK posts

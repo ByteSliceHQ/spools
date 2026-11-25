@@ -6,7 +6,13 @@ import { SignIns } from '../../src/server/sign-ins'
 import { MailboxSync } from '../../src/server/store/tables'
 import { mailboxStatus, syncAll, syncMailbox } from '../../src/server/sync'
 import * as workspace from '../../src/server/workspace'
-import { bodyText, db, run as go, installLiveServices, installStandIns } from '../support/run'
+import {
+  bodyText,
+  db,
+  run as go,
+  installLiveServices,
+  installStandIns,
+} from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Mail and calendar ingestion and sending against a real database, with Clerk

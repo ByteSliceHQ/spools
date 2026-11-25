@@ -7,7 +7,7 @@ import { aes, aesCipher } from '../../src/adapters/vault/aes/server'
 import { httpLayer } from '../../src/server/runtime/http'
 import { Vault, VaultError } from '../../src/server/runtime/vault'
 import { spool } from '../../src/server/spool'
-import { testRuntime, withEnv } from '../support/run'
+import { testRuntime, withEnv } from '../../src/testing/run'
 
 const key = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64')
 

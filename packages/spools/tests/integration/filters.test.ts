@@ -16,7 +16,7 @@ import { SavedView, Task } from '../../src/server/store/tables'
 import { runTool } from '../../src/server/tools'
 import * as views from '../../src/server/views'
 import * as workspace from '../../src/server/workspace'
-import { db, run as go } from '../support/run'
+import { db, run as go } from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Every filter operator, sorting and the activity dates, against a real database.

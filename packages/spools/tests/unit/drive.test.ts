@@ -34,7 +34,7 @@ import { crmConfig } from '../../src/server/spool'
 import { eq, or } from '../../src/server/store/query'
 import { schemaSql } from '../../src/server/store/schema-sql'
 import { Store, type StoreShape } from '../../src/server/store/store'
-import { testRuntime } from '../support/run'
+import { testRuntime } from '../../src/testing/run'
 
 // The drive: folders and files in the Spool's own database, with the bytes in a
 // blob store. On Postgres in this process, with the bytes in a folder made for

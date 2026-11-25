@@ -93,3 +93,6 @@ Run in a Spool's folder. The scripts in `package.json` call it for you.
 | `spools harden`       | Takes Supabase's Data API roles off the tables                                  |
 | `spools stats`        | Recomputes the last activity, last contact, and next task dates on every record |
 | `spools check-client` | Fails if Effect, which server code runs on, reached the browser bundle          |
+
+`check-client` reads `dist/client`, and `.vercel/output/static` after a Vercel build. To
+check another folder, name it: `spools check-client build/public`.

@@ -6,7 +6,7 @@ import { clerk } from '../../src/adapters/auth/clerk/server'
 import { Auth } from '../../src/server/runtime/auth'
 import { httpLayer } from '../../src/server/runtime/http'
 import { makeStore, Store } from '../../src/server/store/store'
-import { testRuntime } from '../support/run'
+import { testRuntime } from '../../src/testing/run'
 
 // Clerk's directory against a stand-in Clerk Backend API on this machine. The
 // Clerk SDK reads CLERK_API_URL each time it makes a client, so the adapter is

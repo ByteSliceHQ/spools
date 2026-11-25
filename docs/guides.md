@@ -181,7 +181,7 @@ object it must be a field of that object.
 ## How it works
 
 - **What a guide is** and which one is offered where is pure code in
-  `packages/spools/src/crm/guides.ts`: the built-in guides, `resolveGuides` (built-in plus the
+  `packages/spools/src/crm/guides.ts` (published as `@swirls/spools/guides`): the built-in guides, `resolveGuides` (built-in plus the
   config's), `placeOf` and `inPlace`, `guideToOffer`, `shownSteps`, and
   `checkGuides`, which the config schema runs. No server imports and no Zod,
   so the browser uses the same file.

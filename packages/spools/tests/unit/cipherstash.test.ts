@@ -11,7 +11,7 @@ import {
 import { httpLayer } from '../../src/server/runtime/http'
 import { Vault, VaultError } from '../../src/server/runtime/vault'
 import { spool } from '../../src/server/spool'
-import { testRuntime, withEnv } from '../support/run'
+import { testRuntime, withEnv } from '../../src/testing/run'
 
 // The CipherStash adapter with a stand-in for the CipherStash client: what is
 // tested is everything of ours around it. The client itself needs a live workspace.
