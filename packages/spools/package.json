@@ -1,6 +1,6 @@
 {
   "name": "@swirls/spools",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Open source CRM framework for coding agents: sign-in, data, security, search, email and tests built in",
   "keywords": [
     "agents",
