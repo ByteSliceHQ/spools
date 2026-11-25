@@ -298,3 +298,93 @@ model GuideProgress {
   @@map("guide_progress")
   @@rls
 }
+
+/// What the CRM knows about the business's website (`marketing.website` in
+/// crm.config.json): the tracking tags its pages carry, and what the agent engine
+/// learned about the business from it. See src/server/marketing.ts.
+model MarketingSite {
+  id String @id @onCreate(uuid())
+  createdAt DateTime @default(now()) @onCreate(now()) @map("created_at")
+  updatedAt temporal.UpdatedAt @map("updated_at")
+  website String
+  /// JSON: the ids of each tracking tag found in the page, from the last scan.
+  tags String?
+  scannedAt DateTime? @map("scanned_at")
+  /// Why the last scan could not read the site.
+  scanError String? @map("scan_error")
+  /// What the business does, in two or three sentences.
+  summary String?
+  audience String?
+  /// How the business writes: the tone a post should keep.
+  voice String?
+  /// JSON: what it sells, as short names.
+  offers String?
+  profiledAt DateTime? @map("profiled_at")
+  /// When a teammate last asked the agent engine to read the site.
+  profileRequestedAt DateTime? @map("profile_requested_at")
+
+  @@unique([website])
+  @@map("marketing_sites")
+  @@rls
+}
+
+/// A post for one social channel (`marketing.channels` in crm.config.json):
+/// a draft, one waiting for its time, or one that went out. See src/server/marketing.ts.
+model MarketingPost {
+  id String @id @onCreate(uuid())
+  createdAt DateTime @default(now()) @onCreate(now()) @map("created_at")
+  updatedAt temporal.UpdatedAt @map("updated_at")
+  /// The channel's key in the config.
+  channel String
+  body String
+  link String?
+  /// "draft", "scheduled", "publishing", "published" or "failed".
+  status String
+  scheduledAt DateTime? @map("scheduled_at")
+  /// When it was handed to the agent engine to publish.
+  startedAt DateTime? @map("started_at")
+  publishedAt DateTime? @map("published_at")
+  /// The agent engine's run that is publishing it.
+  executionId String? @map("execution_id")
+  /// The network's id for the published post.
+  externalId String? @map("external_id")
+  externalUrl String? @map("external_url")
+  /// Why it failed, or what happened last.
+  note String?
+  createdBy String? @map("created_by")
+  createdByName String? @map("created_by_name")
+  /// The teammate who scheduled or published it. A post never goes out without one.
+  approvedBy String? @map("approved_by")
+
+  @@index([status, scheduledAt])
+  @@index([createdAt])
+  @@map("marketing_posts")
+  @@rls
+}
+
+/// One ad campaign's results over the last `periodDays`, as the agent engine
+/// last read them from the network. A copy to look at: the network is where it is changed.
+model MarketingAd {
+  id String @id @onCreate(uuid())
+  createdAt DateTime @default(now()) @onCreate(now()) @map("created_at")
+  updatedAt temporal.UpdatedAt @map("updated_at")
+  /// The ad account's key in the config (`marketing.ads`).
+  account String
+  /// The network's id for the campaign.
+  externalId String @map("external_id")
+  name String
+  /// As the network names it, lower-cased: "active", "paused" and so on.
+  status String
+  currency String?
+  spend Float @default(0)
+  impressions Int @default(0)
+  clicks Int @default(0)
+  conversions Float @default(0)
+  dailyBudget Float? @map("daily_budget")
+  periodDays Int @default(30) @map("period_days")
+  syncedAt DateTime @map("synced_at")
+
+  @@unique([account, externalId])
+  @@map("marketing_ads")
+  @@rls
+}

@@ -290,7 +290,8 @@ export function Integrations(): ReactNode {
         <div className="mx-auto max-w-3xl space-y-3">
           <p className="text-c-fg2 px-1">
             The accounts the CRM works with on your behalf. Each person connects their own; nobody
-            else can see or use your connections.
+            else can see or use your connections. An account connected for marketing is the
+            exception: it says so, and the team publishes through it.
           </p>
 
           {justConnected && (

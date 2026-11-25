@@ -4,9 +4,15 @@
  */
 export {
   type Actor,
+  type AdCampaignResults,
+  type AdNetwork,
   defineExtensions,
   type Extensions,
   type Hooks,
+  type NetworkAccess,
+  type PostNetwork,
+  type PostToPublish,
+  type PublishedPost,
   type RunContext,
   type RunResult,
   type RunTargetHandler,

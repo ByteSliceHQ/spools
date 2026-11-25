@@ -5,6 +5,7 @@ import { HttpClient, HttpClientRequest } from 'effect/http'
 import { z } from 'zod'
 
 import { PROVIDERS as MAILBOXES, type ProviderId as MailboxProviderId } from '../crm/mailbox'
+import { marketingProviders } from './marketing-providers'
 import * as config from './runtime/config'
 import { type ExtensionError, fromHook, IntegrationError, type StaffError } from './runtime/errors'
 import { type Json, parseJson } from './runtime/json'
@@ -67,6 +68,13 @@ export type IntegrationProvider = {
     /** GET a JSON API with the new access token. */
     get: <T>(url: string) => Promise<T>
   }) => Promise<string | undefined>
+  /**
+   * Whether a connection needs a refresh token. Most providers issue one, and
+   * a connection without it is refused. `optional` is for a provider that
+   * gives most apps a long-lived access token and nothing to renew it with:
+   * the connection works until that token runs out, then needs reconnecting.
+   */
+  refreshToken?: 'required' | 'optional'
   /** Endpoint that invalidates a token (RFC 7009), if the provider has one. */
   revokeUrl?: string
   /** Set on the built-in mailboxes: read and send through this mailbox API. */
@@ -129,13 +137,21 @@ const builtIn: Record<MailboxProviderId, IntegrationProvider> = {
 /** A provider id is a path segment and a database value: keep it plain. */
 const PROVIDER_ID = /^[a-z][a-z0-9_-]{0,39}$/
 
-/** Every provider this app offers: the built-in mailboxes, then the app's own. */
+/**
+ * Every provider this app offers: the built-in mailboxes, the accounts its
+ * marketing channels post through (marketing-providers.ts), then the app's
+ * own. An app's provider replaces a marketing one of the same id.
+ */
 export function providers() {
   const own = Object.entries(spool().extensions.integrations ?? {}).filter(
     ([id]) => PROVIDER_ID.test(id) && !Object.hasOwn(builtIn, id),
   )
 
-  return Object.fromEntries([...Object.entries(builtIn), ...own])
+  return Object.fromEntries([
+    ...Object.entries(builtIn),
+    ...Object.entries(marketingProviders()).filter(([id]) => !Object.hasOwn(builtIn, id)),
+    ...own,
+  ])
 }
 
 export const providerIds = (): string[] => Object.keys(providers())
@@ -543,7 +559,7 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
     code_verifier: verifier,
   })
 
-  if (!token.refresh_token) {
+  if (!token.refresh_token && p.refreshToken !== 'optional') {
     return yield* refuse(
       `${p.label} didn't grant ongoing access. Remove this CRM from your ${p.label} account's connected apps, then connect again.`,
     )

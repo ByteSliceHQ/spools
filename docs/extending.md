@@ -146,6 +146,29 @@ email: {
 
 Keep the `headers`: they carry the one-click unsubscribe.
 
+## Marketing: add a social or ad network
+
+Add a network under `marketing` and a channel or an ad account in `crm.config.json` can
+name it. `posts` networks say how long a post may be and how to send one; `ads` networks
+say how to read an account's campaigns. The full example is in
+[Marketing](marketing.md#adding-a-network).
+
+```ts
+marketing: {
+  posts: {
+    mastodon: {
+      label: "Mastodon",
+      limit: 500,
+      access: { env: "MASTODON_TOKEN" },
+      async publish({ text, token }) {
+        // Call the network. Return where the post is; throw to refuse it.
+        return { id: "...", url: "https://..." };
+      },
+    },
+  },
+},
+```
+
 ## Integrations: let teammates connect another service
 
 Add an OAuth provider under `integrations` and it appears on the Integrations

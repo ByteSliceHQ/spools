@@ -4,6 +4,7 @@ import { fieldSchema, ident, isTextLike } from './field-types'
 import { isFolderName } from './files'
 import { cleanFilters, cleanSort, resolveTarget, SYSTEM_COLUMNS } from './filters'
 import { checkGuides } from './guides'
+import { DELIVERIES, type TagKind, TAGS } from './marketing'
 import { durationPattern } from './sequences'
 
 export { type CrmField, fieldSchema } from './field-types'
@@ -36,6 +37,70 @@ export { durationPattern } from './sequences'
 
 /** A time of day on a 24-hour clock, "08:00". */
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'use a 24-hour time such as "08:00"')
+
+/** A tracking tag's id, in the form its vendor writes it. */
+const tagId = (kind: TagKind) =>
+  z.string().regex(TAGS[kind].id, `use the form ${TAGS[kind].example}`)
+
+/** The public address of a site: https, and nothing after the host that names a person or a secret. */
+const website = z
+  .url({ protocol: /^https$/, error: 'use the https:// address of your website' })
+  .max(300)
+  .refine((value) => !/[?#@]/.test(value), 'leave out the query, the fragment and any user name')
+
+/** Which account at a network: a page id, an organisation, an ad account. Its form is the network's own. */
+const networkAccount = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9:_.-]+$/, 'use the id as the network writes it, without spaces')
+
+const marketingSchema = z.object({
+  /** The business's website. The CRM reads it to learn the business and to see which tags it carries. */
+  website,
+  /** The tracking tags the business uses, by id. The Marketing page checks each against the site. */
+  tags: z
+    .object({
+      gtm: tagId('gtm'),
+      ga4: tagId('ga4'),
+      googleAds: tagId('googleAds'),
+      metaPixel: tagId('metaPixel'),
+      linkedinInsight: tagId('linkedinInsight'),
+    })
+    .partial()
+    .default({}),
+  /**
+   * Where posts can be published. `network` is a built-in one (linkedin, x,
+   * facebook) or one the app adds in src/app/extensions.ts. `account` is the
+   * page or person at the network. `via` says who sends the post: the CRM
+   * itself ("direct", the default where the network can) or a workflow of the
+   * agent engine ("swirls"), which is how any other network is reached.
+   */
+  channels: z
+    .record(
+      ident,
+      z.object({
+        label: z.string().trim().min(1).max(60),
+        network: ident,
+        account: networkAccount,
+        via: z.enum(DELIVERIES).optional(),
+      }),
+    )
+    .default({}),
+  /** The ad accounts whose results the Marketing page shows. */
+  ads: z
+    .record(
+      ident,
+      z.object({
+        label: z.string().trim().min(1).max(60),
+        network: ident,
+        account: networkAccount,
+        via: z.enum(DELIVERIES).optional(),
+      }),
+    )
+    .default({}),
+})
 
 const campaignStepSchema = z.object({
   id: ident,
@@ -298,6 +363,12 @@ export const crmConfigSchema = z
      */
     guides: z.record(ident, z.union([z.literal(false), guideSchema])).default({}),
     /**
+     * The business's website, its tracking tags, the social accounts posts go
+     * to and the ad accounts whose results are shown. Without it there is no
+     * Marketing page. See docs/marketing.md.
+     */
+    marketing: marketingSchema.optional(),
+    /**
      * How the Ask page presents the assistant. `name` is what it is called
      * there ("Assistant" when unset) and `greeting` the line a new chat opens
      * with. `suggestions` are the prompts offered under the box of a new chat:
@@ -335,6 +406,7 @@ export const crmConfigSchema = z
       'reports',
       'workflows',
       'integrations',
+      'marketing',
       'files',
       'api',
       'crm',
@@ -681,5 +753,6 @@ export type CrmObject = CrmConfig['objects'][string]
 export type CrmView = CrmObject['views'][number]
 export type CrmAction = CrmObject['actions'][number]
 export type CrmCampaign = CrmConfig['campaigns'][string]
+export type CrmMarketing = NonNullable<CrmConfig['marketing']>
 
 export { fieldLabel, modelName, SYSTEM_FIELDS } from './naming'

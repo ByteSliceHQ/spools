@@ -33,6 +33,8 @@ export default defineSpool({
   Every list filters by any field, through relations, and by activity.
 - **Email.** Sequences that keep their place in your database, one-off email from a
   teammate's own mailbox, and a timeline of the mail and meetings they have with contacts.
+- **Marketing.** The tracking tags your website carries and the code for the ones it is
+  missing, social posts that a teammate approves before they go out, and ad results.
 - **Agents and workflows.** A Swirls assistant that reads and updates records, and
   workflows that run when a record changes or someone presses a button.
 - **Your own code.** Hooks, handlers, pages, endpoints, and services.

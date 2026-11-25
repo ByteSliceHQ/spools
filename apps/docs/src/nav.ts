@@ -33,6 +33,7 @@ export const docsNav = [
       { to: '/docs/campaigns', label: 'Email sequences' },
       { to: '/docs/mailbox', label: 'Mailbox & calendar' },
       { to: '/docs/integrations', label: 'Integrations' },
+      { to: '/docs/marketing', label: 'Marketing' },
       { to: '/docs/guides', label: 'In-app guides' },
     ],
   },

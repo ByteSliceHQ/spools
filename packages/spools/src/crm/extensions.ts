@@ -52,6 +52,70 @@ export type Hooks = {
   afterDelete?: (e: { objectKey: string; record: CrmRecord; actor: Actor }) => Promise<void> | void
 }
 
+/** What a network's code is handed to reach the account. */
+export type NetworkAccess =
+  /** A connection to one of the app's `integrations`, by id: a teammate connects it on the Integrations page. */
+  | { integration: string }
+  /** A token whoever runs the CRM sets in the environment, by the variable's name. */
+  | { env: string }
+
+/** A post as a network's code receives it. */
+export type PostToPublish = {
+  /** The body, then the link on a line of its own. */
+  text: string
+  body: string
+  link: string | null
+  /** `account` from the channel in crm.config.json: a page, an organisation, a handle. */
+  account: string
+  /** The access token, when the network names how to get one. */
+  token: string | null
+}
+
+/** Where a published post is. */
+export type PublishedPost = { id: string; url?: string | null }
+
+/**
+ * A social network posts can go to. With `publish`, the CRM sends the post
+ * itself. Without it, the network is only reachable through the agent engine
+ * (a `publish_<network>` workflow), which a channel can also ask for with
+ * `"via": "swirls"`.
+ */
+export type PostNetwork = {
+  label: string
+  /** The longest post the network takes. */
+  limit: number
+  /** What a link counts as, where the network counts every link the same. */
+  linkLength?: number
+  access?: NetworkAccess
+  /** Send one post. Throw to refuse it: the message is what the team reads. */
+  publish?: (post: PostToPublish) => Promise<PublishedPost>
+}
+
+/** One ad campaign's results over a period, as a network's code reads them. */
+export type AdCampaignResults = {
+  externalId: string
+  name: string
+  status: string
+  currency?: string | null
+  spend?: number
+  impressions?: number
+  clicks?: number
+  conversions?: number
+  dailyBudget?: number | null
+}
+
+/** An ad network whose results the CRM can show. Without `read` it is only reachable through an `ads_<network>` workflow. */
+export type AdNetwork = {
+  label: string
+  access?: NetworkAccess
+  /** Every campaign in the account, with its results over the last `days`. */
+  read?: (ctx: {
+    account: string
+    token: string | null
+    days: number
+  }) => Promise<AdCampaignResults[]>
+}
+
 export type Extensions = {
   /** Functions referenced from the config as `"run": "local:<name>"`. */
   handlers?: Record<string, (ctx: RunContext) => Promise<RunResult>>
@@ -67,6 +131,14 @@ export type Extensions = {
    * current token from `getAccessToken` in src/server/integrations.ts.
    */
   integrations?: Record<string, IntegrationProvider>
+  /**
+   * Networks for the Marketing page, by the key a channel or an ad account
+   * names as its `network`. One of the same key as a built-in network replaces it.
+   */
+  marketing?: {
+    posts?: Record<string, PostNetwork>
+    ads?: Record<string, AdNetwork>
+  }
   /** How files attached to records are laid out in the file store. */
   files?: {
     /**

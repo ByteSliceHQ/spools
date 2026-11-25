@@ -8,6 +8,7 @@ import {
   Home,
   type LucideIcon,
   Mail,
+  Megaphone,
   MessageCircle,
   Moon,
   PanelLeft,
@@ -233,6 +234,9 @@ export function CrmShell({
                     <NavLink to="/files" icon={FolderOpen} label="Files" />
                     <NavLink to="/reports" icon={BarChart3} label="Reports" />
                     <NavLink to="/workflows" icon={Workflow} label="Workflows" />
+                    {config.marketing && (
+                      <NavLink to="/marketing" icon={Megaphone} label="Marketing" />
+                    )}
                     <NavLink to="/integrations" icon={Plug} label="Integrations" />
 
                     {favorites.length > 0 && (
