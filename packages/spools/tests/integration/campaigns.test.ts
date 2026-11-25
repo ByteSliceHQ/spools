@@ -24,6 +24,7 @@ import { exampleTest, isExampleApp } from './example-app'
 const tag = `seq${Date.now()}`
 const sent: OutboundEmail[] = []
 const ids: string[] = []
+const savedEnv = { APP_URL: process.env['APP_URL'], APP_SECRET: process.env['APP_SECRET'] }
 let failing = 0
 
 const baseConfig = await Bun.file(
@@ -92,6 +93,7 @@ async function contact(name: string, extra: Record<string, unknown> = {}) {
 }
 
 beforeAll(async () => {
+  process.env['APP_URL'] = 'https://crm.example.com'
   process.env['APP_SECRET'] = 's'.repeat(40)
 
   await installStandIns({
@@ -110,6 +112,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await installLiveServices()
+
+  for (const [name, value] of Object.entries(savedEnv)) {
+    if (value === undefined) {
+      delete process.env[name]
+    } else {
+      process.env[name] = value
+    }
+  }
 
   if (!isExampleApp) {
     return
@@ -132,7 +142,7 @@ exampleTest('sends every step with rendered content, unsubscribe link and header
   const mine = to(email)
   expect(mine.map((e) => e.subject)).toEqual([`Hello Ada ${tag}`, 'Again'])
   expect(mine[0]!.text).toContain(`First Ada ${tag}`)
-  expect(mine[0]!.text).toContain('/unsubscribe?t=')
+  expect(mine[0]!.text).toContain('https://crm.example.com/unsubscribe?t=')
   expect(mine[0]!.headers?.['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
 
   const acts = await go(listActivities('contacts', record.id))
