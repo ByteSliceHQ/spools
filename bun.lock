@@ -101,14 +101,14 @@
     },
     "packages/create-spools": {
       "name": "@swirls/create-spools",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "bin": {
         "create-spools": "./src/main.ts",
       },
     },
     "packages/spools": {
       "name": "@swirls/spools",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "bin": {
         "spools": "./src/cli/main.ts",
       },
