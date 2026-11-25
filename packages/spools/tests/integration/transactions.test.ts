@@ -7,7 +7,7 @@ import { runServer } from '../../src/server/runtime/app'
 import * as service from '../../src/server/service'
 import { Store } from '../../src/server/store/store'
 import { Activity, SequenceRun } from '../../src/server/store/tables'
-import { db, run } from '../support/run'
+import { db, run } from '../../src/testing/run'
 import { exampleTest } from './example-app'
 
 // What the store promises about writes that belong together, on whichever database

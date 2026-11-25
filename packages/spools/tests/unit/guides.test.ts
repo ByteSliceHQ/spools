@@ -21,7 +21,7 @@ import {
   shownSteps,
 } from '../../src/crm/guides'
 import { guidesOffered } from '../../src/server/guides'
-import { runWithEnv } from '../support/run'
+import { runWithEnv } from '../../src/testing/run'
 
 const config: GuideConfig = {
   app: { name: 'Acme' },

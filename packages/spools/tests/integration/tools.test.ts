@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect } from 'bun:test'
 import { createRecord, deleteRecord, listActivities } from '../../src/server/records'
 import { toolAuthorized } from '../../src/server/runtime/boundary'
 import { runTool } from '../../src/server/tools'
-import { run } from '../support/run'
+import { run } from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Integration test against the local Supabase database (`bun run db:start`).

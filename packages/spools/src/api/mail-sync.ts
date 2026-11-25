@@ -8,7 +8,7 @@ const BUDGET_MS = 45_000
 
 /**
  * Runs one pass of the mailbox sync. For hosts with no long-lived process
- * (SERVERLESS=1): point a cron job at this route and set CRON_SECRET. A pass that runs
+ * (SERVERLESS=1, or Vercel): point a cron job at this route and set CRON_SECRET. A pass that runs
  * out of time leaves the remaining accounts for the next one.
  */
 export const mailSyncHandlers = {

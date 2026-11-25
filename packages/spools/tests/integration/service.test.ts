@@ -5,7 +5,7 @@ import * as records from '../../src/server/records'
 import { Email } from '../../src/server/runtime/email'
 import { Invalid } from '../../src/server/runtime/errors'
 import * as service from '../../src/server/service'
-import { installLiveServices, installStandIns, run } from '../support/run'
+import { installLiveServices, installStandIns, run } from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Integration test against a Postgres with the schema pushed (`bun run db:push`).

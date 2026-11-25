@@ -6,7 +6,7 @@ import { deliveryOf } from '../../src/adapters/email/resend/server'
 import { appLayer } from '../../src/server/runtime/app'
 import { Auth } from '../../src/server/runtime/auth'
 import { Email } from '../../src/server/runtime/email'
-import { testRuntime } from '../support/run'
+import { testRuntime } from '../../src/testing/run'
 
 // Sending through Resend: an email is sent again only when it carries an
 // idempotency key, so Resend can drop the repeat. The Resend SDK calls the

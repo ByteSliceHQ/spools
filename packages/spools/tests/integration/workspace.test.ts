@@ -5,7 +5,7 @@ import { Favorite, Note, SavedView, Task } from '../../src/server/store/tables'
 import { runTool } from '../../src/server/tools'
 import * as views from '../../src/server/views'
 import * as workspace from '../../src/server/workspace'
-import { db, run as go } from '../support/run'
+import { db, run as go } from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Saved views, tasks, notes, favourites, reports and CSV export against a real database.

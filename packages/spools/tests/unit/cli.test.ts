@@ -399,12 +399,12 @@ describe('spools gen', () => {
 })
 
 describe('spools check-client', () => {
-  const built = async (files: Record<string, string>) => {
+  const built = async (files: Record<string, string>, into = 'dist/client') => {
     const folder = await emptyFolder()
 
     for (const [name, text] of Object.entries(files)) {
-      await mkdir(dirname(join(folder, 'dist/client', name)), { recursive: true })
-      await writeFile(join(folder, 'dist/client', name), text)
+      await mkdir(dirname(join(folder, into, name)), { recursive: true })
+      await writeFile(join(folder, into, name), text)
     }
 
     return folder
@@ -440,7 +440,35 @@ describe('spools check-client', () => {
   test('before a build there is nothing to check, and it says to build first', async () => {
     const result = await spools(await emptyFolder(), ['check-client'])
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain('dist/client is missing. Run the build first.')
+
+    expect(result.stderr).toContain(
+      'no build found (dist/client or .vercel/output/static). Run the build first.',
+    )
+  })
+
+  test('a Vercel build is checked where Vercel puts the browser files', async () => {
+    const folder = await built(
+      { 'assets/server-fn.js': 'const TypeId="~effect/Effect";' },
+      '.vercel/output/static',
+    )
+
+    const result = await spools(folder, ['check-client'])
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain(join('.vercel/output/static', 'assets/server-fn.js'))
+  })
+
+  test('a folder named on the command line is checked instead', async () => {
+    const folder = await built({ 'app.js': 'console.log("hello")' }, 'build/public')
+    await mkdir(join(folder, 'dist/client'), { recursive: true })
+    await writeFile(join(folder, 'dist/client/app.js'), 'const TypeId="~effect/Effect";')
+
+    const result = await spools(folder, ['check-client', 'build/public'])
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('[client bundle] no Effect in 1 browser files')
+
+    const absent = await spools(folder, ['check-client', 'nowhere'])
+    expect(absent.exitCode).toBe(1)
+    expect(absent.stderr).toContain('nowhere is missing. Run the build first.')
   })
 })
 

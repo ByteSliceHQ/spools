@@ -29,7 +29,7 @@ and every environment variable keep their names.
 
 1. **Make a Spool** in a folder of its own with `bun create @swirls/spools`, and copy what is
    yours over it: `crm.config.json`, `src/app`, `src/styles.css`, `swirls`, `migrations`,
-   `.env`, and any pages you added to `src/routes`. Keep your
+   `.env`, `vercel.json` if you changed it, and any pages you added to `src/routes`. Keep your
    repository's history by doing this on a branch of it.
 2. **Say what it runs on** in `src/spool.server.ts`. These are the services a copy used, so
    nothing behaves differently:
@@ -62,4 +62,6 @@ The Resend webhook keeps its address: `/api/webhooks/resend` is now the same as
 `/api/webhooks/email`. The stubbed-sign-in harness reads `DEV_AUTH_EMAIL` and
 `DEV_AUTH_SIGNED_OUT` where it read `E2E_EMAIL` and `E2E_SIGNED_OUT`.
 
-On a host with no long-lived process, set `SERVERLESS=1`. It used to be worked out from the host.
+On a host with no long-lived process other than Vercel, set `SERVERLESS=1`. Vercel is still
+worked out from the host. Its build is now `vercel()` from `@swirls/spools/vite` in
+`vite.config.ts`, where a copy carried its own Nitro plugin.

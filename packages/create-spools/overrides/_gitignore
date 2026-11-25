@@ -4,6 +4,7 @@ node_modules
 # output
 dist
 .output
+.vercel
 .tanstack
 *.tsbuildinfo
 

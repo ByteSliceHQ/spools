@@ -143,7 +143,7 @@ files: drive({ blobs: localBlobs({ dir: "/data/files" }) }),
 ```
 
 Files go in `.data/files` unless you name a folder. It suits one server with a disk that
-lasts: in Docker, mount a volume. It is refused on a serverless host, which has no such disk.
+lasts: in Docker, mount a volume. It is refused on Vercel or another serverless host, which has no such disk.
 
 Uploads pass through the server, so its limit on the size of a request applies: 128 MB, which
 is Bun's own default (`maxRequestBodySize` in `server.prod.ts` changes it). Size and SHA-256 are checked as the file
@@ -184,7 +184,7 @@ matters to you.
 To try it without a key, in a clone of the repository, run the stand-in store and point the app at it:
 
 ```sh
-bun packages/spools/tests/support/fake-file-store.ts 3998
+bun packages/spools/src/testing/fake-file-store.ts 3998
 FLASHDRIVE_BASE_URL=http://localhost:3998 FLASHDRIVE_API_KEY=local-fake-key \
   FLASHDRIVE_DRIVE_ID=00000000-0000-4000-8000-000000000000 bun run dev
 ```
@@ -205,7 +205,7 @@ says so.
    in the chosen folder, and returns where to send that one file.
 3. With a bucket or FlashDrive, the browser sends the bytes **straight to the store** with a
    link signed for it. They do not pass through the CRM server, so a host's request-size
-   limit does not apply. With a disk, or when FlashDrive asks for it, the
+   limit (4.5 MB on Vercel) does not apply. With a disk, or when FlashDrive asks for it, the
    browser sends them to `/api/files/uploads/<id>`, which checks the session and passes them
    on.
 4. `finishUpload` (server) asks the store to confirm. Until then nobody is shown the file. A

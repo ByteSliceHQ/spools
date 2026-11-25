@@ -20,7 +20,13 @@ import { SignIns } from '../../src/server/sign-ins'
 import { Integration, MailboxSync } from '../../src/server/store/tables'
 import { mailboxStatus, syncAll } from '../../src/server/sync'
 import type { CrmUser } from '../../src/server/users'
-import { bodyText, db, run as go, installLiveServices, installStandIns } from '../support/run'
+import {
+  bodyText,
+  db,
+  run as go,
+  installLiveServices,
+  installStandIns,
+} from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Mailboxes connected on the Integrations page, next to the sign-in ones: the

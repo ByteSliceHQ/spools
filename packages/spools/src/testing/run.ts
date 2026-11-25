@@ -1,16 +1,19 @@
 import { ConfigProvider, Effect, type Layer, ManagedRuntime } from 'effect'
 
-import { type AppServices, appLayer, installRuntime, runServer } from '../../src/server/runtime/app'
-import type { Query, Which } from '../../src/server/store/query'
-import { Store } from '../../src/server/store/store'
-import type { Table } from '../../src/server/store/table'
+import { type AppServices, appLayer, installRuntime, runServer } from '../server/runtime/app'
+import type { Query, Which } from '../server/store/query'
+import { Store } from '../server/store/store'
+import type { Table } from '../server/store/table'
 
 /**
  * Running Effect programs in tests.
  *
  * Integration tests use `run` and `failure`, which run on the app's own
- * runtime, on the store TEST_STORE names (tests/support/preload.ts). Unit tests build a runtime from fake layers with `testRuntime`
- * and read configuration from a plain object with `withEnv`.
+ * runtime: the Spool the test's preload file defined (here tests/support/preload.ts,
+ * on the store TEST_STORE names). Unit tests build a runtime from fake layers with
+ * `testRuntime` and read configuration from a plain object with `withEnv`.
+ *
+ * Published as `@swirls/spools/testing`, so an app's tests use the same ones.
  */
 
 /** Runs a program on the app's runtime and returns what it succeeds with. */

@@ -11,6 +11,7 @@
   "ignorePatterns": [
     "dist/**",
     ".output/**",
+    ".vercel/**",
     "migrations/**",
     "prisma/schema.d.ts",
     "src/routeTree.gen.ts"

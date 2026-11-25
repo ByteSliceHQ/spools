@@ -1,7 +1,7 @@
 /**
  * A stand-in for the file store's HTTP API, holding folders and files in memory.
- * `handle` answers one request; the tests hand it to `installStandIns` (tests/support/run.ts), and
- * `bun tests/support/fake-file-store.ts` serves it on a port for trying the file
+ * `handle` answers one request; the tests hand it to `installStandIns` (./run.ts), and
+ * `bun src/testing/fake-file-store.ts` serves it on a port for trying the file
  * browser without a real key.
  */
 type Folder = { id: string; name: string; parent: string | null; version: number }
@@ -467,7 +467,7 @@ export function createFakeStore(
   }
 }
 
-// `bun tests/support/fake-file-store.ts [port]`: serve it for a browser.
+// `bun src/testing/fake-file-store.ts [port]`: serve it for a browser.
 if (import.meta.main) {
   const port = Number(process.argv[2] ?? 3998)
   const fake = createFakeStore({ key: 'local-fake-key', origin: `http://localhost:${port}` })

@@ -18,6 +18,7 @@
     "TEST_STORE",
     "EXAMPLES_DATABASE_URL",
     "SERVERLESS",
+    "VERCEL",
     "DEV_AUTH_EMAIL",
     "DEV_AUTH_SIGNED_OUT",
     "DEV_ALLOWED_HOSTS",
@@ -35,7 +36,7 @@
         "vite.config.ts",
         "wrangler.json"
       ],
-      "outputs": ["dist/**", ".output/**"]
+      "outputs": ["dist/**", ".output/**", ".vercel/output/**"]
     },
     "check-types": {
       "dependsOn": ["^build"],

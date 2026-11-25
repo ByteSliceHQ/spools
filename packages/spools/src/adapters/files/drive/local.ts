@@ -154,7 +154,7 @@ export function localBlobs({ dir = '.data/files' }: LocalOptions = {}): Blobs {
   return {
     features: [{ name: "Files on records (this machine's disk)", vars: [] }],
     problems: Effect.map(config.environment, (env) =>
-      config.isOn(env['SERVERLESS'])
+      config.isServerless(env)
         ? [
             "localBlobs() keeps files on the server's disk, and a serverless host has none that lasts: use s3Blobs()",
           ]

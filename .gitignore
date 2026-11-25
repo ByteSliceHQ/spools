@@ -21,6 +21,8 @@ coverage/
 **/.output/
 .prerender/
 **/.prerender/
+.vercel/
+**/.vercel/
 .tanstack/
 **/.tanstack/
 .wrangler/

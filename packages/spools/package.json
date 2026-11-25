@@ -40,6 +40,9 @@
     "./server/runtime": "./src/server/runtime/index.ts",
     "./server/*": "./src/server/*.ts",
     "./start": "./src/server/middleware.ts",
+    "./vite": "./src/vite.ts",
+    "./guides": "./src/crm/guides.ts",
+    "./testing": "./src/testing/index.ts",
     "./config-schema": "./src/crm/config-schema.ts",
     "./oxlint": "./src/oxlint/index.ts",
     "./pages/*": "./src/pages/*.tsx",
@@ -87,9 +90,11 @@
     "@tanstack/react-start": "^1.169.5",
     "better-auth": "^1.7.27",
     "effect": "^4.1.5",
+    "nitro": "^3.0.260903-beta",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "resend": "^6.38.0"
+    "resend": "^6.38.0",
+    "vite": "^8.0.0"
   },
   "peerDependenciesMeta": {
     "@cipherstash/stack": {
@@ -111,6 +116,12 @@
       "optional": true
     },
     "better-auth": {
+      "optional": true
+    },
+    "nitro": {
+      "optional": true
+    },
+    "vite": {
       "optional": true
     },
     "resend": {

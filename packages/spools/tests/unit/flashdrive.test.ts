@@ -8,7 +8,7 @@ import { guidesOffered } from '../../src/server/guides'
 import { appLayer } from '../../src/server/runtime/app'
 import { Auth } from '../../src/server/runtime/auth'
 import { type Fetch, httpLayer } from '../../src/server/runtime/http'
-import { testRuntime } from '../support/run'
+import { testRuntime } from '../../src/testing/run'
 
 // The file store's client: when it tries again, when it gives up, and what it
 // makes of an answer it doesn't expect. A stand-in answers every request.

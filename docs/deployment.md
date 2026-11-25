@@ -81,10 +81,46 @@ bun run build
 bun run start
 ```
 
-### A host with no long-lived process
+## Vercel
 
-Set `SERVERLESS=1`. The server then keeps no timers, and cron jobs call these instead, with
-`CRON_SECRET` as a bearer token:
+A Spool also deploys to Vercel with the TanStack Start preset (`vercel.json`). Vercel's
+preset needs the app packaged by Nitro, so `vite.config.ts` calls `vercel()` from
+`@swirls/spools/vite`. On Vercel, where `VERCEL` is set, it emits a Bun function in
+`.vercel/output`. Every other build is the `dist/` server above. Set the environment
+variables on the Vercel project before the first deploy.
+
+`vercel()` copies the CipherStash packages into the function whole, because they are
+native. Name a native package of your own with `vercel({ traceDeps: ['my-native*'] })`.
+
+A function is not a long-lived server, and the framework knows it is on Vercel without
+`SERVERLESS=1`. The timers are off and cron jobs call the routes in the next section
+instead:
+
+- **Campaigns.** The `vercel.json` here calls `/api/cron/sequences` every ten minutes. It
+  needs `CRON_SECRET`, which Vercel Cron sends as a bearer token. Without it only emails
+  with no wait are sent, and the Workflows page says so. See
+  [Campaigns](campaigns.md#operations).
+- **Mailbox sync and scheduled posts.** Add `/api/cron/mail-sync` and `/api/cron/marketing`
+  to `crons` in `vercel.json` if you use them. They are left out of the starter's, because
+  a schedule your Vercel plan doesn't allow fails the deployment.
+- **Cold starts.** Vercel puts an idle function away after a couple of minutes, and the
+  next request then waits for it to start again (around three seconds for this app). A CRM
+  with a handful of users is idle most of the time, so keep one instance ready with a cron
+  job that calls `/api/cron/warm` every minute:
+
+  ```json
+  { "crons": [{ "path": "/api/cron/warm", "schedule": "* * * * *" }] }
+  ```
+
+  A schedule this frequent needs a paid Vercel plan.
+
+`bun run build` checks the browser files Vercel serves (`.vercel/output/static`) for server
+code, as it checks `dist/client` everywhere else.
+
+## A host with no long-lived process
+
+On any other such host, set `SERVERLESS=1`. The server then keeps no timers, and cron jobs
+call these instead, with `CRON_SECRET` as a bearer token:
 
 | Route                 | What it does                                                                              |
 | --------------------- | ----------------------------------------------------------------------------------------- |
@@ -108,6 +144,6 @@ Deploy `swirls/` and set its secrets (see [Swirls](swirls.md)), with
 - [ ] `access` in `crm.config.json` lists your domain or emails
 - [ ] Sign-ups restricted at your auth provider
 - [ ] `APP_SECRET` and `SWIRLS_APP_TOKEN` are 32+ random characters, unique per environment
-- [ ] On a serverless host: `CRON_SECRET` set and cron jobs for `/api/cron/sequences`, `/api/cron/mail-sync` and, if you schedule posts, `/api/cron/marketing`
+- [ ] On Vercel or another serverless host: `CRON_SECRET` set and cron jobs for `/api/cron/sequences`, `/api/cron/mail-sync` and, if you schedule posts, `/api/cron/marketing`
 - [ ] Email domain verified and the delivery webhook (`/api/webhooks/email`) configured
 - [ ] Supabase backups enabled

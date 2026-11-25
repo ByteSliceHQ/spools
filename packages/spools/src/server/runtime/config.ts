@@ -38,8 +38,20 @@ export const variable = (name: string): Effect.Effect<string | undefined> =>
 /** Whether a value switches something on: "1" or "true". Anything else, "0" and "false" included, is off. */
 export const isOn = (value: string | undefined): boolean => /^(1|true)$/i.test(value?.trim() ?? '')
 
-/** Whether a switch such as `SERVERLESS` is on. */
-export const flag = (name: string): Effect.Effect<boolean> => Effect.map(variable(name), isOn)
+/**
+ * Whether the host has no long-lived process, so nothing here can keep a timer or a disk.
+ * `SERVERLESS=1` says so on any host. Vercel says so itself (it sets `VERCEL` in every
+ * build and function), so a Spool deployed there needs no switch.
+ */
+export const isServerless = (env: Env): boolean =>
+  isOn(env['SERVERLESS']) || Boolean(env['VERCEL']?.trim())
+
+/** `isServerless` for this server's own environment. */
+export const serverless: Effect.Effect<boolean> = Effect.suspend(() =>
+  Effect.map(Effect.all([variable('SERVERLESS'), variable('VERCEL')]), ([SERVERLESS, VERCEL]) =>
+    isServerless({ SERVERLESS, VERCEL }),
+  ),
+)
 
 /** Every variable, for code that hands the environment to the app (an integration's URL builder). */
 export const environment: Effect.Effect<Record<string, string | undefined>> = Effect.sync(() => ({

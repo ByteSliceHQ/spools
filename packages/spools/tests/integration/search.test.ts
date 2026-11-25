@@ -5,7 +5,7 @@ import { deepSearch, quickIndex, suggestValues } from '../../src/server/search'
 import { Note, SavedView, Task } from '../../src/server/store/tables'
 import * as views from '../../src/server/views'
 import * as workspace from '../../src/server/workspace'
-import { db, run as go } from '../support/run'
+import { db, run as go } from '../../src/testing/run'
 import { exampleTest, isExampleApp } from './example-app'
 
 // Search across records, notes, emails, calls and tasks, and the index the browser is sent.

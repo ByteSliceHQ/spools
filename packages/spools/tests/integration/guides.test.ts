@@ -4,7 +4,7 @@ import { NO_OFFERS, resolveGuides } from '../../src/crm/guides'
 import * as guides from '../../src/server/guides'
 import { crmConfig } from '../../src/server/spool'
 import { GuideProgress } from '../../src/server/store/tables'
-import { db, failure, run } from '../support/run'
+import { db, failure, run } from '../../src/testing/run'
 
 // What each person has seen of the guides, against a real database. These use
 // whatever guides the app has, so they run for any config.

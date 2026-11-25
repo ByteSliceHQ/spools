@@ -20,7 +20,7 @@ import {
 import { type AppServices, appLayer } from '../../src/server/runtime/app'
 import { Auth } from '../../src/server/runtime/auth'
 import { Vault, VaultError } from '../../src/server/runtime/vault'
-import { testRuntime } from '../support/run'
+import { testRuntime } from '../../src/testing/run'
 
 const vars = {
   APP_URL: 'https://crm.example.com/',
