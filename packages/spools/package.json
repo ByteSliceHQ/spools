@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^3",
-    "@swirls/sdk": "^2.2.0",
+    "@swirls/sdk": "^2.3.0",
     "ai": "^6",
     "lucide-react": "^1.72.0",
     "react-markdown": "10.1.0",
