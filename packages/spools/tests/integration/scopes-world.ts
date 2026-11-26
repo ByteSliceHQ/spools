@@ -196,13 +196,6 @@ export const northIn = (value: unknown): string[] => [
 export const column = <Row extends Record<string, unknown>>(rows: readonly Row[], key: keyof Row) =>
   rows.map((r) => String(r[key])).toSorted()
 
-/**
- * A test of something scopes must do and nothing does yet. It is expected to
- * fail, and the run says so if it starts passing. `SCOPES_STRICT=1` runs these
- * as plain tests, to read why each one fails.
- */
-export const pending = process.env['SCOPES_STRICT'] === '1' ? test : test.failing
-
 const yesterday = () => new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
 
 async function seed() {

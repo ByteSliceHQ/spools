@@ -17,6 +17,7 @@ import { runtime } from './runtime/app'
 import * as config from './runtime/config'
 import { Email, type OutboundEmail } from './runtime/email'
 import { fromHook, Invalid, messageOf, type StaffError } from './runtime/errors'
+import { asSystem, scopeOnly, withAccess } from './scopes'
 import { Sequences } from './sequences'
 import { getObject, spool } from './spool'
 import { asc, lte } from './store/query'
@@ -386,12 +387,16 @@ export const tick = Effect.fn('campaigns.tick')(function* (
   for (;;) {
     const now = opts.now ?? new Date()
 
-    const due = yield* store.find(SequenceRun, {
-      where: { status: 'active' },
-      filter: lte('dueAt', now),
-      order: [asc('dueAt')],
-      limit: BATCH,
-    })
+    // Nobody is signed in. What is due is found as the system, across every scope;
+    // each run is then dealt with in its own record's scope and no other.
+    const due = yield* asSystem(
+      store.find(SequenceRun, {
+        where: { status: 'active' },
+        filter: lte('dueAt', now),
+        order: [asc('dueAt')],
+        limit: BATCH,
+      }),
+    )
 
     if (due.length === 0) {
       return result
@@ -405,7 +410,7 @@ export const tick = Effect.fn('campaigns.tick')(function* (
         return result
       }
 
-      const outcome = yield* take(run, now)
+      const outcome = yield* withAccess(scopeOnly(run.scope))(take(run, now))
 
       if (!outcome) {
         continue

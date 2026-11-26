@@ -18,10 +18,7 @@ import scoped from '../fixtures/scoped.config.json' with { type: 'json' }
 
 // Record scopes, the parts that need no database: the config's checks, what a
 // person may reach from what they hold, and what the browser keeps when the
-// scope changes. `pending` tests fail until the feature is written
-// (SCOPES_STRICT=1 runs them as plain tests, to read why).
-
-const pending = process.env['SCOPES_STRICT'] === '1' ? test : test.failing
+// scope changes.
 
 describe('scopes in crm.config.json', () => {
   const problems = (scopes: unknown) => {

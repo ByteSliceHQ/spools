@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
 
+import { Effect, Layer } from 'effect'
+
 import { fileHandlers } from '../../src/api/file'
 import { sequencesHandlers } from '../../src/api/sequences'
 import { toolsHandlers } from '../../src/api/tools'
@@ -8,18 +10,26 @@ import { runTarget } from '../../src/server/actions'
 import { activeRuns, enroll } from '../../src/server/campaigns'
 import * as files from '../../src/server/files'
 import * as records from '../../src/server/records'
-import { GRANT_HEADER, mintGrant } from '../../src/server/scopes'
+import { Agents } from '../../src/server/runtime/agents'
+import * as boundary from '../../src/server/runtime/boundary'
+import {
+  asSystem,
+  GRANT_HEADER,
+  grantFor as workflowGrant,
+  mintGrant,
+  readGrant,
+} from '../../src/server/scopes'
 import * as service from '../../src/server/service'
 import { Store } from '../../src/server/store/store'
-import { Note, SequenceRun } from '../../src/server/store/tables'
+import { Activity, Note, SequenceRun } from '../../src/server/store/tables'
 import {
   as,
   column,
   CRON_TOKEN,
   drive,
   ids,
+  installWorld,
   northIn,
-  pending,
   people,
   requestFrom,
   scopedWorld,
@@ -28,6 +38,7 @@ import {
   southIn,
   sys,
   TOOL_TOKEN,
+  unattended,
   type Who,
 } from './scopes-world'
 
@@ -98,41 +109,38 @@ test('sequences: a record of another scope can’t be enrolled, and runs are cou
   }
 })
 
-pending(
-  'sequences: the cron tick sends for every scope, and what it writes stays in the record’s scope',
-  async () => {
-    await enrolBoth()
-    sent.length = 0
+test('sequences: the cron tick sends for every scope, and what it writes stays in the record’s scope', async () => {
+  await enrolBoth()
+  sent.length = 0
 
-    // The welcome email waits a day. Bring both runs forward, as a day passing would.
-    await sys(
-      Store.use((store) =>
-        store.update(
-          SequenceRun,
-          { where: { campaignKey: 'welcome', status: 'active' } },
-          { dueAt: new Date(Date.now() - 60_000) },
-        ),
+  // The welcome email waits a day. Bring both runs forward, as a day passing would.
+  await sys(
+    Store.use((store) =>
+      store.update(
+        SequenceRun,
+        { where: { campaignKey: 'welcome', status: 'active' } },
+        { dueAt: new Date(Date.now() - 60_000) },
       ),
-    )
+    ),
+  )
 
-    // The scheduler calls the cron route: nobody is signed in, and nothing says whose work this is.
-    const request = new Request('http://crm.test/api/cron/sequences', {
-      headers: { authorization: `Bearer ${CRON_TOKEN}` },
-    })
+  // The scheduler calls the cron route: nobody is signed in, and nothing says whose work this is.
+  const request = new Request('http://crm.test/api/cron/sequences', {
+    headers: { authorization: `Bearer ${CRON_TOKEN}` },
+  })
 
-    const result = await (await sequencesHandlers.GET({ request })).json()
-    expect(result).toMatchObject({ ok: true, sent: 2 })
-    expect(sent.map((e) => e.to).toSorted()).toEqual(['nina@alder.test', 'sofia@birch.test'])
+  const result = await (await sequencesHandlers.GET({ request })).json()
+  expect(result).toMatchObject({ ok: true, sent: 2 })
+  expect(sent.map((e) => e.to).toSorted()).toEqual(['nina@alder.test', 'sofia@birch.test'])
 
-    // The email to Sofia is on her timeline, which is South's.
-    const south = await as('sam', records.listActivities('contacts', ids.south.contact))
-    expect(JSON.stringify(south)).toContain('Welcome, Sofia Birch')
+  // The email to Sofia is on her timeline, which is South's.
+  const south = await as('sam', records.listActivities('contacts', ids.south.contact))
+  expect(JSON.stringify(south)).toContain('Welcome, Sofia Birch')
 
-    const recent = await as('nora', records.recentActivities(200))
-    expect(JSON.stringify(recent)).toContain('Welcome, Nina Alder')
-    expect(southIn(recent)).toEqual([])
-  },
-)
+  const recent = await as('nora', records.recentActivities(200))
+  expect(JSON.stringify(recent)).toContain('Welcome, Nina Alder')
+  expect(southIn(recent)).toEqual([])
+})
 
 // ── The app's own code ──────────────────────────────────────────────────────
 
@@ -238,7 +246,7 @@ test('the tool API fails closed: a call that carries no grant reaches no record'
   }
 })
 
-pending('the tool API: a grant reaches its own scope, and writes nowhere else', async () => {
+test('the tool API: a grant reaches its own scope, and writes nowhere else', async () => {
   const grant = await grantFor(northOnly, nora.id)
   const rows = (answer: ToolAnswer) => (Array.isArray(answer.data) ? answer.data : [])
 
@@ -387,4 +395,111 @@ test('record folders and files: another scope’s can’t be listed, found, open
 
   const kept = await as('sam', files.listFolder(folder.folderId))
   expect(column(kept.files, 'name')).toEqual(['Birch contract.txt'])
+})
+
+test('a grant that has run out, or was made with another key, is no grant', async () => {
+  const stale = await sys(mintGrant(northOnly, { ttlMs: -1 }))
+  expect(await sys(readGrant(stale))).toBeNull()
+  expect((await call('search', { objectKey: 'contacts' }, stale)).ok).toBe(false)
+
+  const good = await sys(mintGrant(northOnly))
+  expect(await sys(readGrant(good))).toEqual(northOnly)
+  // A grant never states the system's own access, whatever was put into it.
+  expect((await sys(readGrant(good)))?.system).toBeUndefined()
+
+  const key = process.env['APP_SECRET']
+  process.env['APP_SECRET'] = 'another-key-'.repeat(4)
+
+  try {
+    expect(await sys(readGrant(good))).toBeNull()
+  } finally {
+    process.env['APP_SECRET'] = key
+  }
+})
+
+test('a workflow started for a record is handed a grant for that record’s scope, and no more than its starter had', async () => {
+  const inputs: Record<string, unknown>[] = []
+
+  const engine = Layer.succeed(
+    Agents,
+    Agents.of({
+      configured: Effect.succeed(true),
+      executeWorkflow: (_name, input) =>
+        Effect.sync(() => {
+          inputs.push(input)
+          return { skipped: false as const, executionId: 'run' }
+        }),
+      chat: Effect.succeed(null),
+    }),
+  )
+
+  const nina = await record('contacts', ids.north.contact)
+  const ctx = { objectKey: 'contacts', record: nina, actor: nora, trigger: 'action:enrich' }
+
+  const granted = async (input: Record<string, unknown> | undefined) =>
+    sys(readGrant(typeof input?.['grant'] === 'string' ? input['grant'] : null))
+
+  try {
+    await installWorld({ agents: engine })
+
+    // The built-in `swirls:` target runs as a promise, off the caller's program: the access is carried to it.
+    await as('nora', runTarget('swirls:enrich', ctx))
+
+    expect(await granted(inputs.at(-1))).toEqual({
+      read: ['north'],
+      write: ['north'],
+      active: 'north',
+    })
+
+    // Head office starts one on the same record: the grant is the record's scope, not every scope.
+    await as('hana', runTarget('swirls:enrich', ctx), null)
+
+    expect(await granted(inputs.at(-1))).toEqual({
+      read: ['north'],
+      write: ['north'],
+      active: 'north',
+    })
+
+    // Whoever can't write can't have a workflow write for them.
+    expect(await sys(readGrant(await as('ned', workflowGrant('contacts', nina))))).toEqual({
+      read: ['north'],
+      write: [],
+      active: 'north',
+    })
+
+    // With nobody said, there is nothing to grant.
+    expect(await unattended(workflowGrant('contacts', nina))).toBeNull()
+  } finally {
+    await installWorld()
+
+    await sys(
+      Store.use((store) =>
+        store.remove(Activity, { where: { recordId: ids.north.contact, kind: 'workflow' } }),
+      ),
+    )
+  }
+})
+
+// ── Routes that answer without a signed-in person ───────────────────────────
+
+test('a public route reaches a shared object, and is refused a scoped one unless its code says it is the system', async () => {
+  const count = (objectKey: string) => records.countMatching({ objectKey })
+
+  const answer = (program: ReturnType<typeof count>) =>
+    boundary.publicRoute('test.public', () => Effect.map(program, (n) => Response.json({ n })))
+
+  const ask = async (route: ReturnType<typeof answer>) => {
+    const response = await route({ request: new Request('http://crm.test/api/test/public') })
+    return { status: response.status, body: await response.json() }
+  }
+
+  expect(await ask(answer(count('products')))).toEqual({ status: 200, body: { n: 1 } })
+
+  // Work a signed-out route really means to do across every scope has to say so.
+  expect(await ask(answer(asSystem(count('contacts'))))).toEqual({ status: 200, body: { n: 3 } })
+
+  const refused = await ask(answer(count('contacts')))
+  expect(refused.status).toBe(500)
+  expect(refused.body.ok).toBe(false)
+  expect(refused.body.n).toBeUndefined()
 })

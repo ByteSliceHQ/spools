@@ -8,17 +8,7 @@ import { Store } from '../../src/server/store/store'
 import { Activity, Favorite, Note, Task } from '../../src/server/store/tables'
 import * as views from '../../src/server/views'
 import * as workspace from '../../src/server/workspace'
-import {
-  as,
-  column,
-  ids,
-  northIn,
-  pending,
-  people,
-  scopedWorld,
-  southIn,
-  sys,
-} from './scopes-world'
+import { as, column, ids, northIn, people, scopedWorld, southIn, sys } from './scopes-world'
 
 // Record scopes in what sits beside records (src/server/views.ts and
 // workspace.ts). None of it goes through service.ts, and most of it reaches the

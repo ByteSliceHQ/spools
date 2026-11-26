@@ -15,7 +15,6 @@ import {
   branches,
   column,
   installWorld,
-  pending,
   people,
   requestFrom,
   scopedWorld,

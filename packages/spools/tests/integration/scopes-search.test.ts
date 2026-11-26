@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import * as search from '../../src/server/search'
-import { as, column, northIn, pending, people, scopedWorld, southIn } from './scopes-world'
+import { as, column, northIn, people, scopedWorld, southIn } from './scopes-world'
 
 // Record scopes in search: the index the browser is sent, what the server
 // searches itself, and the values the filter box offers. What the browser keeps

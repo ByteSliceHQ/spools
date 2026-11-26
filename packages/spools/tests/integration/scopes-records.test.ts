@@ -12,7 +12,6 @@ import {
   column,
   ids,
   northIn,
-  pending,
   people,
   scopedWorld,
   southIn,
@@ -22,7 +21,6 @@ import {
 
 // Record scopes at the data layer and the store: what a person can list, count,
 // open, make, change and delete, and what a relation may show of another scope.
-// Every `pending` test fails until the guard in src/server/store/scope.ts is written.
 
 scopedWorld()
 

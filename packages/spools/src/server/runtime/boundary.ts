@@ -1,7 +1,7 @@
 import { getRequest, setResponseHeader, setResponseStatus } from '@tanstack/react-start/server'
 import { Cause, Duration, Effect, Exit, type ManagedRuntime, Option } from 'effect'
 
-import { asUser, wantedScope } from '../scopes'
+import { asUser, GRANT_HEADER, readGrant, scopesOn, wantedScope, withAccess } from '../scopes'
 import { spool } from '../spool'
 import { type CrmUser, Users } from '../users'
 import { type AppServices, CurrentRequest, runtime, type Services } from './app'
@@ -318,7 +318,13 @@ export function toolRoute<P, E extends StaffError>(
           return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
         }
 
-        return yield* program({ request, params })
+        // In a Spool with record scopes a call reaches what its grant says, and a grant is the
+        // only thing that says: nothing in the body, which a model writes, switches scope. A call
+        // with no grant this server signed is given no access, so every scoped table refuses it.
+        const access = scopesOn() ? yield* readGrant(request.headers.get(GRANT_HEADER)) : null
+        return yield* access
+          ? withAccess(access)(program({ request, params }))
+          : program({ request, params })
       }).pipe(Effect.catch((error: StaffError) => Effect.succeed(failureResponse(error)))),
     )
 }

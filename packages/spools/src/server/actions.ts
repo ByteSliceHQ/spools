@@ -6,6 +6,7 @@ import { addActivity } from './records'
 import { Agents } from './runtime/agents'
 import { runServer } from './runtime/app'
 import { fromHook, Invalid } from './runtime/errors'
+import { grantFor } from './scopes'
 import { crmConfig, spool } from './spool'
 
 export type { RunContext, RunResult } from '../crm/extensions'
@@ -14,12 +15,22 @@ export type { RunContext, RunResult } from '../crm/extensions'
 const startWorkflow = Effect.fn('actions.startWorkflow')(function* (name: string, ctx: RunContext) {
   const agents = yield* Agents
 
-  const res = yield* agents.executeWorkflow(name, {
+  // In a Spool with record scopes the workflow is handed a grant for this record's scope, to
+  // send back with each call it makes to the tool API (`x-spools-grant`). Without it those
+  // calls reach no scoped record. A day: a workflow may wait on a person before it writes back.
+  const grant = yield* grantFor(ctx.objectKey, ctx.record, {
+    userId: ctx.actor?.id,
+    ttlMs: 24 * 60 * 60 * 1000,
+  })
+
+  const event = {
     objectKey: ctx.objectKey,
     record: ctx.record,
     actor: ctx.actor,
     trigger: ctx.trigger,
-  })
+  }
+
+  const res = yield* agents.executeWorkflow(name, grant === null ? event : { ...event, grant })
 
   const message = res.skipped
     ? `Workflow "${name}" skipped (${res.reason})`

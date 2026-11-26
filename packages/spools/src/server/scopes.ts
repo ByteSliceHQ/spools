@@ -1,4 +1,7 @@
-import { Context, Effect, Layer, Predicate } from 'effect'
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
+import { Clock, Context, Effect, Layer, Predicate } from 'effect'
+import { z } from 'zod'
 
 import {
   accessFrom,
@@ -11,14 +14,16 @@ import {
   SYSTEM_ACCESS,
 } from '../crm/scopes'
 import { CurrentAccess } from './runtime/access'
+import * as config from './runtime/config'
 import {
   type AuthError,
   type ExtensionError,
   fromHook,
-  type Invalid,
+  Invalid,
   type Timeout,
 } from './runtime/errors'
-import { crmConfig, spool } from './spool'
+import { crmConfig, objectTable, spool } from './spool'
+import type { CrmRecord } from './store/objects'
 import type { CrmUser } from './users'
 
 /**
@@ -27,7 +32,6 @@ import type { CrmUser } from './users'
  * access worked out some other way (`withAccess`). What a scope is, is in
  * src/crm/scopes.ts; where it is enforced, in src/server/store/scope.ts.
  *
- * The tool API's grant (`mintGrant`) is not made yet.
  */
 
 type Failure = AuthError | Timeout | ExtensionError
@@ -80,6 +84,18 @@ export class Scopes extends Context.Service<
       }),
     )
 }
+
+/**
+ * The access of work done for one record, with nobody signed in: a sequence's
+ * next email, which reads its record and writes on its timeline. It reaches the
+ * record's scope and nothing else. A row with no scope (written before scopes
+ * were turned on, and not backfilled) is the system's to deal with: whatever it
+ * writes is still stamped from its record.
+ */
+export const scopeOnly = (scope: string | null): ScopeAccess =>
+  scope === null
+    ? SYSTEM_ACCESS
+    : { read: [scope], write: [scope], active: scope === EVERY_SCOPE ? null : scope }
 
 /** Whether this Spool has scopes at all (`scopes` in crm.config.json). */
 export const scopesOn = (): boolean => crmConfig().scopes !== undefined
@@ -185,16 +201,133 @@ export const scopeSession = Effect.fn('scopes.scopeSession')(function* (
 /** The header a call to the tool API carries its grant in. */
 export const GRANT_HEADER = 'x-spools-grant'
 
+/** How long a grant is good for unless its maker says otherwise. */
+const GRANT_TTL_MS = 60 * 60 * 1000
+
+/** What a grant says, as it is signed: what can be read and written, the active scope, who it was made for, when it ends. */
+const grantPayload = z.object({
+  r: z.union([z.literal('all'), z.array(z.string()).max(500)]),
+  w: z.union([z.literal('all'), z.array(z.string()).max(500)]),
+  a: z.string().nullable(),
+  u: z.string().optional(),
+  e: z.number(),
+})
+
+/** The key grants are signed with. A deployment without one makes and takes none. */
+const grantSecret = Effect.gen(function* () {
+  const secret = yield* config.variable('APP_SECRET')
+
+  if (!secret || secret.length < 32) {
+    return yield* new Invalid({
+      message: 'APP_SECRET must be set (32+ characters) to sign scope grants',
+    })
+  }
+
+  return secret
+})
+
+const signed = (secret: string, payload: string) =>
+  createHmac('sha256', secret).update(`scope-grant:${payload}`).digest('base64url')
+
 /**
  * A signed, short-lived statement of an access, for a call that has nobody
- * signed in: the tool API. The server makes one when it starts a workflow or
- * passes a chat message on, and the tool route reads it back from
- * `GRANT_HEADER`. Signed with `APP_SECRET`, like an unsubscribe link, so
- * neither a workflow nor the model can widen it.
- *
- * Not made yet: this is an empty grant, which the tool route must refuse.
+ * signed in: the tool API. The server makes one when it starts a workflow, and
+ * the workflow sends it back in `GRANT_HEADER` with each call it makes.
+ * Signed with `APP_SECRET`, like an unsubscribe link, so neither a workflow nor
+ * a model can widen it; and nothing but this header carries a scope, so nothing
+ * a model can put in a tool call switches one. It never carries the system's
+ * own access.
  */
-export const mintGrant = (
-  _access: ScopeAccess,
-  _options: { userId?: string; ttlMs?: number } = {},
-): Effect.Effect<string, Invalid> => Effect.succeed('')
+export const mintGrant = Effect.fn('scopes.mintGrant')(function* (
+  access: ScopeAccess,
+  options: { userId?: string; ttlMs?: number } = {},
+) {
+  const secret = yield* grantSecret
+  const now = yield* Clock.currentTimeMillis
+
+  const payload = Buffer.from(
+    JSON.stringify({
+      r: access.read,
+      w: access.write,
+      a: access.active,
+      u: options.userId,
+      e: now + (options.ttlMs ?? GRANT_TTL_MS),
+    }),
+  ).toString('base64url')
+
+  return `${payload}.${signed(secret, payload)}`
+})
+
+/** The access a grant states, or null when it isn't one this server signed, or has run out. */
+export const readGrant = Effect.fn('scopes.readGrant')(function* (grant: string | null) {
+  const [payload, signature, ...rest] = (grant ?? '').split('.')
+
+  if (!payload || !signature || rest.length > 0) {
+    return null
+  }
+
+  const secret = yield* Effect.option(grantSecret)
+
+  if (secret._tag === 'None') {
+    return null
+  }
+
+  const expected = Buffer.from(signed(secret.value, payload))
+  const given = Buffer.from(signature)
+
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
+    return null
+  }
+
+  const said = yield* Effect.sync(() => {
+    try {
+      return grantPayload.safeParse(JSON.parse(Buffer.from(payload, 'base64url').toString())).data
+    } catch {
+      return undefined
+    }
+  })
+
+  if (!said || said.e <= (yield* Clock.currentTimeMillis)) {
+    return null
+  }
+
+  const access: ScopeAccess = { read: said.r, write: said.w, active: said.a }
+  return access
+})
+
+/** The scope of a record of an object, as its row holds it: null for a shared object's, and for one with none. */
+export const recordScope = (objectKey: string, record: CrmRecord) => {
+  const marker = Object.hasOwn(crmConfig().objects, objectKey)
+    ? objectTable(objectKey).scope
+    : undefined
+
+  const value = marker?.kind === 'own' ? record[marker.column] : null
+  return Predicate.isString(value) && value !== '' ? value : null
+}
+
+/**
+ * The grant a workflow started for a record is handed: the record's scope, to
+ * read, and to write only if whoever started it could. Null in a Spool without
+ * scopes, and when nobody said whose work this is: a workflow then has no
+ * grant, and its calls to the tool API reach no scoped record.
+ */
+export const grantFor = Effect.fn('scopes.grantFor')(function* (
+  objectKey: string,
+  record: CrmRecord,
+  options: { userId?: string; ttlMs?: number } = {},
+) {
+  const access = yield* CurrentAccess
+
+  if (!scopesOn() || !access) {
+    return null
+  }
+
+  const scope = recordScope(objectKey, record)
+  const reads = scope !== null && (access.read === 'all' || access.read.includes(scope))
+  const writes = scope !== null && (access.write === 'all' || access.write.includes(scope))
+
+  return yield* mintGrant(
+    { read: reads && scope ? [scope] : [], write: writes && scope ? [scope] : [], active: scope },
+    options,
+  )
+})
