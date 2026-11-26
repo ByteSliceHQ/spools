@@ -1,7 +1,7 @@
 {
   "version": 1,
   "app": {
-    "name": "Orchard Supply"
+    "name": "Acme"
   },
   "access": {
     "allowedDomains": ["example.com"],

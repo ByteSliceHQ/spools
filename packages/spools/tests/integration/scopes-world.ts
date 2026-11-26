@@ -84,10 +84,32 @@ const authUsers: AuthUser[] = Object.values(people).map((p) => ({
 
 const directory = Auth.layerTest(authUsers)
 
+/** The header a test request carries the signed-in person's id in. */
+export const SIGNED_IN_AS = 'x-test-user'
+
+/** A request to the server from one of the people above (or from nobody), with the scope cookie if given. */
+export const requestFrom = (who: Who | null, path: string, scopeCookie?: string): Request => {
+  const headers = new Headers()
+
+  if (who) {
+    headers.set(SIGNED_IN_AS, people[who].id)
+  }
+
+  if (scopeCookie !== undefined) {
+    headers.set('cookie', `theme=dark; spools-scope=${scopeCookie}`)
+  }
+
+  return new Request(`http://crm.test${path}`, { headers })
+}
+
 const auth: AuthAdapter = {
   id: 'test',
   label: 'The test sign-in',
-  session: async () => null,
+  // A request says who it is from in a header, as a session cookie would.
+  session: async (request) => {
+    const userId = request.headers.get(SIGNED_IN_AS)
+    return userId ? { userId, getToken: async () => null } : null
+  },
   layer: directory,
 }
 
@@ -311,10 +333,14 @@ let seeded = false
 const ENV = {
   APP_SECRET: 's'.repeat(40),
   APP_URL: 'https://crm.example.com',
+  CRON_SECRET: 'c'.repeat(32),
   SWIRLS_APP_TOKEN: 't'.repeat(40),
   FLASHDRIVE_API_KEY: 'test-key',
   FLASHDRIVE_DRIVE_ID: '2f0c1c7e-58a1-4d0e-9a53-0f6c1f8f4b11',
 }
+
+/** The bearer token the cron routes expect in this world. */
+export const CRON_TOKEN = ENV.CRON_SECRET
 
 /** The bearer token the tool API expects in this world. */
 export const TOOL_TOKEN = ENV.SWIRLS_APP_TOKEN

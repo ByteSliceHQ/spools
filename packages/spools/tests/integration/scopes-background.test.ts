@@ -1,9 +1,11 @@
 import { expect, test } from 'bun:test'
 
+import { fileHandlers } from '../../src/api/file'
+import { sequencesHandlers } from '../../src/api/sequences'
 import { toolsHandlers } from '../../src/api/tools'
 import type { ScopeAccess } from '../../src/crm/scopes'
 import { runTarget } from '../../src/server/actions'
-import { activeRuns, enroll, tick } from '../../src/server/campaigns'
+import { activeRuns, enroll } from '../../src/server/campaigns'
 import * as files from '../../src/server/files'
 import * as records from '../../src/server/records'
 import { GRANT_HEADER, mintGrant } from '../../src/server/scopes'
@@ -13,18 +15,20 @@ import { Note, SequenceRun } from '../../src/server/store/tables'
 import {
   as,
   column,
+  CRON_TOKEN,
   drive,
   ids,
   northIn,
   pending,
   people,
+  requestFrom,
   scopedWorld,
   sent,
   sightings,
   southIn,
   sys,
   TOOL_TOKEN,
-  unattended,
+  type Who,
 } from './scopes-world'
 
 // Record scopes where nobody is signed in, or where the app's own code runs:
@@ -103,9 +107,24 @@ pending(
     await enrolBoth()
     sent.length = 0
 
-    // The scheduler: nobody is signed in, and nothing says whose work this is.
-    const result = await unattended(tick({ now: new Date(Date.now() + 2 * 86_400_000) }))
-    expect(result.sent).toBe(2)
+    // The welcome email waits a day. Bring both runs forward, as a day passing would.
+    await sys(
+      Store.use((store) =>
+        store.update(
+          SequenceRun,
+          { where: { campaignKey: 'welcome', status: 'active' } },
+          { dueAt: new Date(Date.now() - 60_000) },
+        ),
+      ),
+    )
+
+    // The scheduler calls the cron route: nobody is signed in, and nothing says whose work this is.
+    const request = new Request('http://crm.test/api/cron/sequences', {
+      headers: { authorization: `Bearer ${CRON_TOKEN}` },
+    })
+
+    const result = await (await sequencesHandlers.GET({ request })).json()
+    expect(result).toMatchObject({ ok: true, sent: 2 })
     expect(sent.map((e) => e.to).toSorted()).toEqual(['nina@alder.test', 'sofia@birch.test'])
 
     // The email to Sofia is on her timeline, which is South's.
@@ -334,6 +353,14 @@ pending(
     expect(file).toBeDefined()
     const fileId = file?.id ?? ''
 
+    // The download route, as each person's browser asks it.
+    const download = async (who: Who, scopeCookie?: string) => {
+      const request = requestFrom(who, `/api/files/${fileId}`, scopeCookie)
+      return (await fileHandlers.GET({ request, params: { id: fileId } })).status
+    }
+
+    expect(await download('sam')).toBe(302)
+
     // The record's own folder, asked for by the record or by the folder's id.
     await expect(as('nora', files.recordFolder('companies', ids.south.company))).rejects.toThrow()
     await expect(as('nora', files.listFolder(folder.folderId))).rejects.toThrow()
@@ -349,7 +376,9 @@ pending(
 
     expect(southIn(await as('nora', files.searchFiles('contract')))).toEqual([])
 
-    // By its id alone.
+    // By its id alone: not found, as a file that was never there, whatever the cookie says.
+    expect(await download('nora')).toBe(404)
+    expect(await download('nora', 'south')).toBe(404)
     await expect(as('nora', files.openFile(fileId))).rejects.toThrow()
     await expect(as('nora', files.changeFile(fileId, { name: 'Alder.txt' }))).rejects.toThrow()
     await expect(as('nora', files.deleteFile(fileId))).rejects.toThrow()

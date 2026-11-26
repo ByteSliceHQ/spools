@@ -308,6 +308,29 @@ pending(
       expect(await sys(records.listActivities('contacts', ids.south.contact))).toHaveLength(
         before.length,
       )
+
+      // Not found, not forbidden: the refusal reads the same as for a record that was never there.
+      const refusal = (attempt: Promise<unknown>) =>
+        attempt.then(
+          () => 'accepted',
+          (error: unknown) => (error instanceof Error ? error.message : String(error)),
+        )
+
+      const plant = (recordId: string) =>
+        as(
+          'nora',
+          records.addActivity({
+            objectKey: 'contacts',
+            recordId,
+            kind: 'note',
+            summary: 'planted',
+            actor: 'Nora',
+          }),
+        )
+
+      const hidden = await refusal(plant(ids.south.contact))
+      expect(hidden).not.toBe('accepted')
+      expect(hidden).toBe(await refusal(plant(crypto.randomUUID())))
     } finally {
       await sys(Store.use((store) => store.remove(Activity, { where: { body: 'planted' } })))
       await sys(Store.use((store) => store.remove(Activity, { where: { summary: 'planted' } })))

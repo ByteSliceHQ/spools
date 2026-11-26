@@ -5,7 +5,7 @@ import * as records from '../../src/server/records'
 import * as service from '../../src/server/service'
 import { objectTable } from '../../src/server/spool'
 import { Store } from '../../src/server/store/store'
-import { Note } from '../../src/server/store/tables'
+import { Note, Task } from '../../src/server/store/tables'
 import * as workspace from '../../src/server/workspace'
 import {
   as,
@@ -41,6 +41,10 @@ async function withRecord<A>(
   try {
     return await work(id)
   } finally {
+    // Deleting a record leaves its notes and tasks behind: they would turn up in another test's lists.
+    const on = { where: { objectKey, recordId: id } }
+    await sys(Store.use((store) => store.remove(Note, on)))
+    await sys(Store.use((store) => store.remove(Task, on)))
     await sys(records.deleteRecord(objectKey, id))
   }
 }

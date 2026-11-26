@@ -1,11 +1,30 @@
 import { expect, test } from 'bun:test'
 
+import { Effect } from 'effect'
+
+import * as api from '../../src/server/extension-api'
+import { apiRoute } from '../../src/server/handlers'
+import * as records from '../../src/server/records'
+import * as boundary from '../../src/server/runtime/boundary'
 import { scopeSession } from '../../src/server/scopes'
 import { Users } from '../../src/server/users'
-import { as, branches, column, pending, people, scopedWorld, sys } from './scopes-world'
+import {
+  as,
+  branches,
+  column,
+  pending,
+  people,
+  requestFrom,
+  scopedWorld,
+  sys,
+  type Who,
+} from './scopes-world'
 
-// Record scopes and people: who is offered as an owner or assignee, and what a
-// person is told about their own scopes (the switcher).
+// Record scopes and people: who is offered as an owner or assignee, what a
+// person is told about their own scopes (the switcher), and the boundary, which
+// is where a signed-in request is given its scope. Every other scopes test runs
+// its programs under `asUser` itself; the boundary tests are the ones that fail
+// if a route forgets to.
 
 scopedWorld()
 
@@ -76,3 +95,66 @@ pending('a person is told the scopes they may switch between, and which is activ
     canWrite: false,
   })
 })
+
+// ── The boundary ────────────────────────────────────────────────────────────
+
+/** An endpoint of the app's own, in plain promises: it lists contacts through `@swirls/spools/extensions`. */
+const appRoute = apiRoute('test.contacts', async ({ user }) => {
+  const contacts = await api.listRecords({ objectKey: 'contacts', limit: 500, relations: 'none' })
+  return Response.json({ user: user.id, contacts: contacts.map((c) => String(c.name)).toSorted() })
+})
+
+/** An endpoint of the framework's own, written with Effect. */
+const frameworkRoute = boundary.apiRoute('test.count', () =>
+  Effect.map(records.countMatching({ objectKey: 'contacts' }), (count) => Response.json({ count })),
+)
+
+const listed = async (who: Who | null, scopeCookie?: string) => {
+  const request = requestFrom(who, '/api/test/contacts', scopeCookie)
+  const response = await appRoute({ request, params: {} })
+  return response.status === 200 ? (await response.json()).contacts : response.status
+}
+
+const counted = async (who: Who | null, scopeCookie?: string) => {
+  const request = requestFrom(who, '/api/test/count', scopeCookie)
+  const response = await frameworkRoute({ request, params: {} })
+  return response.status === 200 ? (await response.json()).count : response.status
+}
+
+test('a route still answers nobody who is signed out', async () => {
+  expect(await listed(null)).toBe(401)
+  expect(await counted(null)).toBe(401)
+  expect(await counted('hana')).toBe(3)
+})
+
+pending('a signed-in request is given its scope by the boundary, not by the route', async () => {
+  const north = ['Nell Crossing', 'Nina Alder']
+
+  // The framework's own route did nothing to ask for a scope.
+  expect(await counted('nora')).toBe(2)
+  expect(await counted('sam')).toBe(1)
+  expect(await counted('otto')).toBe(0)
+
+  // The app's own code, called from the route, works as the person does.
+  expect(await listed('nora')).toEqual(north)
+  expect(await listed('otto')).toEqual([])
+})
+
+pending(
+  'the scope a request asks for is a preference, checked against what the person holds',
+  async () => {
+    const north = ['Nell Crossing', 'Nina Alder']
+
+    // Bo switches with the cookie.
+    expect(await listed('bo')).toEqual(north)
+    expect(await listed('bo', 'south')).toEqual(['Sofia Birch'])
+    expect(await listed('bo', '*')).toHaveLength(3)
+    expect(await counted('hana', 'south')).toBe(1)
+
+    // Nora sets the cookie herself. It gets her nothing.
+    expect(await listed('nora', 'south')).toEqual(north)
+    expect(await listed('nora', '*')).toEqual(north)
+    expect(await counted('nora', 'south')).toBe(2)
+    expect(await counted('otto', 'north')).toBe(0)
+  },
+)
