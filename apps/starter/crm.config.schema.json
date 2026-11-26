@@ -1213,6 +1213,58 @@
         ]
       }
     },
+    "scopes": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "default": "Scope",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "labelPlural": {
+          "default": "Scopes",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "objects": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*$"
+          }
+        },
+        "roles": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "write": {
+                "default": false,
+                "type": "boolean"
+              },
+              "all": {
+                "default": false,
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "objects",
+        "roles"
+      ]
+    },
     "automations": {
       "default": [],
       "type": "array",

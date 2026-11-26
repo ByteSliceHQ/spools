@@ -5,6 +5,7 @@ import type { Adapter } from '../runtime/adapter'
 import { DatabaseError, type Timeout } from '../runtime/errors'
 import { policies, withPolicy } from '../runtime/policies'
 import type { Predicate, Query, Scalar, Which } from './query'
+import { guard } from './scope'
 import type { AnyTable, Table } from './table'
 
 /**
@@ -427,7 +428,9 @@ export function makeStore<BackendError>(backend: Backend<BackendError>): StoreSh
   // is an insert type's values, each a column's and so a `Scalar`; an object's inserts are
   // typed loosely (`ObjectTable`) and are the values its schema checked (records.ts).
   // TypeScript can't follow this: a `Table` keeps its columns as data, not in its type.
-  return shape as StoreShape
+  //
+  // Every store is made here, so this is where record scopes are kept (scope.ts).
+  return guard(shape as StoreShape)
 }
 
 /**

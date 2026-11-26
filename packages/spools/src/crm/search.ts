@@ -28,6 +28,12 @@ export type QuickIndex = {
   notes: { rows: NoteRow[]; total: number }
   /** Views made in the app (config views are already in the page), so search can jump to one by name. */
   views: { id: string; label: string; objectKey: string }[]
+  /**
+   * Which record scopes it was read for (`scopeKey` in scopes.ts), in a Spool
+   * that has them. An index read for one is never merged into, or shown in
+   * place of, an index read for another. Not sent yet.
+   */
+  scope?: string
 }
 
 /** The largest number of records of one object the browser is given. */
