@@ -495,3 +495,63 @@ test('with nobody signed in, a shared object still answers', async () => {
     'Crate',
   ])
 })
+
+test('a record can’t move to another scope while scoped records point at it, or stay pointed at one it left', async () => {
+  // Bo holds both branches. Nina's company has contacts and deals in North.
+  await expect(
+    as('bo', service.updateRecord('companies', ids.north.company, { branch: 'south' }, bo), null),
+  ).rejects.toThrow('point at it')
+
+  // Nina points at a North company: she can't go South and leave the link behind.
+  await expect(
+    as('bo', service.updateRecord('contacts', ids.north.contact, { branch: 'south' }, bo), null),
+  ).rejects.toThrow()
+
+  expect((await sys(records.getRecord('companies', ids.north.company)))?.branch).toBe('north')
+  expect((await sys(records.getRecord('contacts', ids.north.contact)))?.branch).toBe('north')
+
+  // Moved together with a link into the new scope, it goes.
+  await withRecord(
+    'contacts',
+    { name: 'Alder leaver', branch: 'north', companyId: ids.north.annex },
+    async (id) => {
+      const moved = await as(
+        'bo',
+        service.updateRecord('contacts', id, { branch: 'south', companyId: ids.south.depot }, bo),
+        null,
+      )
+
+      expect([moved?.branch, moved?.companyId]).toEqual(['south', ids.south.depot])
+    },
+  )
+})
+
+test('nobody links across scopes, not even a role that reaches every scope', async () => {
+  try {
+    await expect(
+      as(
+        'hana',
+        service.createRecord(
+          'contacts',
+          { name: 'Alder crosser', branch: 'north', companyId: ids.south.company },
+          hana,
+        ),
+        null,
+      ),
+    ).rejects.toThrow()
+
+    await expect(
+      as(
+        'hana',
+        service.updateRecord('contacts', ids.north.contact, { companyId: ids.south.depot }, hana),
+        null,
+      ),
+    ).rejects.toThrow()
+
+    expect((await sys(records.getRecord('contacts', ids.north.contact)))?.companyId).toBe(
+      ids.north.company,
+    )
+  } finally {
+    await sweep('contacts', 'crosser')
+  }
+})

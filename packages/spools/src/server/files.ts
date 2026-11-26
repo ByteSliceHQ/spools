@@ -223,6 +223,65 @@ const foldersOutOfReach = Effect.fn('files.foldersOutOfReach')(function* (ids: r
   return hidden
 })
 
+/** How many folders are looked through before a folder is changed. One larger than this is left to someone who holds every scope. */
+const BENEATH_LIMIT = 2000
+
+/**
+ * Before a folder is renamed, moved or deleted: nothing beneath it may be the
+ * folder of a record out of reach. "Companies" is nobody's own, but every
+ * company's folder is inside it. The folders beneath are walked in the store
+ * itself, so one that was moved there by hand is found too.
+ */
+const nothingBeneathOutOfReach = Effect.fn('files.nothingBeneathOutOfReach')(function* (
+  folderId: string,
+) {
+  const access = scopesOn() ? yield* CurrentAccess : null
+
+  if (!scopesOn() || access?.write === 'all') {
+    return undefined
+  }
+
+  if (!access) {
+    return yield* notThere()
+  }
+
+  const files = yield* FileStore
+  const db = yield* Store
+  const beneath: string[] = []
+
+  for (let queue = [folderId]; queue.length > 0;) {
+    const next: string[] = []
+
+    for (const id of queue) {
+      const inside = yield* files.list(id)
+      next.push(...inside.folders.map((f) => f.id))
+
+      if (inside.truncated || beneath.length + next.length > BENEATH_LIMIT) {
+        return yield* fail(
+          'This folder holds too much to check here. Ask someone who can reach every record to change it.',
+        )
+      }
+    }
+
+    beneath.push(...next)
+    queue = next
+  }
+
+  for (let at = 0; at < beneath.length; at += 500) {
+    const owners = yield* asSystem(
+      db.find(RecordFolder, { filter: oneOf('folderId', beneath.slice(at, at + 500)) }),
+    )
+
+    if (owners.some((owner) => !within(access.write, owner.scope))) {
+      return yield* fail(
+        "This folder holds the folders of records you can't change, so it can't be renamed, moved or deleted by you.",
+      )
+    }
+  }
+
+  return undefined
+})
+
 /**
  * Fails as a missing file would unless the file is in `folderId` and that
  * folder is within reach. In a Spool with scopes a file can't be reached by its
@@ -399,6 +458,7 @@ export const changeFolder = Effect.fn('files.changeFolder')(function* (
   yield* refuseWhen(change.parentId === id, "A folder can't be moved into itself.")
   yield* folderInReach(id, 'write')
   yield* folderInReach(change.parentId ?? null, 'write')
+  yield* nothingBeneathOutOfReach(id)
   const files = yield* FileStore
   // Only what is given changes.
   const update: FolderChange = {}
@@ -422,6 +482,7 @@ export const changeFolder = Effect.fn('files.changeFolder')(function* (
  */
 export const deleteFolder = Effect.fn('files.deleteFolder')(function* (id: string) {
   yield* folderInReach(id, 'write')
+  yield* nothingBeneathOutOfReach(id)
   const files = yield* FileStore
   const db = yield* Store
 
@@ -605,7 +666,8 @@ export const recordFolder = Effect.fn('files.recordFolder')(function* (
   let path = yield* plannedPath(objectKey, recordId)
 
   // Two records with the same name each get a folder: the second carries part of its id.
-  if ((yield* db.count(RecordFolder, { where: { driveId: drive, path } })) > 0) {
+  // Asked as the system: a record of another scope may have the same name, and its folder is not this one's.
+  if ((yield* asSystem(db.count(RecordFolder, { where: { driveId: drive, path } }))) > 0) {
     path = `${path} (${recordId.slice(0, 8)})`
   }
 

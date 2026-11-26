@@ -23,6 +23,7 @@ import {
 import * as service from '../../src/server/service'
 import { Store } from '../../src/server/store/store'
 import { Activity, Note, SequenceRun } from '../../src/server/store/tables'
+import { buildContactIndex } from '../../src/server/sync'
 import {
   as,
   column,
@@ -511,4 +512,58 @@ test('a script says it is the system, in plain promises, or is refused', async (
   expect(await api.asSystem(list)).toHaveLength(3)
   // Saying so lasts as long as the work it was said for.
   await expect(list()).rejects.toThrow()
+})
+
+test('a shared folder that holds another scope’s record folders can’t be renamed, moved or deleted from under them', async () => {
+  const theirs = await as('sam', files.recordFolder('companies', ids.south.company))
+  const mine = await as('nora', files.recordFolder('companies', ids.north.company))
+  const top = await as('nora', files.listFolder(null))
+  const shared = top.folders.find((f) => f.name === 'Companies')
+  expect(shared).toBeDefined()
+  const sharedId = shared?.id ?? ''
+
+  // "Companies" is no record's own folder, but South's company folders are inside it.
+  await expect(as('nora', files.deleteFolder(sharedId))).rejects.toThrow()
+  await expect(as('nora', files.changeFolder(sharedId, { name: 'Gone' }))).rejects.toThrow()
+
+  await expect(
+    as('nora', files.changeFolder(sharedId, { parentId: mine.folderId })),
+  ).rejects.toThrow()
+
+  expect((await as('sam', files.listFolder(theirs.folderId))).record?.recordId).toBe(
+    ids.south.company,
+  )
+
+  // Her own record's folder is hers to change, and head office may change the shared one.
+  await as('nora', files.changeFolder(mine.folderId, { name: 'Alder Works' }))
+  await as('hana', files.changeFolder(sharedId, { name: 'Companies' }), null)
+})
+
+test('two records of the same name in different scopes each get a folder of their own', async () => {
+  const twin = async (branch: string) =>
+    (await sys(records.createRecord('companies', { name: 'Cedar Twin', branch }, 'seed'))).id
+
+  const north = await twin('north')
+  const south = await twin('south')
+
+  try {
+    const hers = await as('nora', files.recordFolder('companies', north))
+    const his = await as('sam', files.recordFolder('companies', south))
+    expect(his.folderId).not.toBe(hers.folderId)
+    expect(his.path).not.toBe(hers.path)
+    // Each is still within its own people's reach.
+    expect((await as('nora', files.listFolder(hers.folderId))).record?.recordId).toBe(north)
+    expect((await as('sam', files.listFolder(his.folderId))).record?.recordId).toBe(south)
+  } finally {
+    await sys(records.deleteRecord('companies', north))
+    await sys(records.deleteRecord('companies', south))
+  }
+})
+
+test('the mailbox sync’s index of addresses holds only what its owner can reach', async () => {
+  const index = await as('nora', buildContactIndex(), null)
+  expect([...index.keys()].toSorted()).toEqual(['nell@alder.test', 'nina@alder.test'])
+  expect([...(await as('sam', buildContactIndex(), null)).keys()]).toEqual(['sofia@birch.test'])
+  // With nobody said it is refused: the sync runs each mailbox as its owner.
+  await expect(unattended(buildContactIndex())).rejects.toThrow()
 })
