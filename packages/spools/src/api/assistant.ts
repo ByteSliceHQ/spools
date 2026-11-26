@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 
-import { Agents } from '../server/runtime/agents'
+import { assistantChat } from '../server/assistant-chat'
 import { apiRoute, type RouteInput } from '../server/runtime/boundary'
 import { AgentsError, messageOf } from '../server/runtime/errors'
 
@@ -9,7 +9,7 @@ import { AgentsError, messageOf } from '../server/runtime/errors'
 export const assistantHandlers = {
   POST: apiRoute('assistant.send', ({ request, user }: RouteInput<unknown>) =>
     Effect.gen(function* () {
-      const chat = yield* Agents.use((a) => a.chat)
+      const chat = yield* assistantChat
 
       if (!chat) {
         return Response.json({ error: 'Assistant not configured' }, { status: 503 })

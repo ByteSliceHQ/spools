@@ -1,7 +1,9 @@
 import { Effect, Layer } from 'effect'
 
+import type { ScopeGrant, ScopeInfo } from '../../../crm/scopes'
 import { Auth, type AuthAdapter, type AuthUser } from '../../../server/runtime/auth'
 import { AuthError } from '../../../server/runtime/errors'
+import { Scopes } from '../../../server/scopes'
 import { spool } from '../../../server/spool'
 
 /**
@@ -13,6 +15,16 @@ import { spool } from '../../../server/spool'
  *
  *   DEV_AUTH_EMAIL        who everyone is
  *   DEV_AUTH_SIGNED_OUT   "1" to see the app as a signed-out visitor
+ *
+ * For a Spool with record scopes, `scopes` says who holds what, by email
+ * address, and names the scopes there are:
+ *
+ *   devAuth({
+ *     scopes: {
+ *       list: [{ key: 'north', label: 'North' }, { key: 'south', label: 'South' }],
+ *       grants: { 'dev@example.com': [{ scope: 'north', role: 'member' }] },
+ *     },
+ *   })
  *
  * It refuses to run with NODE_ENV=production: anyone who could reach the app
  * would be let in.
@@ -44,8 +56,16 @@ function allowed(): string {
 const me = (): AuthUser =>
   toAuthUser({ id: ME, name: 'Dev User', email: env('DEV_AUTH_EMAIL') || allowed() })
 
+/** Who holds which record scope in development, by email address, and the scopes there are. */
+export type DevScopes = {
+  list?: ScopeInfo[]
+  grants: Readonly<Record<string, readonly ScopeGrant[]>>
+}
+
 /** Everyone is signed in as one person. Development only. */
-export function devAuth(options: { teammates?: DevPerson[] } = {}): AuthAdapter {
+export function devAuth(
+  options: { teammates?: DevPerson[]; scopes?: DevScopes } = {},
+): AuthAdapter {
   if (env('NODE_ENV') === 'production') {
     throw new Error(
       'The development sign-in lets everyone in, so it does not run in production. ' +
@@ -58,6 +78,22 @@ export function devAuth(options: { teammates?: DevPerson[] } = {}): AuthAdapter 
   )
 
   const everyone = () => [me(), ...(options.teammates ?? []).map(toAuthUser)]
+  const { scopes } = options
+
+  /** What each person holds, by their id: the directory is read each time, as `DEV_AUTH_EMAIL` may change. */
+  const held = () =>
+    Object.fromEntries(
+      everyone().flatMap((person) => {
+        const email = person.email?.toLowerCase() ?? ''
+
+        const entry = Object.entries(scopes?.grants ?? {}).find(
+          ([who]) => who.toLowerCase() === email,
+        )
+
+        return entry ? [[person.id, entry[1]] as const] : []
+      }),
+    )
+
   return {
     id: 'dev',
     label: 'The development sign-in',
@@ -76,5 +112,6 @@ export function devAuth(options: { teammates?: DevPerson[] } = {}): AuthAdapter 
         accountToken: () => Effect.succeed(null),
       }),
     ),
+    scopes: scopes && Scopes.layerTest(held, scopes.list ?? []),
   }
 }

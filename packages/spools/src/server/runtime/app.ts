@@ -48,10 +48,14 @@ export function appLayer(
     swap.email ?? spool().email?.layer ?? Email.log,
     swap.sequences ?? Sequences.layer,
     swap.marketing ?? MarketingSource.layer,
-    swap.scopes ?? Scopes.layer,
     swap.agents ?? spool().agents?.layer ?? Agents.none,
   ).pipe(
     Layer.provideMerge(Users.layer),
+    // Who holds which record scope: the app's own resolver when it has one, else the auth adapter's.
+    Layer.provideMerge(
+      swap.scopes ??
+        (spool().extensions.scopes ? Scopes.layer : (spool().auth.scopes ?? Scopes.layer)),
+    ),
     Layer.provideMerge(swap.auth ?? spool().auth.layer),
     // Beneath the rest: an adapter may keep tables of its own in the Spool's database.
     Layer.provideMerge(swap.store ?? spool().database.layer),

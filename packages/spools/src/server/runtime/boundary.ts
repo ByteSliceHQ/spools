@@ -51,6 +51,10 @@ function currentRequest(session: Session | null): CurrentRequest['Service'] {
 /** The session of the request being served, from the Spool's auth adapter, read outside Effect. */
 const sessionOf = (request: Request): Promise<Session | null> => spool().auth.session(request)
 
+/** The scope a request asks to work in: the auth provider's own when its sessions carry one, else the cookie. */
+export const wanted = (session: Session | null, headers: Headers): string | null | undefined =>
+  session?.scope === undefined ? wantedScope(headers) : session.scope
+
 /** The signed-in person, if the config's access list lets them in. */
 export const signedIn = Effect.fn('signedIn')(function* (userId: string | null | undefined) {
   if (!userId) {
@@ -165,7 +169,9 @@ export function crmHandler<I, A, E extends StaffError>(
       signedIn(session?.userId).pipe(
         Effect.tapError(refusedPage(asked)),
         // In a Spool with record scopes the program reaches what this person holds, in the scope they asked to work in.
-        Effect.flatMap((user) => asUser(user, wantedScope(asked.headers))(program({ data, user }))),
+        Effect.flatMap((user) =>
+          asUser(user, wanted(session, asked.headers))(program({ data, user })),
+        ),
       ),
     )
   }
@@ -252,7 +258,7 @@ export function apiRoute<P, E extends StaffError>(
       { headers: request.headers, signal: request.signal, session },
       signedIn(session?.userId).pipe(
         Effect.flatMap((user) =>
-          asUser(user, wantedScope(request.headers))(program({ request, params, user })),
+          asUser(user, wanted(session, request.headers))(program({ request, params, user })),
         ),
         Effect.catch((error: StaffError) =>
           Effect.succeed(

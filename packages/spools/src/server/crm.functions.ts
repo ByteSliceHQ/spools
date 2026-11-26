@@ -7,9 +7,9 @@ import { runTarget } from './actions'
 import * as guides from './guides'
 import * as records from './records'
 import { CurrentRequest } from './runtime/app'
-import { crmHandler, publicHandler, signedInUser } from './runtime/boundary'
+import { crmHandler, publicHandler, signedInUser, wanted as wantedIn } from './runtime/boundary'
 import { Invalid, NotFound } from './runtime/errors'
-import { asUser, scopeSession, wantedScope } from './scopes'
+import { asUser, scopeSession } from './scopes'
 import * as search from './search'
 import * as service from './service'
 import { crmConfig, getObject, spool } from './spool'
@@ -53,7 +53,8 @@ export const getCrmSession = createServerFn({ method: 'GET' }).handler(
       }
 
       // A session answers signed-out pages too, so the boundary gave it no scope: it takes its own.
-      const wanted = wantedScope((yield* CurrentRequest).headers)
+      const request = yield* CurrentRequest
+      const wanted = wantedIn(request.session, request.headers)
 
       const [users, favorites, dueTasks, seen] = yield* asUser(
         user,

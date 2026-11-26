@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
+import { toGrants } from '../../src/adapters/auth/clerk/server'
 import { crmConfigSchema } from '../../src/crm/config-schema'
+import { createMemory } from '../../src/crm/memory'
 import {
   accessFrom,
   NO_ACCESS,
@@ -10,7 +12,7 @@ import {
   scopeKey,
   SYSTEM_ACCESS,
 } from '../../src/crm/scopes'
-import { createIndexStore, type QuickIndex } from '../../src/crm/search'
+import { createIndexStore, type QuickIndex, recentsKey } from '../../src/crm/search'
 import { wantedScope } from '../../src/server/scopes'
 import scoped from '../fixtures/scoped.config.json' with { type: 'json' }
 
@@ -175,58 +177,105 @@ describe('what the browser keeps when the scope changes', () => {
     views: [],
   })
 
-  pending(
-    'an index read for one scope is dropped, not merged, when the server answers for another',
-    async () => {
-      let scope = 'north'
-      const asked: (string | undefined)[] = []
+  test('an index read for one scope is dropped, not merged, when the server answers for another', async () => {
+    let scope = 'north'
+    const asked: (string | undefined)[] = []
 
-      const store = createIndexStore(
-        async (since) => {
-          asked.push(since)
-          // Asked what changed since: nothing did. The counts add up, so today the old rows are kept.
-          return since === undefined
-            ? index(
-                scope,
-                scope === 'north' ? 'Nina Alder' : 'Sofia Birch',
-                '2026-01-01T00:00:00.000Z',
-              )
-            : {
-                ...index(scope, '', since),
-                objects: { contacts: { fields: [], rows: [], total: 1 } },
-                notes: { rows: [], total: 1 },
-              }
-        },
-        { freshMs: 0 },
-      )
+    const store = createIndexStore(
+      async (since) => {
+        asked.push(since)
+        // Asked what changed since: nothing did. The counts add up, so today the old rows are kept.
+        return since === undefined
+          ? index(
+              scope,
+              scope === 'north' ? 'Nina Alder' : 'Sofia Birch',
+              '2026-01-01T00:00:00.000Z',
+            )
+          : {
+              ...index(scope, '', since),
+              objects: { contacts: { fields: [], rows: [], total: 1 } },
+              notes: { rows: [], total: 1 },
+            }
+      },
+      { freshMs: 0 },
+    )
 
-      expect(JSON.stringify(await store.refresh())).toContain('Nina Alder')
+    expect(JSON.stringify(await store.refresh())).toContain('Nina Alder')
 
-      // The person switches to South. The next answer is South's.
-      scope = 'south'
-      const after = await store.refresh()
-      expect(JSON.stringify(after)).not.toContain('Alder')
-      expect(JSON.stringify(after)).toContain('Sofia Birch')
-      expect(after.scope).toBe('south')
-      // It was fetched whole, not as changes to the North index.
-      expect(asked.at(-1)).toBeUndefined()
-    },
-  )
+    // The person switches to South. The next answer is South's.
+    scope = 'south'
+    const after = await store.refresh()
+    expect(JSON.stringify(after)).not.toContain('Alder')
+    expect(JSON.stringify(after)).toContain('Sofia Birch')
+    expect(after.scope).toBe('south')
+    // It was fetched whole, not as changes to the North index.
+    expect(asked.at(-1)).toBeUndefined()
+  })
 
-  test.todo(
-    'relation titles and picker answers remembered for one scope are forgotten on a switch (src/crm/memory.ts)',
-  )
+  test('picker answers and titles remembered for one scope are forgotten when the session is for another', async () => {
+    let scope = 'north'
+    let dropped = 0
+    const asked: string[] = []
 
-  test.todo('recently opened records are kept per scope in this browser (src/crm/ui/search.tsx)')
+    const memory = createMemory({
+      session: async () => ({ scope }),
+      search: async (objectKey: string, q: string) => {
+        asked.push(`${scope}:${objectKey}:${q}`)
+        return scope
+      },
+      title: async () => scope,
+      usable: () => true,
+      scopeOf: (session: { scope: string }) => session.scope,
+      onScopeChange: () => dropped++,
+      remember: true,
+      sessionFreshMs: 0,
+    })
 
-  test.todo(
-    'the scope switcher in the shell invalidates the router and the session (src/crm/ui/shell.tsx, e2e)',
-  )
+    await memory.session()
+    expect(await memory.search('companies', 'a')).toBe('north')
+    expect(await memory.search('companies', 'a')).toBe('north')
+    expect(asked).toEqual(['north:companies:a'])
+    expect(dropped).toBe(0)
+
+    // The person switched scope in another tab: the next session this tab is given says so.
+    scope = 'south'
+    memory.keep({ scope })
+    expect(dropped).toBe(1)
+    expect(await memory.search('companies', 'a')).toBe('south')
+    expect(await memory.title('companies', 'id')).toBe('south')
+    expect(asked).toEqual(['north:companies:a', 'south:companies:a'])
+  })
+
+  test('recently opened records are kept per scope in the browser', () => {
+    expect(recentsKey()).toBe('crm-recent')
+    expect(recentsKey('north')).toBe('crm-recent:north')
+    expect(recentsKey('north+south')).not.toBe(recentsKey('north'))
+  })
+
+  test('the index store can be emptied at once, for the moment of a switch', async () => {
+    const store = createIndexStore(async () =>
+      index('north', 'Nina Alder', '2026-01-01T00:00:00.000Z'),
+    )
+
+    await store.refresh()
+    expect(store.get()).toBeDefined()
+    store.clear()
+    expect(store.get()).toBeUndefined()
+  })
 })
 
-describe('the guard’s rewrite of a condition (src/server/store/scope.ts)', () => {
-  test.todo('a scoped table’s condition gains "scope is one of those read"')
-  test.todo('`some` and `none` are narrowed on the table they reach, at any depth')
-  test.todo('a table reached only through relations (a join table) is scoped by both sides')
-  test.todo('an unscoped table’s condition is returned as it was given')
+describe('Clerk organizations as record scopes', () => {
+  test('a membership is the organization’s slug and the role without Clerk’s prefix', () => {
+    expect(
+      toGrants([
+        { role: 'org:member', organization: { id: 'org_1', slug: 'north', name: 'North' } },
+        { role: 'org:admin', organization: { id: 'org_2', slug: null, name: 'Head office' } },
+        { role: 'viewer', organization: { id: 'org_3', slug: 'south', name: 'South' } },
+      ]),
+    ).toEqual([
+      { scope: 'north', role: 'member' },
+      { scope: 'org_2', role: 'admin' },
+      { scope: 'south', role: 'viewer' },
+    ])
+  })
 })

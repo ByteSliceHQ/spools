@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test'
 
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 
+import { assistantChat, SHARED_CHATS } from '../../src/server/assistant-chat'
 import * as api from '../../src/server/extension-api'
 import { apiRoute } from '../../src/server/handlers'
 import * as records from '../../src/server/records'
+import { Agents, type AssistantChat } from '../../src/server/runtime/agents'
 import * as boundary from '../../src/server/runtime/boundary'
 import { scopeSession } from '../../src/server/scopes'
 import { Users } from '../../src/server/users'
@@ -12,6 +14,7 @@ import {
   as,
   branches,
   column,
+  installWorld,
   pending,
   people,
   requestFrom,
@@ -35,7 +38,7 @@ test('the directory lists everyone on the access list, as the server itself sees
   expect(await sys(team)).toHaveLength(6)
 })
 
-pending('the team list and the user picker offer only people who share the scope', async () => {
+test('the team list and the user picker offer only people who share the scope', async () => {
   // Head office reaches every branch, so it is on every branch's list.
   expect(column(await as('nora', team), 'name')).toEqual([
     'Bo Both',
@@ -154,4 +157,43 @@ test('the scope a request asks for is a preference, checked against what the per
   expect(await listed('nora', '*')).toEqual(north)
   expect(await counted('nora', 'south')).toBe(2)
   expect(await counted('otto', 'north')).toBe(0)
+})
+
+// ── The assistant's chats ───────────────────────────────────────────────────
+
+/** An agent engine whose chats are everyone's (one key for the project) or each person's own. */
+const engine = (shared: boolean) => {
+  const chat: AssistantChat = {
+    listSessions: async () => [],
+    createSession: async () => ({ sessionId: 'chat' }),
+    getMessages: async () => ({ messages: [] }),
+    forwardSend: async () => new Response('ok'),
+    forwardResumeStream: async () => new Response('ok'),
+    deleteSession: async () => true,
+    regenerate: false,
+    shared,
+  }
+
+  return Layer.succeed(
+    Agents,
+    Agents.of({
+      configured: Effect.succeed(true),
+      executeWorkflow: () => Effect.succeed({ skipped: true, reason: 'test' }),
+      chat: Effect.succeed(chat),
+    }),
+  )
+}
+
+test('the assistant is refused while its chats are shared by everyone, and says what to set up', async () => {
+  try {
+    await installWorld({ agents: engine(true) })
+    await expect(as('nora', assistantChat)).rejects.toThrow(SHARED_CHATS)
+    await expect(as('hana', assistantChat, null)).rejects.toThrow('federation')
+
+    // Each person's chats their own: the assistant is there.
+    await installWorld({ agents: engine(false) })
+    expect((await as('nora', assistantChat))?.shared).toBe(false)
+  } finally {
+    await installWorld()
+  }
 })

@@ -2,10 +2,12 @@ import { auth, clerkClient, clerkMiddleware } from '@clerk/tanstack-react-start/
 import { Effect, Layer, Option, Schema } from 'effect'
 
 import { isProvider, PROVIDERS, splitScopes } from '../../../crm/mailbox'
+import type { ScopeGrant, ScopeInfo } from '../../../crm/scopes'
 import type { Env } from '../../../server/runtime/adapter'
 import { Auth, type AuthAdapter, type AuthUser } from '../../../server/runtime/auth'
 import { AuthError, messageOf } from '../../../server/runtime/errors'
 import { policies, withPolicy } from '../../../server/runtime/policies'
+import { Scopes } from '../../../server/scopes'
 
 /**
  * Sign-in with Clerk (https://clerk.com). The only server code that uses the
@@ -173,15 +175,75 @@ export const developmentInstance = (env: Env): string | null =>
     ? "on a Clerk development instance (CLERK_SECRET_KEY starts with sk_test_). Use the production instance's keys where real people sign in"
     : null
 
+/** The parts of a Clerk organization membership that record scopes read. */
+export type ClerkMembership = {
+  role: string
+  organization: { id: string; slug?: string | null; name: string }
+}
+
+/** The scope a Clerk organization is: its slug, which is what a record's scope field holds, or its id without one. */
+export const organizationScope = (organization: ClerkMembership['organization']): string =>
+  organization.slug || organization.id
+
+/**
+ * A person's organization memberships as record scopes. The scope is the
+ * organization's slug and the role is the membership's, without Clerk's `org:`
+ * prefix: `org:admin` is the role `admin` in `scopes.roles`. Pure, so it can be
+ * tested without Clerk.
+ */
+export const toGrants = (memberships: readonly ClerkMembership[]): ScopeGrant[] =>
+  memberships.map((m) => ({
+    scope: organizationScope(m.organization),
+    role: m.role.replace(/^org:/, ''),
+  }))
+
+/** Who holds which record scope, from Clerk organizations. */
+const organizations = Layer.succeed(
+  Scopes,
+  Scopes.of({
+    grants: (user) =>
+      call('Clerk.organizationMemberships', async () => {
+        const { data } = await clerkClient().users.getOrganizationMembershipList({
+          userId: user.id,
+          limit: 100,
+        })
+
+        return toGrants(data)
+      }),
+    list: call('Clerk.organizations', async () => {
+      const { data } = await clerkClient().organizations.getOrganizationList({ limit: 100 })
+      return data.map((o): ScopeInfo => ({ key: organizationScope(o), label: o.name }))
+    }),
+  }),
+)
+
+export type ClerkOptions = {
+  /**
+   * `"organizations"`: in a Spool with record scopes, a person holds the scope
+   * of each Clerk organization they belong to, with their role in it, and the
+   * organization active in their session is the scope they are working in.
+   */
+  scopes?: 'organizations'
+}
+
 /** Sign-in with Clerk. */
-export const clerk = (): AuthAdapter => ({
+export const clerk = (options: ClerkOptions = {}): AuthAdapter => ({
   id: 'clerk',
   label: 'Clerk',
   middleware: clerkMiddleware(),
   session: async () => {
-    const { userId, getToken } = await auth()
-    return userId ? { userId, getToken: (options) => getToken(options) } : null
+    const { userId, getToken, orgSlug, orgId } = await auth()
+
+    if (!userId) {
+      return null
+    }
+
+    const session = { userId, getToken: (asked: { template: string }) => getToken(asked) }
+    // With organizations as scopes, the active one is where this person is working. With none active, the cookie says.
+    const active = options.scopes === 'organizations' ? (orgSlug ?? orgId) : undefined
+    return active ? { ...session, scope: active } : session
   },
+  scopes: options.scopes === 'organizations' ? organizations : undefined,
   layer,
   requires: [
     { name: 'CLERK_SECRET_KEY', check: key('sk_') },

@@ -14,6 +14,13 @@ export type MemorySource<Session, Found> = {
   title: (objectKey: string, id: string) => Promise<string | null>
   /** A session worth keeping: someone signed in who may use the CRM. */
   usable: (session: Session) => boolean
+  /**
+   * Which record scope a session is working in, in a Spool that has them. What
+   * pickers were given, and titles, are forgotten when it changes.
+   */
+  scopeOf?: (session: Session) => string | undefined
+  /** Told when a session arrives for another scope than the last one, after pickers and titles were forgotten. */
+  onScopeChange?: (scope: string | undefined) => void
   /** False on the server, where one process answers for everybody and nothing may be shared. */
   remember: boolean
   /** How long a remembered session is used before it is also checked again in the background. */
@@ -84,6 +91,24 @@ export function createMemory<Session, Found>(source: MemorySource<Session, Found
   let era = 0
   const searches = kept((key) => source.search(...split(key)), titlesFreshMs, now)
   const titles = kept((key) => source.title(...split(key)), titlesFreshMs, now)
+  let scope: string | undefined
+  let scopeKnown = false
+
+  /** A session's scope, noted: what was remembered under another is dropped. */
+  function noteScope(value: Session): void {
+    const next = source.scopeOf?.(value)
+
+    if (scopeKnown && next !== scope) {
+      searches.clear()
+      titles.clear()
+      scope = next
+      source.onScopeChange?.(next)
+      return
+    }
+
+    scope = next
+    scopeKnown = true
+  }
 
   function ask(): Promise<Session> {
     if (asking) {
@@ -98,6 +123,10 @@ export function createMemory<Session, Found>(source: MemorySource<Session, Found
         // Only a working session is worth keeping: someone signed out is asked again on the next page.
         if (asked === era) {
           held = usable(value) ? { value, at: now() } : undefined
+        }
+
+        if (usable(value)) {
+          noteScope(value)
         }
 
         return value
@@ -135,6 +164,10 @@ export function createMemory<Session, Found>(source: MemorySource<Session, Found
 
     /** Keep a session that arrived another way (with the page), so the first click needn't ask for it. */
     keep(value: Session): void {
+      if (remember && usable(value)) {
+        noteScope(value)
+      }
+
       if (remember && !held && usable(value)) {
         held = { value, at: now() }
       }

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from 'effect'
+import { Context, Effect, Layer, Predicate } from 'effect'
 
 import {
   accessFrom,
@@ -63,14 +63,19 @@ export class Scopes extends Context.Service<
 
   /** These people hold these scopes, by user id, and nobody else holds any (tests, the development sign-in). */
   static readonly layerTest = (
-    held: Readonly<Record<string, readonly ScopeGrant[]>>,
+    holding:
+      | Readonly<Record<string, readonly ScopeGrant[]>>
+      | (() => Readonly<Record<string, readonly ScopeGrant[]>>),
     scopes: readonly ScopeInfo[] = [],
   ) =>
     Layer.succeed(
       Scopes,
       Scopes.of({
         grants: (user) =>
-          Effect.sync(() => [...(Object.hasOwn(held, user.id) ? (held[user.id] ?? []) : [])]),
+          Effect.sync(() => {
+            const held = Predicate.isFunction(holding) ? holding() : holding
+            return [...(Object.hasOwn(held, user.id) ? (held[user.id] ?? []) : [])]
+          }),
         list: Effect.sync(() => [...scopes]),
       }),
     )

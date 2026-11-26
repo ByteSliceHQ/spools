@@ -53,6 +53,14 @@ import { Button, cx, IconButton, MenuDivider, MenuItem, relativeTime, useDismiss
 type Listing = NonNullable<Awaited<ReturnType<typeof listFolderFn>>['listing']>
 type FolderItem = Listing['folders'][number]
 type FileItem = Listing['files'][number]
+
+/**
+ * The address that opens a file. It names the folder the file is in: in a
+ * Spool with record scopes a file is only opened from a folder within reach.
+ */
+const fileHref = (id: string, folderId: string | null) =>
+  `/api/files/${id}?folder=${encodeURIComponent(folderId ?? '')}`
+
 type Item = { kind: 'folder'; item: FolderItem } | { kind: 'file'; item: FileItem }
 type Ref = { kind: 'folder' | 'file'; id: string }
 type RecordRef = { objectKey: string; recordId: string }
@@ -422,7 +430,7 @@ export function FileBrowser({
     if (it.kind === 'folder') {
       onNavigate(it.item.id === rootId ? null : it.item.id)
     } else {
-      window.open(`/api/files/${it.item.id}`, '_blank', 'noopener')
+      window.open(fileHref(it.item.id, current), '_blank', 'noopener')
     }
   }
 
@@ -443,7 +451,7 @@ export function FileBrowser({
     }
 
     setSelected(null)
-    await run(deleteItemFn({ data: { kind: it.kind, id: it.item.id } }))
+    await run(deleteItemFn({ data: { kind: it.kind, id: it.item.id, from: current } }))
     onChange?.()
   }
 
@@ -455,7 +463,7 @@ export function FileBrowser({
       return
     }
 
-    await run(renameItemFn({ data: { ...ref, name: next } }))
+    await run(renameItemFn({ data: { ...ref, name: next, from: current } }))
   }
 
   const newFolder = async (name: string) => {
@@ -474,7 +482,7 @@ export function FileBrowser({
       return
     }
 
-    await run(moveItemFn({ data: { ...ref, to } }))
+    await run(moveItemFn({ data: { ...ref, to, from: current } }))
   }
 
   const pick = (to: string | null) => {
@@ -665,7 +673,7 @@ export function FileBrowser({
       </button>
     ) : (
       <a
-        href={`/api/files/${it.item.id}`}
+        href={fileHref(it.item.id, current)}
         target="_blank"
         rel="noreferrer"
         className="min-w-0 truncate hover:underline"
@@ -1054,7 +1062,7 @@ export function FileBrowser({
               }
               onCopyLink={() =>
                 navigator.clipboard?.writeText(
-                  `${window.location.origin}/api/files/${menuTarget.item.id}`,
+                  `${window.location.origin}${fileHref(menuTarget.item.id, current)}`,
                 )
               }
               onDelete={() => remove(menuTarget)}
@@ -1360,7 +1368,7 @@ function SearchResults({
             >
               <Icon className="text-c-fg3 size-4 shrink-0" />
               <a
-                href={`/api/files/${file.id}`}
+                href={fileHref(file.id, file.folderId)}
                 target="_blank"
                 rel="noreferrer"
                 className="min-w-0 flex-1 truncate hover:underline"

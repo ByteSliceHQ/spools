@@ -361,8 +361,8 @@ export const CRON_TOKEN = ENV.CRON_SECRET
 /** The bearer token the tool API expects in this world. */
 export const TOOL_TOKEN = ENV.SWIRLS_APP_TOKEN
 
-/** Puts the stand-ins back, for a test that replaced one. */
-export const installWorld = () =>
+/** The stand-ins for outside services, with any a test replaces. `installWorld()` puts the usual ones back. */
+export const installWorld = (replace: Parameters<typeof installStandIns>[0] = {}) =>
   installStandIns({
     auth: directory,
     scopes: Scopes.layerTest(grants, branches),
@@ -371,13 +371,21 @@ export const installWorld = () =>
       return { id: `sent_${sent.length}`, sent: true }
     }),
     fetch: (url, init) => drive.handle(url, init),
+    ...replace,
   })
 
 /**
  * Makes the scoped Spool this process's for the tests of one file, and puts
  * back the one the other test files use when they are done.
  */
-export function scopedWorld(): void {
+export function scopedWorld(
+  options: {
+    /** Another sign-in than the test one, for a test of an auth adapter. */
+    auth?: AuthAdapter
+    /** Run once the world is made and seeded: a test that wants other stand-ins installs them here. */
+    afterSeed?: () => Promise<void>
+  } = {},
+): void {
   let before: Spool
   const saved = new Map<string, string | undefined>()
 
@@ -397,17 +405,20 @@ export function scopedWorld(): void {
     defineSpool({
       crm: fixture,
       extensions,
-      auth,
+      auth: options.auth ?? auth,
       database: pglite({ client }),
       files: flashdrive(),
     })
 
+    // The world is always seeded as its own people, whatever sign-in the test is about.
     await installWorld()
 
     if (!seeded) {
       seeded = true
       await seed()
     }
+
+    await options.afterSeed?.()
   })
 
   afterAll(async () => {

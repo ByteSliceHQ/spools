@@ -1,4 +1,4 @@
-import { Link, useRouterState } from '@tanstack/react-router'
+import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import {
   BarChart3,
   CheckSquare,
@@ -30,13 +30,14 @@ import {
 
 import type { PublicCrmConfig } from '../config'
 import { requestedScopes } from '../mailbox'
+import type { ScopeSession } from '../scopes'
 import { useAuth } from './auth'
 import { GuideHelp, type GuideProgress, GuideProvider } from './guides'
 import { ObjectIcon } from './icons'
 import { cx, IconButton, Kbd } from './kit'
 import { MailboxDialog } from './mailbox'
 import { SearchPalette } from './search'
-import { searchIndex } from './session'
+import { searchIndex, switchScope } from './session'
 
 type Favorite = { objectKey: string; recordId: string; title: string }
 type Theme = 'light' | 'dark'
@@ -74,17 +75,21 @@ export function CrmShell({
   favorites,
   dueTasks,
   guides,
+  scopes,
   children,
 }: {
   config: PublicCrmConfig
   user: { name: string; email: string }
   favorites: Favorite[]
   dueTasks: number
+  /** The record scopes this person may switch between, in a Spool that has them (src/crm/scopes.ts). */
+  scopes?: ScopeSession | null
   /** What this person has seen of the guides (src/crm/guides.ts). */
   guides: GuideProgress
   children: ReactNode
 }) {
   const { AccountButton } = useAuth()
+  const router = useRouter()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [mailboxOpen, setMailboxOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -209,6 +214,37 @@ export function CrmShell({
                   <PanelLeft className="size-3.5" />
                 </IconButton>
               </div>
+
+              {scopes && scopes.held.length > 1 && (
+                <div className="px-3 pb-2">
+                  <select
+                    aria-label={config.scopes?.label ?? 'Scope'}
+                    data-scope-switcher=""
+                    className="border-c-line2 h-7 w-full rounded-lg border bg-transparent px-2 text-xs font-medium"
+                    value={scopes.active ?? '*'}
+                    onChange={(event) => {
+                      // Everything this tab remembered goes before anything is asked for again.
+                      switchScope(event.target.value === '*' ? null : event.target.value)
+                      void router.invalidate()
+                    }}
+                  >
+                    {scopes.held.map((scope) => (
+                      <option key={scope.key} value={scope.key}>
+                        {scope.label}
+                      </option>
+                    ))}
+                    <option value="*">
+                      All {(config.scopes?.labelPlural ?? 'scopes').toLowerCase()}
+                    </option>
+                  </select>
+                </div>
+              )}
+
+              {scopes && !scopes.canWrite && (
+                <p className="text-c-fg3 px-3 pb-2 text-[11px]" data-scope-read-only="">
+                  Read-only: you can look at these records, but not change them.
+                </p>
+              )}
 
               {ownSidebar ? (
                 <div ref={setPanel} className="flex min-h-0 flex-1 flex-col" />

@@ -1,7 +1,7 @@
 import { exchangeFederatedToken } from '@swirls/sdk/auth'
 import { createSwirlsChat } from '@swirls/sdk/chat'
 import { Swirls } from '@swirls/sdk/client'
-import { Effect, Layer } from 'effect'
+import { Effect, Layer, Predicate } from 'effect'
 
 import {
   Agents,
@@ -218,6 +218,8 @@ const layer = (assistant: NonNullable<SwirlsOptions['assistant']>) =>
         // Swirls doesn't document that its web channel honours `trigger: "regenerate-message"`, and a
         // channel that ignores it would store the question twice.
         regenerate: false,
+        // With a project API key the chats are the project's: everyone's. With federation they are each person's own.
+        shared: Predicate.isString(found.apiKey),
         async deleteSession(sessionId) {
           const swirls = new Swirls({ apiKey: found.apiKey, apiUrl: found.apiUrl })
           const { deleted } = await swirls.client.agents.deleteSession({ sessionId })

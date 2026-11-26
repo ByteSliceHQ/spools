@@ -380,8 +380,10 @@ export function mergeIndex(held: QuickIndex, changes: QuickIndex): MergedIndex {
       objects,
       notes: { rows: notes, total: changes.notes.total },
       views: changes.views,
+      scope: changes.scope,
     },
-    complete,
+    // Changes read for another scope are not changes to this index: it is fetched whole.
+    complete: complete && changes.scope === held.scope,
   }
 }
 
@@ -422,6 +424,16 @@ export function createIndexStore(
 
   return {
     get: (): QuickIndex | undefined => held,
+    /** Drop what is held at once: the person switched scope, and none of it may be shown under the new one. */
+    clear(): void {
+      held = undefined
+      checked = 0
+      stale = false
+
+      for (const listener of listeners) {
+        listener()
+      }
+    },
     /** The index, brought up to date first when it is old or marked stale. */
     refresh(): Promise<QuickIndex> {
       if (loading) {
@@ -528,6 +540,10 @@ export type DeepHit = {
 // ── Recently opened ─────────────────────────────────────────────────────────
 
 export type Recent = { objectKey: string; id: string; title: string }
+
+/** Where a browser keeps the records opened lately: a list per record scope, so one scope's titles aren't offered in another. */
+export const recentsKey = (scope?: string | null): string =>
+  scope ? `crm-recent:${scope}` : 'crm-recent'
 export const RECENT_LIMIT = 30
 
 /** The list of recently opened records with this one moved (or added) to the front. */

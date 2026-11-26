@@ -76,7 +76,14 @@ function CrmLayout(): ReactNode {
   }
 
   return (
-    <CrmShell config={config} user={user} favorites={favorites} dueTasks={dueTasks} guides={guides}>
+    <CrmShell
+      config={config}
+      user={user}
+      favorites={favorites}
+      dueTasks={dueTasks}
+      guides={guides}
+      scopes={scopes}
+    >
       <CrmUsersContext value={users}>
         <Outlet />
       </CrmUsersContext>

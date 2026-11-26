@@ -43,12 +43,13 @@ import {
   type QuickIndex,
   type Recent,
   recentKey,
+  recentsKey,
   searchIndex as searchRecords,
   withRecent,
 } from '../search'
 import { ObjectIcon } from './icons'
 import { cx, Kbd, relativeTime } from './kit'
-import { searchIndex } from './session'
+import { currentScope, searchIndex } from './session'
 
 /**
  * The search box over the whole CRM (Cmd+K). Records are matched in the
@@ -60,8 +61,6 @@ import { searchIndex } from './session'
 type Favorite = { objectKey: string; recordId: string; title: string }
 
 // ── Recently opened records, kept in this browser ───────────────────────────
-
-const RECENT_KEY = 'crm-recent'
 
 /** What this browser saved under RECENT_KEY, checked as it is read back: storage is anyone's to change. */
 const savedRecents = z.array(
@@ -78,7 +77,7 @@ const DEEP_DEBOUNCE_MS = 250
 export function readRecents(): Recent[] {
   try {
     const saved = savedRecents.safeParse(
-      JSON.parse(window.localStorage.getItem(RECENT_KEY) ?? '[]'),
+      JSON.parse(window.localStorage.getItem(recentsKey(currentScope())) ?? '[]'),
     )
 
     return saved.success ? saved.data : []
@@ -90,7 +89,10 @@ export function readRecents(): Recent[] {
 /** Note that a record was opened, so search can offer it first next time. */
 export function rememberOpened(item: Recent): void {
   try {
-    window.localStorage.setItem(RECENT_KEY, JSON.stringify(withRecent(readRecents(), item)))
+    window.localStorage.setItem(
+      recentsKey(currentScope()),
+      JSON.stringify(withRecent(readRecents(), item)),
+    )
   } catch {
     // Private browsing can block storage; search just won't know what was opened.
   }
