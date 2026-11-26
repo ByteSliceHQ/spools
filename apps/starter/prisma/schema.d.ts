@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'06db04fe9880d37e604c3b6e31f0af7bb5e15624b502993098310e85866d447b'>;
+  StorageHashBase<'0566a65d4f872cca3ac0e8a49b5cdbaa5c2f3885eae50ebb1e76a14b11947ded'>;
 export type ExecutionHash =
   ExecutionHashBase<'3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b'>;
 export type ProfileHash =
@@ -321,6 +321,7 @@ export namespace Models {
     occurredAt: FieldOutputTypes['public']['Activity']['occurredAt'];
     outcome: FieldOutputTypes['public']['Activity']['outcome'];
     recordId: FieldOutputTypes['public']['Activity']['recordId'];
+    scope: FieldOutputTypes['public']['Activity']['scope'];
     summary: FieldOutputTypes['public']['Activity']['summary'];
     readonly [RelationKeys]?: never;
   };
@@ -384,6 +385,7 @@ export namespace Models {
     id: FieldOutputTypes['public']['Favorite']['id'];
     objectKey: FieldOutputTypes['public']['Favorite']['objectKey'];
     recordId: FieldOutputTypes['public']['Favorite']['recordId'];
+    scope: FieldOutputTypes['public']['Favorite']['scope'];
     userId: FieldOutputTypes['public']['Favorite']['userId'];
     readonly [RelationKeys]?: never;
   };
@@ -395,6 +397,7 @@ export namespace Models {
     name: FieldOutputTypes['public']['FileUpload']['name'];
     objectKey: FieldOutputTypes['public']['FileUpload']['objectKey'];
     recordId: FieldOutputTypes['public']['FileUpload']['recordId'];
+    scope: FieldOutputTypes['public']['FileUpload']['scope'];
     sizeBytes: FieldOutputTypes['public']['FileUpload']['sizeBytes'];
     transport: FieldOutputTypes['public']['FileUpload']['transport'];
     updatedAt: FieldOutputTypes['public']['FileUpload']['updatedAt'];
@@ -497,6 +500,7 @@ export namespace Models {
     id: FieldOutputTypes['public']['Note']['id'];
     objectKey: FieldOutputTypes['public']['Note']['objectKey'];
     recordId: FieldOutputTypes['public']['Note']['recordId'];
+    scope: FieldOutputTypes['public']['Note']['scope'];
     title: FieldOutputTypes['public']['Note']['title'];
     updatedAt: FieldOutputTypes['public']['Note']['updatedAt'];
     readonly [RelationKeys]?: never;
@@ -509,6 +513,7 @@ export namespace Models {
     objectKey: FieldOutputTypes['public']['RecordFolder']['objectKey'];
     path: FieldOutputTypes['public']['RecordFolder']['path'];
     recordId: FieldOutputTypes['public']['RecordFolder']['recordId'];
+    scope: FieldOutputTypes['public']['RecordFolder']['scope'];
     updatedAt: FieldOutputTypes['public']['RecordFolder']['updatedAt'];
     readonly [RelationKeys]?: never;
   };
@@ -535,6 +540,7 @@ export namespace Models {
     note: FieldOutputTypes['public']['SequenceRun']['note'];
     objectKey: FieldOutputTypes['public']['SequenceRun']['objectKey'];
     recordId: FieldOutputTypes['public']['SequenceRun']['recordId'];
+    scope: FieldOutputTypes['public']['SequenceRun']['scope'];
     status: FieldOutputTypes['public']['SequenceRun']['status'];
     updatedAt: FieldOutputTypes['public']['SequenceRun']['updatedAt'];
     readonly [RelationKeys]?: never;
@@ -555,6 +561,7 @@ export namespace Models {
     id: FieldOutputTypes['public']['Task']['id'];
     objectKey: FieldOutputTypes['public']['Task']['objectKey'];
     recordId: FieldOutputTypes['public']['Task']['recordId'];
+    scope: FieldOutputTypes['public']['Task']['scope'];
     title: FieldOutputTypes['public']['Task']['title'];
     updatedAt: FieldOutputTypes['public']['Task']['updatedAt'];
     readonly [RelationKeys]?: never;
@@ -671,6 +678,12 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly scope: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
                   readonly many: false;
                 };
                 readonly summary: {
@@ -1113,6 +1126,12 @@ type ContractBase = Omit<
                   readonly nullable: false;
                   readonly many: false;
                 };
+                readonly scope: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
                 readonly user_id: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
@@ -1173,6 +1192,12 @@ type ContractBase = Omit<
                   readonly many: false;
                 };
                 readonly record_id: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
+                readonly scope: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
@@ -1783,6 +1808,12 @@ type ContractBase = Omit<
                   readonly nullable: true;
                   readonly many: false;
                 };
+                readonly scope: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
                 readonly title: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
@@ -1864,6 +1895,12 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly scope: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
                   readonly many: false;
                 };
                 readonly updated_at: {
@@ -2027,6 +2064,12 @@ type ContractBase = Omit<
                   readonly nullable: false;
                   readonly many: false;
                 };
+                readonly scope: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
                 readonly status: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
@@ -2109,6 +2152,12 @@ type ContractBase = Omit<
                   readonly many: false;
                 };
                 readonly record_id: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
+                readonly scope: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
@@ -2267,6 +2316,10 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly scope: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly summary: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -2288,6 +2341,7 @@ type ContractBase = Omit<
                 readonly occurredAt: { readonly column: 'occurred_at' };
                 readonly outcome: { readonly column: 'outcome' };
                 readonly recordId: { readonly column: 'record_id' };
+                readonly scope: { readonly column: 'scope' };
                 readonly summary: { readonly column: 'summary' };
               };
             };
@@ -2665,6 +2719,10 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly scope: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly userId: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -2679,6 +2737,7 @@ type ContractBase = Omit<
                 readonly id: { readonly column: 'id' };
                 readonly objectKey: { readonly column: 'object_key' };
                 readonly recordId: { readonly column: 'record_id' };
+                readonly scope: { readonly column: 'scope' };
                 readonly userId: { readonly column: 'user_id' };
               };
             };
@@ -2714,6 +2773,10 @@ type ContractBase = Omit<
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
               readonly recordId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly scope: {
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
@@ -2758,6 +2821,7 @@ type ContractBase = Omit<
                 readonly name: { readonly column: 'name' };
                 readonly objectKey: { readonly column: 'object_key' };
                 readonly recordId: { readonly column: 'record_id' };
+                readonly scope: { readonly column: 'scope' };
                 readonly sizeBytes: { readonly column: 'size_bytes' };
                 readonly transport: { readonly column: 'transport' };
                 readonly updatedAt: { readonly column: 'updated_at' };
@@ -3283,6 +3347,10 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly scope: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly title: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -3308,6 +3376,7 @@ type ContractBase = Omit<
                 readonly id: { readonly column: 'id' };
                 readonly objectKey: { readonly column: 'object_key' };
                 readonly recordId: { readonly column: 'record_id' };
+                readonly scope: { readonly column: 'scope' };
                 readonly title: { readonly column: 'title' };
                 readonly updatedAt: { readonly column: 'updated_at' };
               };
@@ -3347,6 +3416,10 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly scope: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly updatedAt: {
                 readonly nullable: false;
                 readonly type: {
@@ -3368,6 +3441,7 @@ type ContractBase = Omit<
                 readonly objectKey: { readonly column: 'object_key' };
                 readonly path: { readonly column: 'path' };
                 readonly recordId: { readonly column: 'record_id' };
+                readonly scope: { readonly column: 'scope' };
                 readonly updatedAt: { readonly column: 'updated_at' };
               };
             };
@@ -3486,6 +3560,10 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly scope: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly status: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -3514,6 +3592,7 @@ type ContractBase = Omit<
                 readonly note: { readonly column: 'note' };
                 readonly objectKey: { readonly column: 'object_key' };
                 readonly recordId: { readonly column: 'record_id' };
+                readonly scope: { readonly column: 'scope' };
                 readonly status: { readonly column: 'status' };
                 readonly updatedAt: { readonly column: 'updated_at' };
               };
@@ -3595,6 +3674,10 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly scope: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly title: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -3622,6 +3705,7 @@ type ContractBase = Omit<
                 readonly id: { readonly column: 'id' };
                 readonly objectKey: { readonly column: 'object_key' };
                 readonly recordId: { readonly column: 'record_id' };
+                readonly scope: { readonly column: 'scope' };
                 readonly title: { readonly column: 'title' };
                 readonly updatedAt: { readonly column: 'updated_at' };
               };

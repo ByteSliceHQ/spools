@@ -4,9 +4,12 @@ import { Clock, Effect } from 'effect'
 import { z } from 'zod'
 
 import { LIBRARY_LABEL, MAX_UPLOAD_BYTES, safeName } from '../crm/files'
+import { EVERY_SCOPE, type ScopeAccess } from '../crm/scopes'
 import { addActivity, getRecord, valueText } from './records'
+import { CurrentAccess } from './runtime/access'
 import { FilesError, fromHook, type StaffError } from './runtime/errors'
 import { type FileChange, FileStore, type FolderChange, type StoredFolder } from './runtime/files'
+import { asSystem, scopesOn } from './scopes'
 import { crmConfig, getObject, spool } from './spool'
 import { oneOf } from './store/query'
 import { Store } from './store/store'
@@ -147,6 +150,102 @@ const sortByName = <T extends { name: string }>(items: readonly T[]) =>
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
   )
 
+// ── Record scopes ───────────────────────────────────────────────────────────
+//
+// The file store knows nothing of record scopes (src/crm/scopes.ts): it is a
+// second place records' things are kept, which the guard on the database can't
+// see into. So every call here that names a folder or a file checks it first.
+// A folder is within reach when every record's folder on the way down to it is
+// one of a record within reach; folders that are no record's (the library, what
+// the team made) are everyone's. A file is reached through the folder it is
+// in, which the caller has to name: the store can't say where a file is from
+// its id alone. What is out of reach reads as what isn't there.
+
+const notThere = () => new FilesError({ message: 'Not found', status: 404 })
+
+const within = (held: ScopeAccess['read'], scope: string | null) =>
+  held === 'all' || scope === EVERY_SCOPE || (scope !== null && held.includes(scope))
+
+/** Fails as a missing folder would unless `folderId` is within reach. Nothing to check in a Spool without scopes. */
+const folderInReach = Effect.fn('files.folderInReach')(function* (
+  folderId: string | null,
+  mode: 'read' | 'write',
+) {
+  if (!scopesOn() || folderId === null) {
+    return undefined
+  }
+
+  const access = yield* CurrentAccess
+
+  if (!access) {
+    return yield* notThere()
+  }
+
+  const trail = yield* trailTo(folderId)
+  const db = yield* Store
+
+  // Whose folders these are is asked as the system: a record out of reach has a row this person can't see.
+  const owners = yield* asSystem(
+    db.find(RecordFolder, {
+      filter: oneOf(
+        'folderId',
+        trail.map((crumb) => crumb.id),
+      ),
+    }),
+  )
+
+  return owners.every((owner) => within(access[mode], owner.scope)) ? undefined : yield* notThere()
+})
+
+/** Of these folders, the ones that are the folder of a record out of reach. */
+const foldersOutOfReach = Effect.fn('files.foldersOutOfReach')(function* (ids: readonly string[]) {
+  const hidden = new Set<string>()
+
+  if (!scopesOn() || ids.length === 0) {
+    return hidden
+  }
+
+  const access = yield* CurrentAccess
+  const db = yield* Store
+
+  for (let at = 0; at < ids.length; at += 500) {
+    const owners = yield* asSystem(
+      db.find(RecordFolder, { filter: oneOf('folderId', ids.slice(at, at + 500)) }),
+    )
+
+    for (const owner of owners) {
+      if (!access || !within(access.read, owner.scope)) {
+        hidden.add(owner.folderId)
+      }
+    }
+  }
+
+  return hidden
+})
+
+/**
+ * Fails as a missing file would unless the file is in `folderId` and that
+ * folder is within reach. In a Spool with scopes a file can't be reached by its
+ * id alone.
+ */
+const fileInReach = Effect.fn('files.fileInReach')(function* (
+  id: string,
+  folderId: string | null | undefined,
+  mode: 'read' | 'write',
+) {
+  if (!scopesOn()) {
+    return undefined
+  }
+
+  if (folderId === undefined) {
+    return yield* notThere()
+  }
+
+  yield* folderInReach(folderId, mode)
+  const inside = yield* (yield* FileStore).list(folderId)
+  return inside.files.some((file) => file.id === id) ? undefined : yield* notThere()
+})
+
 const describeRecord = Effect.fn('files.describeRecord')(function* (ref: RecordRef) {
   if (!Object.hasOwn(crmConfig().objects, ref.objectKey)) {
     return null
@@ -177,6 +276,8 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
     yield* ensureLibrary()
   }
 
+  yield* folderInReach(folderId, 'read')
+
   // Everything the page needs is asked for at once: the way here, what is inside, and whose folder this is.
   const [trail, inside, record] = yield* Effect.all(
     [
@@ -195,11 +296,14 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
     yield* remember(folder)
   }
 
+  // A record's folder is listed only for those who can reach the record.
+  const hidden = yield* foldersOutOfReach(inside.folders.map((f) => f.id))
+  const shownFolders = inside.folders.filter((f) => !hidden.has(f.id))
   const under = trail.map((c) => c.name).join('/')
 
   // Which of the folders shown are a record's own, for their badge.
   const owners = new Map<string, RecordRef>()
-  const shown = inside.folders.map((f) => f.id)
+  const shown = shownFolders.map((f) => f.id)
 
   for (let at = 0; at < shown.length; at += 500) {
     const batch = shown.slice(at, at + 500)
@@ -219,7 +323,7 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
   const listing: Listing = {
     trail,
     folders: sortByName(
-      inside.folders.map((f) => ({
+      shownFolders.map((f) => ({
         id: f.id,
         name: f.name,
         items: f.items,
@@ -247,8 +351,26 @@ export const searchFiles = Effect.fn('files.searchFiles')(function* (q: string) 
 
   const files = yield* FileStore
   const found = yield* files.search(words)
+
+  // The store searches every folder. Each folder a match is in is checked once.
+  const reachable = new Map<string | null, boolean>()
+
+  for (const folderId of new Set(found.files.map((f) => f.folderId))) {
+    reachable.set(
+      folderId,
+      yield* folderInReach(folderId, 'read').pipe(
+        Effect.as(true),
+        Effect.catchTag('FilesError', () => Effect.succeed(false)),
+      ),
+    )
+  }
+
   return {
-    files: sortByName(found.files.map((f): DriveFile => ({ ...f, path: f.path ?? f.name }))),
+    files: sortByName(
+      found.files
+        .filter((f) => reachable.get(f.folderId) === true)
+        .map((f): DriveFile => ({ ...f, path: f.path ?? f.name })),
+    ),
     truncated: found.truncated,
   }
 })
@@ -262,6 +384,7 @@ export const createFolder = Effect.fn('files.createFolder')(function* (
   parentId: string | null,
   name: string,
 ) {
+  yield* folderInReach(parentId, 'write')
   const files = yield* FileStore
   const created = yield* files.createFolder(parentId, yield* folderName(name))
   yield* remember(created)
@@ -274,6 +397,8 @@ export const changeFolder = Effect.fn('files.changeFolder')(function* (
   change: { name?: string; parentId?: string | null },
 ) {
   yield* refuseWhen(change.parentId === id, "A folder can't be moved into itself.")
+  yield* folderInReach(id, 'write')
+  yield* folderInReach(change.parentId ?? null, 'write')
   const files = yield* FileStore
   // Only what is given changes.
   const update: FolderChange = {}
@@ -296,6 +421,7 @@ export const changeFolder = Effect.fn('files.changeFolder')(function* (
  * record forgets it, and gets a new, empty one the next time its page is opened.
  */
 export const deleteFolder = Effect.fn('files.deleteFolder')(function* (id: string) {
+  yield* folderInReach(id, 'write')
   const files = yield* FileStore
   const db = yield* Store
 
@@ -311,7 +437,11 @@ export const deleteFolder = Effect.fn('files.deleteFolder')(function* (id: strin
 export const changeFile = Effect.fn('files.changeFile')(function* (
   id: string,
   change: { name?: string; folderId?: string | null },
+  /** The folder the file is in. A Spool with record scopes needs it: see `fileInReach`. */
+  inFolder?: string | null,
 ) {
+  yield* fileInReach(id, inFolder, 'write')
+  yield* folderInReach(change.folderId ?? null, 'write')
   const files = yield* FileStore
   const name = change.name === undefined ? undefined : safeName(change.name, '')
   yield* refuseWhen(name === '', 'Give the file a name.')
@@ -330,13 +460,21 @@ export const changeFile = Effect.fn('files.changeFile')(function* (
 })
 
 /** Delete a file. One already gone is fine. */
-export const deleteFile = Effect.fn('files.deleteFile')(function* (id: string) {
+export const deleteFile = Effect.fn('files.deleteFile')(function* (
+  id: string,
+  inFolder?: string | null,
+) {
+  yield* fileInReach(id, inFolder, 'write')
   const files = yield* FileStore
   yield* files.deleteFile(id)
 })
 
 /** A link to one file good for a few minutes, or its bytes. */
-export const openFile = Effect.fn('files.openFile')(function* (id: string) {
+export const openFile = Effect.fn('files.openFile')(function* (
+  id: string,
+  inFolder?: string | null,
+) {
+  yield* fileInReach(id, inFolder, 'read')
   const files = yield* FileStore
   return yield* files.open(id)
 })
@@ -434,6 +572,12 @@ export const recordFolder = Effect.fn('files.recordFolder')(function* (
   recordId: string,
 ): Effect.fn.Return<{ folderId: string; path: string }, StaffError, FileStore | Store> {
   const obj = yield* filesObject(objectKey)
+
+  // Before the file store is asked for anything: a record out of reach has no folder to make.
+  if (scopesOn() && !(yield* getRecord(objectKey, recordId))) {
+    return yield* fail('That record no longer exists.')
+  }
+
   const files = yield* FileStore
   const db = yield* Store
   const drive = yield* files.drive
@@ -582,6 +726,7 @@ export const startUpload = Effect.fn('files.startUpload')(function* (
   }
 
   const name = safeName(input.name, 'File')
+  yield* folderInReach(input.folderId, 'write')
 
   // Tidy up this teammate's uploads that never finished.
   const now = yield* Clock.currentTimeMillis

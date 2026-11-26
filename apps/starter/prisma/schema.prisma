@@ -83,6 +83,8 @@ model Activity {
   outcome String?
   /// Identifies the email or calendar event this came from, so syncing it twice logs it once.
   externalId String? @map("external_id")
+  /// The record scope this row belongs to: a copy of its record's.
+  scope String?
 
   @@unique([objectKey, recordId, externalId])
   @@index([objectKey, recordId])
@@ -105,6 +107,8 @@ model Task {
   objectKey String? @map("object_key")
   recordId String? @map("record_id")
   createdBy String? @map("created_by")
+  /// The record scope this row belongs to: a copy of its record's.
+  scope String?
 
   @@index([assigneeId])
   @@index([objectKey, recordId])
@@ -123,6 +127,8 @@ model Note {
   recordId String? @map("record_id")
   authorId String? @map("author_id")
   authorName String? @map("author_name")
+  /// The record scope this row belongs to: a copy of its record's.
+  scope String?
 
   @@index([objectKey, recordId])
   @@fullTextIndex([[title], body], name: "notes_search")
@@ -155,6 +161,8 @@ model Favorite {
   userId String @map("user_id")
   objectKey String @map("object_key")
   recordId String @map("record_id")
+  /// The record scope this row belongs to: a copy of its record's.
+  scope String?
 
   @@index([userId])
   @@map("favorites")
@@ -224,6 +232,8 @@ model RecordFolder {
   folderId String @map("folder_id")
   /// Where the folder was created, from the drive's top level. It may have been moved since.
   path String
+  /// The record scope this row belongs to: a copy of its record's.
+  scope String?
 
   @@unique([objectKey, recordId])
   @@index([folderId])
@@ -250,6 +260,8 @@ model FileUpload {
   recordId String? @map("record_id")
   uploadedBy String @map("uploaded_by")
   uploadedByName String @map("uploaded_by_name")
+  /// The record scope this row belongs to: a copy of its record's.
+  scope String?
 
   @@map("file_uploads")
   @@rls
@@ -276,6 +288,8 @@ model SequenceRun {
   /// What happened last: why the run stopped, or the error from a failed send.
   note String?
   enrolledBy String? @map("enrolled_by")
+  /// The record scope this row belongs to: a copy of its record's.
+  scope String?
 
   @@unique([campaignKey, objectKey, recordId])
   @@index([status, dueAt])

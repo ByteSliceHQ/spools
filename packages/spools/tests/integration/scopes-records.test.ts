@@ -297,47 +297,40 @@ test('update: read-only people change nothing, and nobody moves a record out of 
   }
 })
 
-pending(
-  'update: moving a record to another held scope takes its notes, tasks and timeline along',
-  async () => {
-    await withRecord('contacts', { name: 'Alder mover', branch: 'north' }, async (id) => {
-      const on = { objectKey: 'contacts', recordId: id }
+test('update: moving a record to another held scope takes its notes, tasks and timeline along', async () => {
+  await withRecord('contacts', { name: 'Alder mover', branch: 'north' }, async (id) => {
+    const on = { objectKey: 'contacts', recordId: id }
 
-      await as(
-        'nora',
-        workspace.createNote({ title: 'Alder mover note', body: 'moves', ...on }, nora),
-      )
+    await as(
+      'nora',
+      workspace.createNote({ title: 'Alder mover note', body: 'moves', ...on }, nora),
+    )
 
-      await as('nora', workspace.createTask({ title: 'Alder mover task', ...on }, nora.id))
+    await as('nora', workspace.createTask({ title: 'Alder mover task', ...on }, nora.id))
 
-      const moved = await as(
-        'bo',
-        service.updateRecord('contacts', id, { branch: 'south' }, bo),
-        null,
-      )
+    const moved = await as(
+      'bo',
+      service.updateRecord('contacts', id, { branch: 'south' }, bo),
+      null,
+    )
 
-      expect(moved?.branch).toBe('south')
+    expect(moved?.branch).toBe('south')
 
-      // South has it now, with what was written on it.
-      expect(column(await as('sam', workspace.listNotes(on)), 'title')).toEqual([
-        'Alder mover note',
-      ])
+    // South has it now, with what was written on it.
+    expect(column(await as('sam', workspace.listNotes(on)), 'title')).toEqual(['Alder mover note'])
 
-      expect(column(await as('sam', workspace.listTasks(on)), 'title')).toEqual([
-        'Alder mover task',
-      ])
+    expect(column(await as('sam', workspace.listTasks(on)), 'title')).toEqual(['Alder mover task'])
 
-      expect(await as('sam', records.listActivities('contacts', id))).not.toEqual([])
+    expect(await as('sam', records.listActivities('contacts', id))).not.toEqual([])
 
-      // And North no longer does.
-      expect(await as('nora', records.getRecord('contacts', id))).toBeNull()
-      expect(await as('nora', workspace.listNotes(on))).toEqual([])
-      expect(await as('nora', workspace.listTasks(on))).toEqual([])
-      expect(await as('nora', records.listActivities('contacts', id))).toEqual([])
-      expect(JSON.stringify(await as('nora', workspace.listNotes()))).not.toContain('Alder mover')
-    })
-  },
-)
+    // And North no longer does.
+    expect(await as('nora', records.getRecord('contacts', id))).toBeNull()
+    expect(await as('nora', workspace.listNotes(on))).toEqual([])
+    expect(await as('nora', workspace.listTasks(on))).toEqual([])
+    expect(await as('nora', records.listActivities('contacts', id))).toEqual([])
+    expect(JSON.stringify(await as('nora', workspace.listNotes()))).not.toContain('Alder mover')
+  })
+})
 
 test('delete: a record of another scope is not found, and is still there afterwards', async () => {
   await withRecord('contacts', { name: 'Birch keeper', branch: 'south' }, async (id) => {
@@ -423,7 +416,7 @@ test('"has ... where" only counts related records of the scope', async () => {
   expect(column(await as('nora', contacts(any)), 'name')).toEqual(['Nina Alder'])
 })
 
-pending('the store itself keeps to the scope, for code that reaches it directly', async () => {
+test('the store itself keeps to the scope, for code that reaches it directly', async () => {
   const table = objectTable('contacts')
 
   const found = await as(

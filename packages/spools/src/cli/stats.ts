@@ -12,6 +12,7 @@
  */
 import { refreshStats } from '../server/records'
 import { disposeRuntime, runServer } from '../server/runtime/app'
+import { asSystem } from '../server/scopes'
 import { crmConfig } from '../server/spool'
 
 // The app's Spool: its config and its database.
@@ -21,7 +22,8 @@ let failed = 0
 
 for (const objectKey of Object.keys(crmConfig().objects)) {
   try {
-    await runServer(refreshStats(objectKey))
+    // Every record of every scope: this is the system's own work.
+    await runServer(asSystem(refreshStats(objectKey)))
     console.log(`✓ ${objectKey}`)
   } catch (err) {
     failed++

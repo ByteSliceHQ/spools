@@ -85,7 +85,8 @@ export const createFolderFn = createServerFn({ method: 'POST' })
     crmHandler('files.createFolder', ({ data }) => told(createFolder(data.parentId, data.name))),
   )
 
-const item = z.object({ kind: z.enum(['folder', 'file']), id })
+/** `from`: for a file, the folder it is in (`null` for the top level). A Spool with record scopes needs it. */
+const item = z.object({ kind: z.enum(['folder', 'file']), id, from: folderId.optional() })
 
 export const renameItemFn = createServerFn({ method: 'POST' })
   .validator(item.extend({ name }))
@@ -94,7 +95,7 @@ export const renameItemFn = createServerFn({ method: 'POST' })
       told(
         data.kind === 'folder'
           ? changeFolder(data.id, { name: data.name })
-          : changeFile(data.id, { name: data.name }),
+          : changeFile(data.id, { name: data.name }, data.from),
       ),
     ),
   )
@@ -107,7 +108,7 @@ export const moveItemFn = createServerFn({ method: 'POST' })
       told(
         data.kind === 'folder'
           ? changeFolder(data.id, { parentId: data.to })
-          : changeFile(data.id, { folderId: data.to }),
+          : changeFile(data.id, { folderId: data.to }, data.from),
       ),
     ),
   )
@@ -116,7 +117,7 @@ export const deleteItemFn = createServerFn({ method: 'POST' })
   .validator(item)
   .handler(
     crmHandler('files.deleteItem', ({ data }) =>
-      told(data.kind === 'folder' ? deleteFolder(data.id) : deleteFile(data.id)),
+      told(data.kind === 'folder' ? deleteFolder(data.id) : deleteFile(data.id, data.from)),
     ),
   )
 

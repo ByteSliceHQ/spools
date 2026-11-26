@@ -166,6 +166,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "summary": {
                 "nullable": false,
                 "type": {
@@ -209,6 +216,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "summary": {
                   "column": "summary"
@@ -820,6 +830,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "userId": {
                 "nullable": false,
                 "type": {
@@ -842,6 +859,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "userId": {
                   "column": "user_id"
@@ -899,6 +919,13 @@
                 }
               },
               "recordId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "scope": {
                 "nullable": true,
                 "type": {
                   "codecId": "pg/text@1",
@@ -974,6 +1001,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "sizeBytes": {
                   "column": "size_bytes"
@@ -1855,6 +1885,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "title": {
                 "nullable": false,
                 "type": {
@@ -1896,6 +1933,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "title": {
                   "column": "title"
@@ -1962,6 +2002,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "updatedAt": {
                 "nullable": false,
                 "type": {
@@ -1996,6 +2043,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "updatedAt": {
                   "column": "updated_at"
@@ -2190,6 +2240,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "status": {
                 "nullable": false,
                 "type": {
@@ -2240,6 +2297,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "status": {
                   "column": "status"
@@ -2367,6 +2427,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "title": {
                 "nullable": false,
                 "type": {
@@ -2414,6 +2481,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "title": {
                   "column": "title"
@@ -2593,6 +2663,11 @@
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
                   "nullable": false
+                },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
                 },
                 "summary": {
                   "codecId": "pg/text@1",
@@ -3103,6 +3178,11 @@
                   "dataType": "pg/text",
                   "nullable": false
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "user_id": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -3167,6 +3247,11 @@
                   "nullable": true
                 },
                 "record_id": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
+                "scope": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
                   "nullable": true
@@ -3825,6 +3910,11 @@
                   "dataType": "pg/text",
                   "nullable": true
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "title": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -3922,6 +4012,11 @@
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
                   "nullable": false
+                },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
                 },
                 "updated_at": {
                   "codecId": "pg/timestamptz-date@1",
@@ -4099,6 +4194,11 @@
                   "dataType": "pg/text",
                   "nullable": false
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "status": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -4197,6 +4297,11 @@
                   "dataType": "pg/text",
                   "nullable": true
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "title": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -4244,7 +4349,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "06db04fe9880d37e604c3b6e31f0af7bb5e15624b502993098310e85866d447b"
+    "storageHash": "0566a65d4f872cca3ac0e8a49b5cdbaa5c2f3885eae50ebb1e76a14b11947ded"
   },
   "execution": {
     "executionHash": "3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b",

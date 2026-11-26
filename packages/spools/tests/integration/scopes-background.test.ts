@@ -63,43 +63,40 @@ const enrolBoth = async () => {
   await as('sam', enroll('welcome', 'contacts', await record('contacts', ids.south.contact), sam))
 }
 
-pending(
-  'sequences: a record of another scope can’t be enrolled, and runs are counted per scope',
-  async () => {
-    await enrolBoth()
-    expect(await as('hana', activeRuns(), null)).toEqual({ welcome: 2 })
-    expect(await as('nora', activeRuns())).toEqual({ welcome: 1 })
+test('sequences: a record of another scope can’t be enrolled, and runs are counted per scope', async () => {
+  await enrolBoth()
+  expect(await as('hana', activeRuns(), null)).toEqual({ welcome: 2 })
+  expect(await as('nora', activeRuns())).toEqual({ welcome: 1 })
 
-    // A run target is handed the record by its caller. One of another scope is not there for Nora.
-    const { id } = await sys(
-      records.createRecord('contacts', { name: 'Birch unenrolled', branch: 'south' }, 'seed'),
-    )
+  // A run target is handed the record by its caller. One of another scope is not there for Nora.
+  const { id } = await sys(
+    records.createRecord('contacts', { name: 'Birch unenrolled', branch: 'south' }, 'seed'),
+  )
 
-    try {
-      const theirs = await record('contacts', id)
-      await expect(as('nora', enroll('welcome', 'contacts', theirs, nora))).rejects.toThrow()
+  try {
+    const theirs = await record('contacts', id)
+    await expect(as('nora', enroll('welcome', 'contacts', theirs, nora))).rejects.toThrow()
 
-      await expect(
-        as(
-          'nora',
-          runTarget('campaign:welcome', {
-            objectKey: 'contacts',
-            record: theirs,
-            actor: nora,
-            trigger: 'action:welcome',
-          }),
-        ),
-      ).rejects.toThrow()
+    await expect(
+      as(
+        'nora',
+        runTarget('campaign:welcome', {
+          objectKey: 'contacts',
+          record: theirs,
+          actor: nora,
+          trigger: 'action:welcome',
+        }),
+      ),
+    ).rejects.toThrow()
 
-      expect(
-        await sys(Store.use((store) => store.count(SequenceRun, { where: { recordId: id } }))),
-      ).toBe(0)
-    } finally {
-      await sys(Store.use((store) => store.remove(SequenceRun, { where: { recordId: id } })))
-      await sys(records.deleteRecord('contacts', id))
-    }
-  },
-)
+    expect(
+      await sys(Store.use((store) => store.count(SequenceRun, { where: { recordId: id } }))),
+    ).toBe(0)
+  } finally {
+    await sys(Store.use((store) => store.remove(SequenceRun, { where: { recordId: id } })))
+    await sys(records.deleteRecord('contacts', id))
+  }
+})
 
 pending(
   'sequences: the cron tick sends for every scope, and what it writes stays in the record’s scope',
@@ -316,69 +313,78 @@ pending('the tool API: a grant reaches its own scope, and writes nowhere else', 
 
 // ── Files ───────────────────────────────────────────────────────────────────
 
-pending(
-  'record folders and files: another scope’s can’t be listed, found, opened, changed or deleted',
-  async () => {
-    const folder = await as('sam', files.recordFolder('companies', ids.south.company))
+test('record folders and files: another scope’s can’t be listed, found, opened, changed or deleted', async () => {
+  const folder = await as('sam', files.recordFolder('companies', ids.south.company))
 
-    const ticket = await as(
-      'sam',
-      files.startUpload(
-        {
-          folderId: folder.folderId,
-          name: 'Birch contract.txt',
-          sizeBytes: 5,
-          sha256: 'a'.repeat(64),
-        },
-        sam,
-      ),
-    )
+  const ticket = await as(
+    'sam',
+    files.startUpload(
+      {
+        folderId: folder.folderId,
+        name: 'Birch contract.txt',
+        sizeBytes: 5,
+        sha256: 'a'.repeat(64),
+      },
+      sam,
+    ),
+  )
 
-    // The browser's part: the bytes go straight to the store.
-    await drive.handle(ticket.url, {
-      method: 'PUT',
-      body: new TextEncoder().encode('hello').buffer,
-    })
+  // The browser's part: the bytes go straight to the store.
+  await drive.handle(ticket.url, {
+    method: 'PUT',
+    body: new TextEncoder().encode('hello').buffer,
+  })
 
-    await as('sam', files.finishUpload(ticket.id, sam))
+  await as('sam', files.finishUpload(ticket.id, sam))
 
-    const theirs = await as('sam', files.listFolder(folder.folderId))
-    const file = theirs.files.find((f) => f.name === 'Birch contract.txt')
-    expect(file).toBeDefined()
-    const fileId = file?.id ?? ''
+  const theirs = await as('sam', files.listFolder(folder.folderId))
+  const file = theirs.files.find((f) => f.name === 'Birch contract.txt')
+  expect(file).toBeDefined()
+  const fileId = file?.id ?? ''
 
-    // The download route, as each person's browser asks it.
-    const download = async (who: Who, scopeCookie?: string) => {
-      const request = requestFrom(who, `/api/files/${fileId}`, scopeCookie)
-      return (await fileHandlers.GET({ request, params: { id: fileId } })).status
-    }
+  // The download route, as each person's browser asks it.
+  const download = async (who: Who, scopeCookie?: string) => {
+    // The link names the folder the file is in, as the file browser's links do.
+    const request = requestFrom(who, `/api/files/${fileId}?folder=${folder.folderId}`, scopeCookie)
+    return (await fileHandlers.GET({ request, params: { id: fileId } })).status
+  }
 
-    expect(await download('sam')).toBe(302)
+  expect(await download('sam')).toBe(302)
 
-    // The record's own folder, asked for by the record or by the folder's id.
-    await expect(as('nora', files.recordFolder('companies', ids.south.company))).rejects.toThrow()
-    await expect(as('nora', files.listFolder(folder.folderId))).rejects.toThrow()
+  // Without the folder it is in, a file can't be told to be within reach: nobody is given it.
+  const bare = requestFrom('sam', `/api/files/${fileId}`)
+  expect((await fileHandlers.GET({ request: bare, params: { id: fileId } })).status).toBe(404)
 
-    // Browsing down from the top: "Companies" holds a folder per company.
-    const top = await as('nora', files.listFolder(null))
-    expect(southIn(top)).toEqual([])
-    const parent = top.folders.find((f) => f.name === 'Companies')
+  // The record's own folder, asked for by the record or by the folder's id.
+  await expect(as('nora', files.recordFolder('companies', ids.south.company))).rejects.toThrow()
+  await expect(as('nora', files.listFolder(folder.folderId))).rejects.toThrow()
 
-    if (parent) {
-      expect(southIn(await as('nora', files.listFolder(parent.id)))).toEqual([])
-    }
+  // Browsing down from the top: "Companies" holds a folder per company.
+  const top = await as('nora', files.listFolder(null))
+  expect(southIn(top)).toEqual([])
+  const parent = top.folders.find((f) => f.name === 'Companies')
 
-    expect(southIn(await as('nora', files.searchFiles('contract')))).toEqual([])
+  if (parent) {
+    expect(southIn(await as('nora', files.listFolder(parent.id)))).toEqual([])
+  }
 
-    // By its id alone: not found, as a file that was never there, whatever the cookie says.
-    expect(await download('nora')).toBe(404)
-    expect(await download('nora', 'south')).toBe(404)
-    await expect(as('nora', files.openFile(fileId))).rejects.toThrow()
-    await expect(as('nora', files.changeFile(fileId, { name: 'Alder.txt' }))).rejects.toThrow()
-    await expect(as('nora', files.deleteFile(fileId))).rejects.toThrow()
-    await expect(as('nora', files.deleteFolder(folder.folderId))).rejects.toThrow()
+  expect(southIn(await as('nora', files.searchFiles('contract')))).toEqual([])
 
-    const kept = await as('sam', files.listFolder(folder.folderId))
-    expect(column(kept.files, 'name')).toEqual(['Birch contract.txt'])
-  },
-)
+  // By its id alone: not found, as a file that was never there, whatever the cookie says.
+  expect(await download('nora')).toBe(404)
+  expect(await download('nora', 'south')).toBe(404)
+  await expect(as('nora', files.openFile(fileId))).rejects.toThrow()
+  await expect(as('nora', files.openFile(fileId, folder.folderId))).rejects.toThrow()
+  // Naming a folder she can reach doesn't help: the file isn't in it.
+  await expect(as('nora', files.openFile(fileId, null))).rejects.toThrow()
+
+  await expect(
+    as('nora', files.changeFile(fileId, { name: 'Alder.txt' }, folder.folderId)),
+  ).rejects.toThrow()
+
+  await expect(as('nora', files.deleteFile(fileId, folder.folderId))).rejects.toThrow()
+  await expect(as('nora', files.deleteFolder(folder.folderId))).rejects.toThrow()
+
+  const kept = await as('sam', files.listFolder(folder.folderId))
+  expect(column(kept.files, 'name')).toEqual(['Birch contract.txt'])
+})

@@ -11,7 +11,7 @@ scopedWorld()
 
 const { nora, bo } = people
 
-pending('the index sent to the browser holds the scope, and counts only the scope', async () => {
+test('the index sent to the browser holds the scope, and counts only the scope', async () => {
   const index = await as('nora', search.quickIndex(undefined, nora.id))
   expect(northIn(index)).toContain('Nina')
   expect(southIn(index)).toEqual([])
@@ -25,7 +25,7 @@ pending('the index sent to the browser holds the scope, and counts only the scop
   expect(index.scope).toBe('north')
 })
 
-pending('the index follows a switch of scope', async () => {
+test('the index follows a switch of scope', async () => {
   const south = await as('bo', search.quickIndex(undefined, bo.id), 'south')
   expect(northIn(south)).toEqual([])
   expect(south.scope).toBe('south')
@@ -41,21 +41,18 @@ pending('the index follows a switch of scope', async () => {
   expect(both.scope).toBe('north+south')
 })
 
-pending(
-  'server search finds nothing in another scope: records, notes, calls or tasks',
-  async () => {
-    // The searches work at all.
-    expect(northIn(await as('nora', search.deepSearch('northsecret')))).toContain('northsecret')
+test('server search finds nothing in another scope: records, notes, calls or tasks', async () => {
+  // The searches work at all.
+  expect(northIn(await as('nora', search.deepSearch('northsecret')))).toContain('northsecret')
 
-    // A record by a searchable field, a note and a call by their text, a task by its title.
-    expect(await as('nora', search.deepSearch('birch.test'))).toEqual([])
-    expect(await as('nora', search.deepSearch('southsecret'))).toEqual([])
-    expect(await as('nora', search.deepSearch('Birch'))).toEqual([])
-    expect(column(await as('nora', search.deepSearch('Ring')), 'title')).toEqual(['Ring Alder'])
-    expect(southIn(await as('nora', search.deepSearch('pricing')))).toEqual([])
-    expect(await as('otto', search.deepSearch('pricing'))).toEqual([])
-  },
-)
+  // A record by a searchable field, a note and a call by their text, a task by its title.
+  expect(await as('nora', search.deepSearch('birch.test'))).toEqual([])
+  expect(await as('nora', search.deepSearch('southsecret'))).toEqual([])
+  expect(await as('nora', search.deepSearch('Birch'))).toEqual([])
+  expect(column(await as('nora', search.deepSearch('Ring')), 'title')).toEqual(['Ring Alder'])
+  expect(southIn(await as('nora', search.deepSearch('pricing')))).toEqual([])
+  expect(await as('otto', search.deepSearch('pricing'))).toEqual([])
+})
 
 test('value suggestions in the filter box count only the scope', async () => {
   // Two companies are in Southport, which is what makes it a value worth offering.

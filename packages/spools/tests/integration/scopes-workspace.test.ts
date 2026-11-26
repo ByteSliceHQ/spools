@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { Filters } from '../../src/crm/filters'
 import * as records from '../../src/server/records'
+import { backfillScopes } from '../../src/server/scope-backfill'
 import * as service from '../../src/server/service'
 import { Store } from '../../src/server/store/store'
 import { Activity, Favorite, Note, Task } from '../../src/server/store/tables'
@@ -91,7 +92,7 @@ test('reports break down the scope alone', async () => {
   expect(weeks.reduce((sum, w) => sum + w.count, 0)).toBe(2)
 })
 
-pending('the team activity report counts the scope alone', async () => {
+test('the team activity report counts the scope alone', async () => {
   const hour = 3_600_000
   const range = { from: new Date(Date.now() - hour), to: new Date(Date.now() + hour) }
   const team = [nora, sam]
@@ -155,7 +156,7 @@ test('a saved view shared by another scope gives away no titles', async () => {
   }
 })
 
-pending('favourites: only those of the scope are listed, and none is made outside it', async () => {
+test('favourites: only those of the scope are listed, and none is made outside it', async () => {
   const mine = workspace.listFavorites(bo.id)
   expect(column(await as('bo', mine, 'north'), 'title')).toEqual(['Nina Alder'])
   expect(column(await as('bo', mine, 'south'), 'title')).toEqual(['Sofia Birch'])
@@ -185,7 +186,7 @@ pending('favourites: only those of the scope are listed, and none is made outsid
   }
 })
 
-pending('tasks: listed, counted, changed and deleted within the scope only', async () => {
+test('tasks: listed, counted, changed and deleted within the scope only', async () => {
   expect(column(await as('nora', workspace.listTasks()), 'title')).toEqual([
     'Ring Alder',
     'Visit Alder',
@@ -236,7 +237,7 @@ pending('tasks: listed, counted, changed and deleted within the scope only', asy
   }
 })
 
-pending('notes: listed, changed and deleted within the scope only', async () => {
+test('notes: listed, changed and deleted within the scope only', async () => {
   expect(column(await as('nora', workspace.listNotes()), 'title')).toEqual(['Alder pricing'])
   expect(await as('nora', workspace.listNotes(southContact()))).toEqual([])
 
@@ -270,67 +271,111 @@ pending('notes: listed, changed and deleted within the scope only', async () => 
   }
 })
 
-pending(
-  'the timeline: nothing of another scope is read, and nothing is written onto it',
-  async () => {
-    expect(await as('nora', records.listActivities('contacts', ids.south.contact))).toEqual([])
-    // Home and the Workflows page read the newest activity of the whole business.
-    const recent = await as('nora', records.recentActivities(200))
-    expect(northIn(recent)).toContain('northsecret')
-    expect(southIn(recent)).toEqual([])
-    expect(recent.every((a) => a.recordId !== ids.south.contact)).toBe(true)
+test('the timeline: nothing of another scope is read, and nothing is written onto it', async () => {
+  expect(await as('nora', records.listActivities('contacts', ids.south.contact))).toEqual([])
+  // Home and the Workflows page read the newest activity of the whole business.
+  const recent = await as('nora', records.recentActivities(200))
+  expect(northIn(recent)).toContain('northsecret')
+  expect(southIn(recent)).toEqual([])
+  expect(recent.every((a) => a.recordId !== ids.south.contact)).toBe(true)
 
-    const before = await sys(records.listActivities('contacts', ids.south.contact))
+  const before = await sys(records.listActivities('contacts', ids.south.contact))
 
-    try {
-      await expect(
-        as(
-          'nora',
-          workspace.logActivity({ ...southContact(), kind: 'call', notes: 'planted' }, nora),
-        ),
-      ).rejects.toThrow()
+  try {
+    await expect(
+      as(
+        'nora',
+        workspace.logActivity({ ...southContact(), kind: 'call', notes: 'planted' }, nora),
+      ),
+    ).rejects.toThrow()
 
-      await expect(
-        as(
-          'nora',
-          records.addActivity({
-            ...southContact(),
-            kind: 'note',
-            summary: 'planted',
-            actor: 'Nora',
-          }),
-        ),
-      ).rejects.toThrow()
+    await expect(
+      as(
+        'nora',
+        records.addActivity({
+          ...southContact(),
+          kind: 'note',
+          summary: 'planted',
+          actor: 'Nora',
+        }),
+      ),
+    ).rejects.toThrow()
 
-      expect(await sys(records.listActivities('contacts', ids.south.contact))).toHaveLength(
-        before.length,
+    expect(await sys(records.listActivities('contacts', ids.south.contact))).toHaveLength(
+      before.length,
+    )
+
+    // Not found, not forbidden: the refusal reads the same as for a record that was never there.
+    const refusal = (attempt: Promise<unknown>) =>
+      attempt.then(
+        () => 'accepted',
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
       )
 
-      // Not found, not forbidden: the refusal reads the same as for a record that was never there.
-      const refusal = (attempt: Promise<unknown>) =>
-        attempt.then(
-          () => 'accepted',
-          (error: unknown) => (error instanceof Error ? error.message : String(error)),
-        )
+    const plant = (recordId: string) =>
+      as(
+        'nora',
+        records.addActivity({
+          objectKey: 'contacts',
+          recordId,
+          kind: 'note',
+          summary: 'planted',
+          actor: 'Nora',
+        }),
+      )
 
-      const plant = (recordId: string) =>
-        as(
-          'nora',
-          records.addActivity({
-            objectKey: 'contacts',
-            recordId,
-            kind: 'note',
-            summary: 'planted',
-            actor: 'Nora',
-          }),
-        )
+    const hidden = await refusal(plant(ids.south.contact))
+    expect(hidden).not.toBe('accepted')
+    expect(hidden).toBe(await refusal(plant(crypto.randomUUID())))
+  } finally {
+    await sys(Store.use((store) => store.remove(Activity, { where: { body: 'planted' } })))
+    await sys(Store.use((store) => store.remove(Activity, { where: { summary: 'planted' } })))
+  }
+})
 
-      const hidden = await refusal(plant(ids.south.contact))
-      expect(hidden).not.toBe('accepted')
-      expect(hidden).toBe(await refusal(plant(crypto.randomUUID())))
-    } finally {
-      await sys(Store.use((store) => store.remove(Activity, { where: { body: 'planted' } })))
-      await sys(Store.use((store) => store.remove(Activity, { where: { summary: 'planted' } })))
+test('backfill: rows written before scopes were turned on take their record’s scope', async () => {
+  const on = { objectKey: 'contacts', recordId: ids.south.contact }
+  const note = await sys(workspace.createNote({ title: 'Birch legacy', body: 'old', ...on }, sam))
+  const loose = await sys(workspace.createNote({ title: 'Loose legacy', body: 'old' }, sam))
+
+  try {
+    // As rows were before the column existed: no scope.
+    for (const id of [note.id, loose.id]) {
+      await sys(Store.use((store) => store.update(Note, { where: { id } }, { scope: null })))
     }
-  },
-)
+
+    // Until the backfill runs, only a role that reaches every scope has them.
+    expect(column(await as('sam', workspace.listNotes(on)), 'title')).toEqual(['Birch pricing'])
+
+    expect(column(await as('hana', workspace.listNotes(on), null), 'title')).toContain(
+      'Birch legacy',
+    )
+
+    // It is the system's to run: a person, whatever their role, is refused.
+    await expect(as('hana', backfillScopes(), null)).rejects.toThrow()
+
+    const results = await sys(backfillScopes())
+
+    expect(results.find((r) => r.table === 'notes')).toEqual({
+      table: 'notes',
+      stamped: 1,
+      left: 1,
+    })
+
+    expect(column(await as('sam', workspace.listNotes(on)), 'title')).toEqual([
+      'Birch legacy',
+      'Birch pricing',
+    ])
+
+    expect(JSON.stringify(await as('nora', workspace.listNotes()))).not.toContain('legacy')
+    // A note on no record can't be told a scope: it is left for head office to see to.
+    expect(JSON.stringify(await as('sam', workspace.listNotes()))).not.toContain('Loose legacy')
+
+    // Running it again changes nothing.
+    expect((await sys(backfillScopes())).find((r) => r.table === 'notes')?.stamped).toBe(0)
+  } finally {
+    for (const id of [note.id, loose.id]) {
+      await sys(Store.use((store) => store.remove(Note, { where: { id } })))
+    }
+  }
+})

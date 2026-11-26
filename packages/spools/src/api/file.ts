@@ -15,12 +15,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const fileHandlers = {
   GET: apiRoute(
     'files.download',
-    ({ params }: RouteInput<{ id: string }>) => {
+    ({ params, request }: RouteInput<{ id: string }>) => {
       if (!UUID.test(params.id)) {
         return Effect.succeed(new Response('Not found', { status: 404 }))
       }
 
-      return openFile(params.id).pipe(
+      // In a Spool with record scopes the link says which folder the file is in (`?folder=`),
+      // and the file is only opened from a folder within reach. Top level: `?folder=`, empty.
+      const folder = new URL(request.url).searchParams.get('folder')
+      const inFolder = folder === null ? undefined : folder || null
+
+      return openFile(params.id, inFolder).pipe(
         Effect.map((file) => (file.kind === 'link' ? linkResponse(file.url) : fileResponse(file))),
         Effect.catchTag('FilesError', (error) =>
           Effect.succeed(

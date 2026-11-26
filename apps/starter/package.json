@@ -24,6 +24,7 @@
     "db:studio": "open http://127.0.0.1:54323",
     "db:harden": "spools harden",
     "db:stats": "spools stats",
+    "db:scopes": "spools scopes backfill",
     "swirls:check": "swirls doctor",
     "dev:e2e": "CRM_GUIDES=${CRM_GUIDES:-off} bunx --bun vite dev --config vite.config.e2e.ts",
     "demo": "bunx --bun vite build --config vite.config.e2e.ts && CRM_GUIDES=${CRM_GUIDES:-off} HOST=${HOST:-localhost} PORT=${PORT:-3100} BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun server.prod.ts"
