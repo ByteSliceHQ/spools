@@ -1,4 +1,4 @@
-import { expect } from 'bun:test'
+import { expect, test } from 'bun:test'
 
 import type { Filters } from '../../src/crm/filters'
 import * as records from '../../src/server/records'
@@ -35,7 +35,7 @@ const sweep = async (objectKey: string, q: string) => {
   }
 }
 
-pending('CSV export holds the scope, and no title of a related record outside it', async () => {
+test('CSV export holds the scope, and no title of a related record outside it', async () => {
   const csv = await as('nora', workspace.exportCsv('contacts', {}))
   expect(csv).toContain('Nina Alder')
   // Nell's company is a South one: its cell is empty, not "Birch Supply".
@@ -48,38 +48,35 @@ pending('CSV export holds the scope, and no title of a related record outside it
   expect(northIn(deals)).toEqual([])
 })
 
-pending(
-  'CSV import: rows take the active scope, and a row for another scope is refused',
-  async () => {
-    try {
-      const result = await as(
-        'nora',
-        service.importRecords(
-          'contacts',
-          [
-            { name: 'Alder import one' },
-            // A scope column in the file.
-            { name: 'Alder import two', branch: 'south' },
-            // A relation cell that was matched to a South company.
-            { name: 'Alder import three', companyId: ids.south.company },
-          ],
-          nora,
-        ),
-      )
+test('CSV import: rows take the active scope, and a row for another scope is refused', async () => {
+  try {
+    const result = await as(
+      'nora',
+      service.importRecords(
+        'contacts',
+        [
+          { name: 'Alder import one' },
+          // A scope column in the file.
+          { name: 'Alder import two', branch: 'south' },
+          // A relation cell that was matched to a South company.
+          { name: 'Alder import three', companyId: ids.south.company },
+        ],
+        nora,
+      ),
+    )
 
-      expect(result.created).toBe(1)
-      expect(result.failed).toBe(2)
-      expect(result.errors.map((e) => e.row)).toEqual([3, 4])
+    expect(result.created).toBe(1)
+    expect(result.failed).toBe(2)
+    expect(result.errors.map((e) => e.row)).toEqual([3, 4])
 
-      const made = await sys(records.listRecords({ objectKey: 'contacts', q: 'Alder import' }))
-      expect(made.map((r) => [r.name, r.branch])).toEqual([['Alder import one', 'north']])
-    } finally {
-      await sweep('contacts', 'Alder import')
-    }
-  },
-)
+    const made = await sys(records.listRecords({ objectKey: 'contacts', q: 'Alder import' }))
+    expect(made.map((r) => [r.name, r.branch])).toEqual([['Alder import one', 'north']])
+  } finally {
+    await sweep('contacts', 'Alder import')
+  }
+})
 
-pending('reports break down the scope alone', async () => {
+test('reports break down the scope alone', async () => {
   const stages = async (who: 'nora' | 'hana', wanted?: null) => {
     const { breakdowns } = await as(who, workspace.buildReports(), wanted)
     const stage = breakdowns.find((b) => b.objectKey === 'deals' && b.field === 'stage')
@@ -106,7 +103,7 @@ pending('the team activity report counts the scope alone', async () => {
   expect(row(sam.id)).toMatchObject({ calls: 0, notes: 0, total: 0 })
 })
 
-pending('boards and footer calculations read the scope alone', async () => {
+test('boards and footer calculations read the scope alone', async () => {
   // A board asks for the card's fields only, and a related record by its title.
   const board = { objectKey: 'deals', fields: ['value', 'contact'], relations: 'titles' as const }
   const north = await as('nora', records.listRecords({ ...board, limit: 500 }))
@@ -123,7 +120,7 @@ pending('boards and footer calculations read the scope alone', async () => {
   expect(await as('hana', views.calculate('deals', {}, sum), null)).toEqual({ value: 15_999 })
 })
 
-pending('a saved view shared by another scope gives away no titles', async () => {
+test('a saved view shared by another scope gives away no titles', async () => {
   const filters: Filters = [[{ field: 'company', op: 'in', value: [ids.south.company] }]]
 
   const viewId = await as(

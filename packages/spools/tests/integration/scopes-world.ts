@@ -209,6 +209,22 @@ async function seed() {
   const make = async (objectKey: string, values: Record<string, unknown>) =>
     (await sys(records.createRecord(objectKey, values, 'seed'))).id
 
+  /**
+   * A record that crosses branches. Nothing lets one be made while scopes are
+   * on, so it is made as it would have been before they were turned on.
+   */
+  const makeCrossing = async (objectKey: string, values: Record<string, unknown>) => {
+    const config = spool().config
+    const { scopes } = config
+    config.scopes = undefined
+
+    try {
+      return (await run(records.createRecord(objectKey, values, 'seed'))).id
+    } finally {
+      config.scopes = scopes
+    }
+  }
+
   ids.product = await make('products', { name: 'Crate', sku: 'CR-1' })
 
   ids.north.company = await make('companies', {
@@ -252,7 +268,7 @@ async function seed() {
   })
 
   // A North contact whose company is a South one.
-  ids.north.cross = await make('contacts', {
+  ids.north.cross = await makeCrossing('contacts', {
     name: 'Nell Crossing',
     email: 'nell@alder.test',
     companyId: ids.south.company,
@@ -278,7 +294,7 @@ async function seed() {
   })
 
   // A South deal on a North contact.
-  ids.south.rebate = await make('deals', {
+  ids.south.rebate = await makeCrossing('deals', {
     title: 'Birch rebate',
     value: '9999',
     stage: 'won',

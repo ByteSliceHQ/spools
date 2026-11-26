@@ -44,6 +44,7 @@
     "./guides": "./src/crm/guides.ts",
     "./testing": "./src/testing/index.ts",
     "./config-schema": "./src/crm/config-schema.ts",
+    "./scopes": "./src/crm/scopes.ts",
     "./oxlint": "./src/oxlint/index.ts",
     "./pages/*": "./src/pages/*.tsx",
     "./api/*": "./src/api/*.ts",

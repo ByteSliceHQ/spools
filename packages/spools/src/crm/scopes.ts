@@ -7,8 +7,7 @@
  * Off unless crm.config.json has `scopes`. A Spool without it behaves as it
  * always has: every allowed user reads and writes every record.
  *
- * STATUS: design checkpoint. The types below are the proposed contract; nothing
- * enforces them yet. The enforcement point is `guard` in
+ * They are enforced in one place, under every caller: `guard` in
  * src/server/store/scope.ts.
  */
 
@@ -38,10 +37,12 @@ export type ScopeAccess = {
   readonly read: 'all' | readonly string[]
   readonly write: 'all' | readonly string[]
   readonly active: string | null
+  /** Only on `SYSTEM_ACCESS`: the server's own work. No person's access has it, whatever their role. */
+  readonly system?: true
 }
 
 /** Work the server does for itself, with nobody signed in: migrations, backfills, finding what is due. */
-export const SYSTEM_ACCESS: ScopeAccess = { read: 'all', write: 'all', active: null }
+export const SYSTEM_ACCESS: ScopeAccess = { read: 'all', write: 'all', active: null, system: true }
 
 /** Reaches nothing. What a signed-in person with no grant has. */
 export const NO_ACCESS: ScopeAccess = { read: [], write: [], active: null }
@@ -52,20 +53,61 @@ export type ScopeRoles = Readonly<Record<string, { write: boolean; all: boolean 
 /**
  * What a person may reach, from what they hold and the scope they asked to
  * work in. `wanted` is a scope's key, null for every scope they hold at once,
- * or undefined when they haven't said (they get the first scope they hold).
- * Asking for a scope that isn't held is the same as not saying. A grant whose
- * role the config doesn't have gives nothing.
- *
- * Not decided yet: this is the server's own access, which is what everyone has
- * in a Spool without scopes. tests/unit/scopes.test.ts has the table it must
- * answer with.
+ * or undefined when they haven't said (they get the first scope they hold, or
+ * every scope when their role reaches them all). Asking for a scope that isn't
+ * held is the same as not saying. A grant whose role the config doesn't have
+ * gives nothing, and someone who holds nothing reaches nothing. It never gives
+ * the system's own access.
  */
 export function accessFrom(
-  _roles: ScopeRoles,
-  _grants: readonly ScopeGrant[],
-  _wanted?: string | null,
+  roles: ScopeRoles,
+  grants: readonly ScopeGrant[],
+  wanted?: string | null,
 ): ScopeAccess {
-  return SYSTEM_ACCESS
+  const everywhere = { reads: false, writes: false }
+  /** Each scope held, in the order granted, and whether it may be written. */
+  const held = new Map<string, boolean>()
+
+  for (const grant of grants) {
+    const role = Object.hasOwn(roles, grant.role) ? roles[grant.role] : undefined
+
+    if (!role) {
+      continue
+    }
+
+    if (role.all) {
+      everywhere.reads = true
+      everywhere.writes ||= role.write
+    } else if (grant.scope !== EVERY_SCOPE && grant.scope !== '') {
+      held.set(grant.scope, (held.get(grant.scope) ?? false) || role.write)
+    }
+  }
+
+  const writable = [...held].filter(([, writes]) => writes).map(([scope]) => scope)
+
+  const one = (scope: string): ScopeAccess => ({
+    read: [scope],
+    write: everywhere.writes || held.get(scope) ? [scope] : [],
+    active: scope,
+  })
+
+  if (everywhere.reads) {
+    return wanted === null || wanted === undefined || wanted === ''
+      ? { read: 'all', write: everywhere.writes ? 'all' : writable, active: null }
+      : one(wanted)
+  }
+
+  const [first] = held.keys()
+
+  if (first === undefined) {
+    return NO_ACCESS
+  }
+
+  if (wanted === null) {
+    return { read: [...held.keys()], write: writable, active: null }
+  }
+
+  return one(wanted !== undefined && held.has(wanted) ? wanted : first)
 }
 
 /**

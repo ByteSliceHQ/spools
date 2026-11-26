@@ -71,7 +71,7 @@ test('the world holds both branches, as the server itself sees it', async () => 
   })
 })
 
-pending('list: each person is given the records of the scope they are working in', async () => {
+test('list: each person is given the records of the scope they are working in', async () => {
   expect(column(await as('nora', contacts()), 'name')).toEqual(['Nell Crossing', 'Nina Alder'])
   expect(column(await as('ned', contacts()), 'name')).toEqual(['Nell Crossing', 'Nina Alder'])
   expect(column(await as('sam', contacts()), 'name')).toEqual(['Sofia Birch'])
@@ -95,7 +95,7 @@ pending('list: each person is given the records of the scope they are working in
   expect(column(await as('otto', products), 'name')).toEqual(['Crate'])
 })
 
-pending('list: a scope that is not held is never taken on the asker’s word', async () => {
+test('list: a scope that is not held is never taken on the asker’s word', async () => {
   // Nora asks to work in South. She is given North.
   expect(column(await as('nora', contacts(), 'south'), 'name')).toEqual([
     'Nell Crossing',
@@ -105,7 +105,7 @@ pending('list: a scope that is not held is never taken on the asker’s word', a
   expect(await as('otto', contacts(), 'north')).toEqual([])
 })
 
-pending('count: totals are of the scope, on every path that counts', async () => {
+test('count: totals are of the scope, on every path that counts', async () => {
   expect(await as('nora', records.countMatching({ objectKey: 'contacts' }))).toBe(2)
   expect(await as('sam', records.countMatching({ objectKey: 'contacts' }))).toBe(1)
   expect(await as('nora', records.countMatching({ objectKey: 'contacts', q: 'birch' }))).toBe(0)
@@ -126,53 +126,47 @@ pending('count: totals are of the scope, on every path that counts', async () =>
   })
 })
 
-pending(
-  'get: a record of another scope is not found, and neither is what hangs off it',
-  async () => {
-    expect(await as('nora', records.getRecord('contacts', ids.south.contact))).toBeNull()
-    expect(await as('otto', records.getRecord('contacts', ids.north.contact))).toBeNull()
+test('get: a record of another scope is not found, and neither is what hangs off it', async () => {
+  expect(await as('nora', records.getRecord('contacts', ids.south.contact))).toBeNull()
+  expect(await as('otto', records.getRecord('contacts', ids.north.contact))).toBeNull()
 
-    expect((await as('ned', records.getRecord('contacts', ids.north.contact)))?.name).toBe(
-      'Nina Alder',
-    )
+  expect((await as('ned', records.getRecord('contacts', ids.north.contact)))?.name).toBe(
+    'Nina Alder',
+  )
 
-    // The record page also lists what points at the record. A South deal points at Nina.
-    const related = await as('nora', records.relatedRecords('contacts', ids.north.contact))
-    expect(southIn(related)).toEqual([])
+  // The record page also lists what points at the record. A South deal points at Nina.
+  const related = await as('nora', records.relatedRecords('contacts', ids.north.contact))
+  expect(southIn(related)).toEqual([])
 
-    expect(column(related.find((g) => g.objectKey === 'deals')?.rows ?? [], 'title')).toEqual([
-      'Alder order',
-    ])
-  },
-)
+  expect(column(related.find((g) => g.objectKey === 'deals')?.rows ?? [], 'title')).toEqual([
+    'Alder order',
+  ])
+})
 
-pending(
-  'relations: a related record of another scope does not come back with the row',
-  async () => {
-    // Nell is a North contact whose company is a South one.
-    const listed = await as('nora', contacts())
-    expect(northIn(listed)).toContain('Nell')
-    expect(southIn(listed)).toEqual([])
+test('relations: a related record of another scope does not come back with the row', async () => {
+  // Nell is a North contact whose company is a South one.
+  const listed = await as('nora', contacts())
+  expect(northIn(listed)).toContain('Nell')
+  expect(southIn(listed)).toEqual([])
 
-    const nell = await as('nora', records.getRecord('contacts', ids.north.cross))
-    expect(nell?.name).toBe('Nell Crossing')
-    expect(nell?.company ?? null).toBeNull()
+  const nell = await as('nora', records.getRecord('contacts', ids.north.cross))
+  expect(nell?.name).toBe('Nell Crossing')
+  expect(nell?.company ?? null).toBeNull()
 
-    // Titles only, as lists and exports ask for them.
-    const titled = await as(
-      'nora',
-      records.listRecords({ objectKey: 'contacts', relations: 'titles' }),
-    )
+  // Titles only, as lists and exports ask for them.
+  const titled = await as(
+    'nora',
+    records.listRecords({ objectKey: 'contacts', relations: 'titles' }),
+  )
 
-    expect(southIn(titled)).toEqual([])
+  expect(southIn(titled)).toEqual([])
 
-    // A shared object's record still comes back.
-    const deal = await as('nora', records.getRecord('deals', ids.north.deal))
-    expect(records.relatedField(deal?.product, 'name')).toBe('Crate')
-  },
-)
+  // A shared object's record still comes back.
+  const deal = await as('nora', records.getRecord('deals', ids.north.deal))
+  expect(records.relatedField(deal?.product, 'name')).toBe('Crate')
+})
 
-pending('create: a new record takes the scope its maker is working in', async () => {
+test('create: a new record takes the scope its maker is working in', async () => {
   try {
     const north = await as(
       'nora',
@@ -208,7 +202,7 @@ pending('create: a new record takes the scope its maker is working in', async ()
   }
 })
 
-pending('create: a scope that is not held is refused, whoever sends it', async () => {
+test('create: a scope that is not held is refused, whoever sends it', async () => {
   try {
     // A form field, a request body: the value arrives as any other.
     await expect(
@@ -250,7 +244,7 @@ pending('create: a scope that is not held is refused, whoever sends it', async (
   }
 })
 
-pending('update: a record of another scope is not found, and stays as it was', async () => {
+test('update: a record of another scope is not found, and stays as it was', async () => {
   try {
     const changed = await as(
       'nora',
@@ -270,41 +264,38 @@ pending('update: a record of another scope is not found, and stays as it was', a
   }
 })
 
-pending(
-  'update: read-only people change nothing, and nobody moves a record out of reach',
-  async () => {
-    try {
-      await expect(
-        as('ned', service.updateRecord('contacts', ids.north.contact, { status: 'customer' }, ned)),
-      ).rejects.toThrow()
+test('update: read-only people change nothing, and nobody moves a record out of reach', async () => {
+  try {
+    await expect(
+      as('ned', service.updateRecord('contacts', ids.north.contact, { status: 'customer' }, ned)),
+    ).rejects.toThrow()
 
-      // Nora holds North alone: she can't hand a record to South, or point it at a South company.
-      await expect(
-        as('nora', service.updateRecord('contacts', ids.north.contact, { branch: 'south' }, nora)),
-      ).rejects.toThrow()
+    // Nora holds North alone: she can't hand a record to South, or point it at a South company.
+    await expect(
+      as('nora', service.updateRecord('contacts', ids.north.contact, { branch: 'south' }, nora)),
+    ).rejects.toThrow()
 
-      await expect(
-        as(
-          'nora',
-          service.updateRecord('contacts', ids.north.contact, { companyId: ids.south.depot }, nora),
-        ),
-      ).rejects.toThrow()
+    await expect(
+      as(
+        'nora',
+        service.updateRecord('contacts', ids.north.contact, { companyId: ids.south.depot }, nora),
+      ),
+    ).rejects.toThrow()
 
-      const nina = await sys(records.getRecord('contacts', ids.north.contact))
-      expect(nina?.status).toBe('lead')
-      expect(nina?.branch).toBe('north')
-      expect(nina?.companyId).toBe(ids.north.company)
-    } finally {
-      await sys(
-        records.updateRecord('contacts', ids.north.contact, {
-          status: 'lead',
-          branch: 'north',
-          companyId: ids.north.company,
-        }),
-      )
-    }
-  },
-)
+    const nina = await sys(records.getRecord('contacts', ids.north.contact))
+    expect(nina?.status).toBe('lead')
+    expect(nina?.branch).toBe('north')
+    expect(nina?.companyId).toBe(ids.north.company)
+  } finally {
+    await sys(
+      records.updateRecord('contacts', ids.north.contact, {
+        status: 'lead',
+        branch: 'north',
+        companyId: ids.north.company,
+      }),
+    )
+  }
+})
 
 pending(
   'update: moving a record to another held scope takes its notes, tasks and timeline along',
@@ -348,24 +339,21 @@ pending(
   },
 )
 
-pending(
-  'delete: a record of another scope is not found, and is still there afterwards',
-  async () => {
-    await withRecord('contacts', { name: 'Birch keeper', branch: 'south' }, async (id) => {
-      expect(await as('nora', service.deleteRecord('contacts', id, nora))).toBe(false)
-      await as('nora', records.deleteRecord('contacts', id))
-      expect((await sys(records.getRecord('contacts', id)))?.name).toBe('Birch keeper')
-    })
+test('delete: a record of another scope is not found, and is still there afterwards', async () => {
+  await withRecord('contacts', { name: 'Birch keeper', branch: 'south' }, async (id) => {
+    expect(await as('nora', service.deleteRecord('contacts', id, nora))).toBe(false)
+    await as('nora', records.deleteRecord('contacts', id))
+    expect((await sys(records.getRecord('contacts', id)))?.name).toBe('Birch keeper')
+  })
 
-    await withRecord('contacts', { name: 'Alder keeper', branch: 'north' }, async (id) => {
-      // Read-only.
-      await expect(as('ned', service.deleteRecord('contacts', id, ned))).rejects.toThrow()
-      expect((await sys(records.getRecord('contacts', id)))?.name).toBe('Alder keeper')
-    })
-  },
-)
+  await withRecord('contacts', { name: 'Alder keeper', branch: 'north' }, async (id) => {
+    // Read-only.
+    await expect(as('ned', service.deleteRecord('contacts', id, ned))).rejects.toThrow()
+    expect((await sys(records.getRecord('contacts', id)))?.name).toBe('Alder keeper')
+  })
+})
 
-pending('relation pickers: only records of the scope are offered', async () => {
+test('relation pickers: only records of the scope are offered', async () => {
   const offered = await as('nora', records.searchTitles('companies'))
   expect(column(offered.options, 'title')).toEqual(['Alder Annex', 'Alder Works'])
   expect(offered.more).toBe(false)
@@ -373,7 +361,7 @@ pending('relation pickers: only records of the scope are offered', async () => {
   expect((await as('otto', records.searchTitles('companies'))).options).toEqual([])
 })
 
-pending('title lookups: an id of another scope has no title', async () => {
+test('title lookups: an id of another scope has no title', async () => {
   const asked = [ids.north.company, ids.south.company, ids.south.depot]
   const titles = await as('nora', records.recordTitlesOf('companies', asked))
   expect([...titles]).toEqual([[ids.north.company, 'Alder Works']])
@@ -392,7 +380,7 @@ pending('title lookups: an id of another scope has no title', async () => {
   ).toEqual([])
 })
 
-pending('filters through a relation cannot ask about a record of another scope', async () => {
+test('filters through a relation cannot ask about a record of another scope', async () => {
   // Nell's company is "Birch Supply", which Nora can't see. The filter must not confirm its name.
   const byName: Filters = [[{ field: 'company.name', op: 'contains', value: 'Birch' }]]
   expect(await as('nora', contacts(byName))).toEqual([])
@@ -409,7 +397,7 @@ pending('filters through a relation cannot ask about a record of another scope',
   expect(column(await as('nora', contacts(own)), 'name')).toEqual(['Nina Alder'])
 })
 
-pending('"has ... where" only counts related records of the scope', async () => {
+test('"has ... where" only counts related records of the scope', async () => {
   // The one deal over 9,000 on Nina is a South deal.
   const big: Filters = [
     [{ field: '~deals.contact', op: 'has', where: [{ field: 'value', op: 'gt', value: 9000 }] }],
@@ -497,7 +485,7 @@ pending('the store itself keeps to the scope, for code that reaches it directly'
   })
 })
 
-pending('with nobody signed in and nothing said, a scoped table refuses the call', async () => {
+test('with nobody signed in and nothing said, a scoped table refuses the call', async () => {
   // A new cron route or script that forgets to say whose work it is must not read every branch.
   await expect(unattended(contacts())).rejects.toThrow()
   await expect(unattended(records.getRecord('contacts', ids.north.contact))).rejects.toThrow()

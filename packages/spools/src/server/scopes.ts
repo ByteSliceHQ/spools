@@ -1,12 +1,16 @@
 import { Context, Effect, Layer } from 'effect'
 
 import {
+  accessFrom,
+  EVERY_SCOPE,
   type ScopeAccess,
   type ScopeGrant,
   type ScopeInfo,
+  scopeKey,
   type ScopeSession,
   SYSTEM_ACCESS,
 } from '../crm/scopes'
+import { CurrentAccess } from './runtime/access'
 import {
   type AuthError,
   type ExtensionError,
@@ -15,7 +19,6 @@ import {
   type Timeout,
 } from './runtime/errors'
 import { crmConfig, spool } from './spool'
-import { CurrentAccess } from './store/scope'
 import type { CrmUser } from './users'
 
 /**
@@ -24,9 +27,7 @@ import type { CrmUser } from './users'
  * access worked out some other way (`withAccess`). What a scope is, is in
  * src/crm/scopes.ts; where it is enforced, in src/server/store/scope.ts.
  *
- * STATUS: design checkpoint. The signatures are the proposed ones; `asUser`
- * and `mintGrant` do nothing yet. tests/integration/scopes-*.test.ts say what
- * they have to do.
+ * The tool API's grant (`mintGrant`) is not made yet.
  */
 
 type Failure = AuthError | Timeout | ExtensionError
@@ -92,42 +93,89 @@ export const withAccess =
  */
 export const asSystem = withAccess(SYSTEM_ACCESS)
 
+/** What a person may reach, working in `wanted`: from what `Scopes` says they hold and the config's roles. */
+export const accessOf = Effect.fn('scopes.accessOf')(function* (
+  user: CrmUser,
+  wanted?: string | null,
+) {
+  const grants = yield* (yield* Scopes).grants(user)
+  return accessFrom(crmConfig().scopes?.roles ?? {}, grants, wanted)
+})
+
 /**
  * Runs a program as a person: with what `Scopes` says they hold, narrowed to
  * the scope they asked to work in (`wanted`: a scope key, or null for all of
  * theirs). A scope they don't hold is never taken on their word: they get the
  * first one they do hold. The boundary does this for every signed-in request.
- *
- * Not enforced yet: this is the program it was given.
+ * In a Spool without scopes there is nothing to narrow, and nobody is asked.
  */
 export const asUser =
-  (_user: CrmUser, _wanted?: string | null) =>
+  (user: CrmUser, wanted?: string | null) =>
   <A, E, R>(program: Effect.Effect<A, E, R>): Effect.Effect<A, E | Failure, R | Scopes> =>
-    program
+    scopesOn()
+      ? Effect.flatMap(accessOf(user, wanted), (access) => withAccess(access)(program))
+      : program
 
 /** The cookie that says which scope a person asked to work in. A preference, never proof: `asUser` checks it against what they hold. */
 export const SCOPE_COOKIE = 'spools-scope'
 
 /**
  * The scope a request asks to work in, from its `SCOPE_COOKIE`: a scope's key,
- * null for "all of mine" (`*`), undefined when it doesn't say. An auth adapter
- * whose sessions carry one (Clerk's active organization) answers first.
- *
- * Not read yet: no request says.
+ * null for "all of mine" (`*`), undefined when it doesn't say.
  */
-export const wantedScope = (_headers: Headers): string | null | undefined => undefined
+export const wantedScope = (headers: Headers): string | null | undefined => {
+  for (const part of (headers.get('cookie') ?? '').split(';')) {
+    const at = part.indexOf('=')
+
+    if (at < 0 || part.slice(0, at).trim() !== SCOPE_COOKIE) {
+      continue
+    }
+
+    const raw = part.slice(at + 1).trim()
+
+    try {
+      const value = decodeURIComponent(raw)
+      return value === EVERY_SCOPE ? null : value || undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  return undefined
+}
 
 /**
  * What the browser is told about a person's scopes, with the session: the ones
  * they may switch between, the one that is active, and whether they can write.
  * Null in a Spool without scopes.
- *
- * Not worked out yet.
  */
-export const scopeSession = (
-  _user: CrmUser,
-  _wanted?: string | null,
-): Effect.Effect<ScopeSession | null, Failure, Scopes> => Effect.succeed(null)
+export const scopeSession = Effect.fn('scopes.scopeSession')(function* (
+  user: CrmUser,
+  wanted?: string | null,
+) {
+  const roles = crmConfig().scopes?.roles
+
+  if (!roles) {
+    return null
+  }
+
+  const scopes = yield* Scopes
+  const grants = yield* scopes.grants(user)
+  const access = accessFrom(roles, grants, wanted)
+  const known = yield* scopes.list
+  const named = (key: string): ScopeInfo => known.find((s) => s.key === key) ?? { key, label: key }
+  // Every scope this person could work in: all of them for a role that reaches all, else the ones held.
+  const all = accessFrom(roles, grants, null)
+
+  const session: ScopeSession = {
+    held: all.read === 'all' ? [...known] : all.read.map(named),
+    active: access.active,
+    key: scopeKey(access),
+    canWrite: access.write === 'all' || access.write.length > 0,
+  }
+
+  return session
+})
 
 /** The header a call to the tool API carries its grant in. */
 export const GRANT_HEADER = 'x-spools-grant'

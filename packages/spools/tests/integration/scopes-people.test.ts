@@ -58,7 +58,7 @@ pending('the team list and the user picker offer only people who share the scope
   expect(await as('otto', team)).toEqual([])
 })
 
-pending('a person is told the scopes they may switch between, and which is active', async () => {
+test('a person is told the scopes they may switch between, and which is active', async () => {
   const north = { key: 'north', label: 'North' }
   const south = { key: 'south', label: 'South' }
   expect(branches).toEqual([north, south])
@@ -127,7 +127,7 @@ test('a route still answers nobody who is signed out', async () => {
   expect(await counted('hana')).toBe(3)
 })
 
-pending('a signed-in request is given its scope by the boundary, not by the route', async () => {
+test('a signed-in request is given its scope by the boundary, not by the route', async () => {
   const north = ['Nell Crossing', 'Nina Alder']
 
   // The framework's own route did nothing to ask for a scope.
@@ -140,21 +140,18 @@ pending('a signed-in request is given its scope by the boundary, not by the rout
   expect(await listed('otto')).toEqual([])
 })
 
-pending(
-  'the scope a request asks for is a preference, checked against what the person holds',
-  async () => {
-    const north = ['Nell Crossing', 'Nina Alder']
+test('the scope a request asks for is a preference, checked against what the person holds', async () => {
+  const north = ['Nell Crossing', 'Nina Alder']
 
-    // Bo switches with the cookie.
-    expect(await listed('bo')).toEqual(north)
-    expect(await listed('bo', 'south')).toEqual(['Sofia Birch'])
-    expect(await listed('bo', '*')).toHaveLength(3)
-    expect(await counted('hana', 'south')).toBe(1)
+  // Bo switches with the cookie.
+  expect(await listed('bo')).toEqual(north)
+  expect(await listed('bo', 'south')).toEqual(['Sofia Birch'])
+  expect(await listed('bo', '*')).toHaveLength(3)
+  expect(await counted('hana', 'south')).toBe(1)
 
-    // Nora sets the cookie herself. It gets her nothing.
-    expect(await listed('nora', 'south')).toEqual(north)
-    expect(await listed('nora', '*')).toEqual(north)
-    expect(await counted('nora', 'south')).toBe(2)
-    expect(await counted('otto', 'north')).toBe(0)
-  },
-)
+  // Nora sets the cookie herself. It gets her nothing.
+  expect(await listed('nora', 'south')).toEqual(north)
+  expect(await listed('nora', '*')).toEqual(north)
+  expect(await counted('nora', 'south')).toBe(2)
+  expect(await counted('otto', 'north')).toBe(0)
+})

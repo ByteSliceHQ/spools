@@ -26,6 +26,7 @@ export const crmLayout = {
       favorites: session.favorites,
       dueTasks: session.dueTasks,
       guides: session.guides,
+      scopes: session.scopes,
     }
   },
   head: ({ match }: { match: { context: { config: PublicCrmConfig | null } } }) => ({
@@ -35,15 +36,24 @@ export const crmLayout = {
 }
 
 function CrmLayout(): ReactNode {
-  const { user, config, users, favorites, dueTasks, guides } = route.useRouteContext()
+  const { user, config, users, favorites, dueTasks, guides, scopes } = route.useRouteContext()
   const { SignOut } = useAuth()
 
   // The server sent the session with the page: keep it, so the first click doesn't ask again.
   useEffect(() => {
     if (user && config) {
-      rememberCrmSession({ signedIn: true, user, config, users, favorites, dueTasks, guides })
+      rememberCrmSession({
+        signedIn: true,
+        user,
+        config,
+        users,
+        favorites,
+        dueTasks,
+        guides,
+        scopes,
+      })
     }
-  }, [user, config, users, favorites, dueTasks, guides])
+  }, [user, config, users, favorites, dueTasks, guides, scopes])
 
   if (!user || !config) {
     return (

@@ -9,6 +9,7 @@ import {
   optional,
   type Relation,
   type Table,
+  type TableScope,
   text,
   timestamp,
   updatedAt,
@@ -78,6 +79,16 @@ function build(cfg: CrmConfig): Record<string, ObjectTable> {
     }
 
     const relations: MutableRelations = {}
+    const scopeField = cfg.scopes?.objects[objectKey]
+
+    // The scope is compared as the column holds it: a relation's key, or the value itself.
+    const scope: TableScope | undefined =
+      scopeField === undefined
+        ? undefined
+        : {
+            kind: 'own',
+            column: obj.fields[scopeField]?.type === 'relation' ? `${scopeField}Id` : scopeField,
+          }
 
     building.set(objectKey, {
       object: obj,
@@ -88,7 +99,9 @@ function build(cfg: CrmConfig): Record<string, ObjectTable> {
         columns: Object.fromEntries(columns),
         relations,
         unique: [],
-        indexes: [],
+        // Every read of a scoped object asks for its scope.
+        indexes: scope ? [[scope.column]] : [],
+        scope,
       },
       relations,
     })

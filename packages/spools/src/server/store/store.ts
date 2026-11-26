@@ -5,7 +5,7 @@ import type { Adapter } from '../runtime/adapter'
 import { DatabaseError, type Timeout } from '../runtime/errors'
 import { policies, withPolicy } from '../runtime/policies'
 import type { Predicate, Query, Scalar, Which } from './query'
-import { guard } from './scope'
+import { type AnyQuery, type AnyWhich, guard, type RawStore } from './scope'
 import type { AnyTable, Table } from './table'
 
 /**
@@ -249,16 +249,6 @@ const InTransaction = Context.Reference<boolean>('spools/Store/inTransaction', {
   defaultValue: () => false,
 })
 
-/** Which rows, with the types gone. */
-type AnyWhich = {
-  readonly where?: Readonly<Record<string, Scalar | undefined>>
-  readonly filter?: Predicate
-}
-type AnyQuery = AnyWhich &
-  Pick<Query<unknown>, 'order' | 'limit' | 'offset' | 'include'> & {
-    readonly select?: readonly string[]
-  }
-
 /** `where` and `filter` as one condition. */
 export function predicateOf(which: AnyWhich): Predicate | undefined {
   const parts = Object.entries(which.where ?? {}).flatMap(([column, value]): Predicate[] => {
@@ -363,7 +353,7 @@ export function makeStore<BackendError>(backend: Backend<BackendError>): StoreSh
       ),
     )
 
-  const shape = {
+  const shape: RawStore = {
     find,
     first: (table: AnyTable, query: AnyQuery): Read<RawRow | null> =>
       Effect.map(find(table, { ...query, limit: 1 }), (rows) => rows[0] ?? null),
@@ -430,7 +420,7 @@ export function makeStore<BackendError>(backend: Backend<BackendError>): StoreSh
   // TypeScript can't follow this: a `Table` keeps its columns as data, not in its type.
   //
   // Every store is made here, so this is where record scopes are kept (scope.ts).
-  return guard(shape as StoreShape)
+  return guard(shape) as StoreShape
 }
 
 /**

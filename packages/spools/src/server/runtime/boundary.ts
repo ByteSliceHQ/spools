@@ -1,6 +1,7 @@
 import { getRequest, setResponseHeader, setResponseStatus } from '@tanstack/react-start/server'
 import { Cause, Duration, Effect, Exit, type ManagedRuntime, Option } from 'effect'
 
+import { asUser, wantedScope } from '../scopes'
 import { spool } from '../spool'
 import { type CrmUser, Users } from '../users'
 import { type AppServices, CurrentRequest, runtime, type Services } from './app'
@@ -163,7 +164,8 @@ export function crmHandler<I, A, E extends StaffError>(
       request,
       signedIn(session?.userId).pipe(
         Effect.tapError(refusedPage(asked)),
-        Effect.flatMap((user) => program({ data, user })),
+        // In a Spool with record scopes the program reaches what this person holds, in the scope they asked to work in.
+        Effect.flatMap((user) => asUser(user, wantedScope(asked.headers))(program({ data, user }))),
       ),
     )
   }
@@ -249,7 +251,9 @@ export function apiRoute<P, E extends StaffError>(
       name,
       { headers: request.headers, signal: request.signal, session },
       signedIn(session?.userId).pipe(
-        Effect.flatMap((user) => program({ request, params, user })),
+        Effect.flatMap((user) =>
+          asUser(user, wantedScope(request.headers))(program({ request, params, user })),
+        ),
         Effect.catch((error: StaffError) =>
           Effect.succeed(
             error._tag === 'Unauthorized' && options.signedOut

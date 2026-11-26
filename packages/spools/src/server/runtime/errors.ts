@@ -1,5 +1,7 @@
 import { Effect, Predicate, Schema } from 'effect'
 
+import { carrying, CurrentAccess } from './access'
+
 /**
  * The failures staff can see. Each one's `message` is written for the person
  * using the CRM and is exactly what the browser shows (`err.message`), so the
@@ -133,10 +135,14 @@ export const fromHook = <A>(
   hook: string,
   call: () => A | PromiseLike<A>,
 ): Effect.Effect<Awaited<A>, ExtensionError> =>
-  Effect.tryPromise({
-    try: async (): Promise<Awaited<A>> => await call(),
-    catch: (cause) => new ExtensionError({ hook, cause }),
-  })
+  // The app's code calls back in through `@swirls/spools/extensions`: what it does there is
+  // done with the access of whoever called it, and nothing more (access.ts).
+  Effect.flatMap(CurrentAccess, (access) =>
+    Effect.tryPromise({
+      try: async (): Promise<Awaited<A>> => await carrying(access, call),
+      catch: (cause) => new ExtensionError({ hook, cause }),
+    }),
+  )
 
 /**
  * Fails with `error` when `refused` holds, and otherwise does nothing: a check

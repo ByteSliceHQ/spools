@@ -139,49 +139,43 @@ pending(
 
 // ── The app's own code ──────────────────────────────────────────────────────
 
-pending(
-  'hooks, automations and run targets are handed the actor, and reach only the actor’s scope',
-  async () => {
-    sightings.length = 0
+test('hooks, automations and run targets are handed the actor, and reach only the actor’s scope', async () => {
+  sightings.length = 0
 
-    try {
-      // afterCreate lists contacts through `@swirls/spools/extensions`, as an app's hook would.
-      const made = await as(
-        'nora',
-        service.createRecord('contacts', { name: 'Alder hooked' }, nora),
-      )
+  try {
+    // afterCreate lists contacts through `@swirls/spools/extensions`, as an app's hook would.
+    const made = await as('nora', service.createRecord('contacts', { name: 'Alder hooked' }, nora))
 
-      // The automation on contacts.updated runs a handler from the app.
-      await as('nora', service.updateRecord('contacts', made.id, { status: 'customer' }, nora))
+    // The automation on contacts.updated runs a handler from the app.
+    await as('nora', service.updateRecord('contacts', made.id, { status: 'customer' }, nora))
 
-      const ctx = { objectKey: 'contacts', record: made, actor: nora, trigger: 'action:probe' }
-      await as('nora', runTarget('local:probe', ctx))
-      // A run-target kind the app added.
-      await as('nora', runTarget('look:around', ctx))
+    const ctx = { objectKey: 'contacts', record: made, actor: nora, trigger: 'action:probe' }
+    await as('nora', runTarget('local:probe', ctx))
+    // A run-target kind the app added.
+    await as('nora', runTarget('look:around', ctx))
 
-      expect(sightings.map((s) => s.where)).toEqual([
-        'afterCreate',
-        'handler:contacts.updated',
-        'handler:action:probe',
-        'target:around',
-      ])
+    expect(sightings.map((s) => s.where)).toEqual([
+      'afterCreate',
+      'handler:contacts.updated',
+      'handler:action:probe',
+      'target:around',
+    ])
 
-      for (const seen of sightings) {
-        expect(seen.actor).toBe(nora.id)
-        // Not nothing: the app's code works as Nora does.
-        expect(seen.contacts).toContain('Nina Alder')
-        expect(southIn(seen.contacts)).toEqual([])
-      }
-
-      sightings.length = 0
-      await as('sam', service.updateRecord('contacts', ids.south.contact, { status: 'lead' }, sam))
-      expect(sightings.map((s) => s.actor)).toEqual([sam.id])
-      expect(sightings[0]?.contacts).toEqual(['Sofia Birch'])
-    } finally {
-      await sweep('contacts', 'hooked')
+    for (const seen of sightings) {
+      expect(seen.actor).toBe(nora.id)
+      // Not nothing: the app's code works as Nora does.
+      expect(seen.contacts).toContain('Nina Alder')
+      expect(southIn(seen.contacts)).toEqual([])
     }
-  },
-)
+
+    sightings.length = 0
+    await as('sam', service.updateRecord('contacts', ids.south.contact, { status: 'lead' }, sam))
+    expect(sightings.map((s) => s.actor)).toEqual([sam.id])
+    expect(sightings[0]?.contacts).toEqual(['Sofia Birch'])
+  } finally {
+    await sweep('contacts', 'hooked')
+  }
+})
 
 // ── The tool API ────────────────────────────────────────────────────────────
 
@@ -219,7 +213,7 @@ test('the tool API answers only the bearer token, scopes or not', async () => {
   expect((await toolsHandlers.POST({ request, params: { tool: 'describe' } })).status).toBe(401)
 })
 
-pending('the tool API fails closed: a call that carries no grant reaches no record', async () => {
+test('the tool API fails closed: a call that carries no grant reaches no record', async () => {
   // What the objects and fields are is the config, not a record.
   expect((await call('describe', {})).ok).toBe(true)
 

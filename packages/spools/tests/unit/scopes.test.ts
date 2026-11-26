@@ -85,12 +85,12 @@ describe('what a person may reach', () => {
     active: scope,
   })
 
-  pending('one scope: its records, and new records go to it', () => {
+  test('one scope: its records, and new records go to it', () => {
     expect(accessFrom(roles, [north])).toEqual(only('north'))
     expect(accessFrom(roles, [{ scope: 'north', role: 'viewer' }])).toEqual(only('north', false))
   })
 
-  pending('several scopes: one at a time, or all of them with nothing active', () => {
+  test('several scopes: one at a time, or all of them with nothing active', () => {
     expect(accessFrom(roles, [north, south])).toEqual(only('north'))
     expect(accessFrom(roles, [north, south], 'south')).toEqual(only('south'))
 
@@ -108,7 +108,7 @@ describe('what a person may reach', () => {
     })
   })
 
-  pending('a scope that is not held is never taken on the asker’s word', () => {
+  test('a scope that is not held is never taken on the asker’s word', () => {
     expect(accessFrom(roles, [north], 'south')).toEqual(only('north'))
     expect(accessFrom(roles, [], 'north')).toEqual(NO_ACCESS)
     expect(accessFrom(roles, [], null)).toEqual(NO_ACCESS)
@@ -116,27 +116,29 @@ describe('what a person may reach', () => {
     expect(accessFrom(roles, [{ scope: '*', role: 'member' }], null)).toEqual(NO_ACCESS)
   })
 
-  pending(
-    'a role that reaches every scope does, read-write or read-only, and can narrow to one',
-    () => {
-      const office: ScopeGrant = { scope: '*', role: 'headOffice' }
-      expect(accessFrom(roles, [office], null)).toEqual(SYSTEM_ACCESS)
-      expect(accessFrom(roles, [office], 'south')).toEqual(only('south'))
+  test('a role that reaches every scope does, read-write or read-only, and can narrow to one', () => {
+    const office: ScopeGrant = { scope: '*', role: 'headOffice' }
+    const everything: ScopeAccess = { read: 'all', write: 'all', active: null }
+    expect(accessFrom(roles, [office], null)).toEqual(everything)
+    expect(accessFrom(roles, [office])).toEqual(everything)
+    // A person is never the system, whatever their role.
+    expect(accessFrom(roles, [office], null).system).toBeUndefined()
+    expect(SYSTEM_ACCESS.system).toBe(true)
+    expect(accessFrom(roles, [office], 'south')).toEqual(only('south'))
 
-      // Granted in one scope, it still reaches all of them.
-      expect(accessFrom(roles, [{ scope: 'north', role: 'headOffice' }], 'south')).toEqual(
-        only('south'),
-      )
+    // Granted in one scope, it still reaches all of them.
+    expect(accessFrom(roles, [{ scope: 'north', role: 'headOffice' }], 'south')).toEqual(
+      only('south'),
+    )
 
-      expect(accessFrom(roles, [{ scope: '*', role: 'auditor' }], null)).toEqual({
-        read: 'all',
-        write: [],
-        active: null,
-      })
-    },
-  )
+    expect(accessFrom(roles, [{ scope: '*', role: 'auditor' }], null)).toEqual({
+      read: 'all',
+      write: [],
+      active: null,
+    })
+  })
 
-  pending('a role the config does not have gives nothing', () => {
+  test('a role the config does not have gives nothing', () => {
     expect(accessFrom(roles, [{ scope: 'north', role: 'owner' }])).toEqual(NO_ACCESS)
     expect(accessFrom(roles, [{ scope: 'north', role: 'constructor' }])).toEqual(NO_ACCESS)
   })
@@ -152,7 +154,7 @@ describe('what a person may reach', () => {
 describe('the scope a request asks to work in', () => {
   const cookie = (value: string) => new Headers({ cookie: value })
 
-  pending('comes from its cookie: a scope, all of mine, or nothing said', () => {
+  test('comes from its cookie: a scope, all of mine, or nothing said', () => {
     expect(wantedScope(cookie('theme=dark; spools-scope=south'))).toBe('south')
     expect(wantedScope(cookie('spools-scope=*'))).toBeNull()
     expect(wantedScope(cookie('spools-scope=north%2Bwest'))).toBe('north+west')

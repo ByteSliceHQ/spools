@@ -1,4 +1,4 @@
-import { expect } from 'bun:test'
+import { expect, test } from 'bun:test'
 
 import * as search from '../../src/server/search'
 import { as, column, northIn, pending, people, scopedWorld, southIn } from './scopes-world'
@@ -57,7 +57,7 @@ pending(
   },
 )
 
-pending('value suggestions in the filter box count only the scope', async () => {
+test('value suggestions in the filter box count only the scope', async () => {
   // Two companies are in Southport, which is what makes it a value worth offering.
   expect(await as('hana', search.suggestValues('companies', 'port'), null)).toEqual([
     { field: 'city', value: 'Southport', count: 2 },

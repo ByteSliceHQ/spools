@@ -7,6 +7,7 @@ import { SignIns } from '../sign-ins'
 import { spool } from '../spool'
 import { type Store, storeLayer } from '../store/store'
 import { Users } from '../users'
+import { carriedAccess, CurrentAccess } from './access'
 import { Agents } from './agents'
 import type { Auth } from './auth'
 import { Email } from './email'
@@ -120,7 +121,12 @@ export async function disposeRuntime(): Promise<void> {
  * staff see.
  */
 export function runServer<A, E>(program: Effect.Effect<A, E, AppServices>): Promise<A> {
-  return runtime().runPromise(program)
+  // Called from an app's hook, this works with the access of whoever called the hook (access.ts).
+  // Called from anywhere else, nobody has said, and a scoped table refuses until the program does.
+  const access = carriedAccess()
+  return runtime().runPromise(
+    access ? Effect.provideService(program, CurrentAccess, access) : program,
+  )
 }
 
 const refuse = () => Effect.fail(new DatabaseError({ cause: "The server isn't running" }))
