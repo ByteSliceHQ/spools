@@ -1,7 +1,8 @@
 # Security
 
 Each deployment of a Spool serves one business. This page says who can do what in one, and
-what to know before putting customer data in it. To report a vulnerability, see the
+what to know before putting customer data in it. A business whose groups (branches, regions,
+teams) must each see only their own records turns on [record scopes](#record-scopes). To report a vulnerability, see the
 [security policy](../SECURITY.md).
 
 ## Trust model
@@ -17,8 +18,66 @@ These are the boundaries the code enforces:
 | A cron job                                | Run one pass of the mailbox sync, the sequences or the scheduled posts, or keep the server warm, through `/api/cron/*` | Bearer `CRON_SECRET` (16+ chars, constant-time compare). Fails closed when unset                                                                           |
 | The email provider                        | Report bounces and complaints to `/api/webhooks/email`                                                                 | The email adapter checks the signature (Resend: Svix, with `RESEND_WEBHOOK_SECRET`). Refused when no secret is set                                         |
 
-There are no per-user roles inside the CRM: every allowed user has the same access.
-Use separate deployments if you need hard separation.
+Without `scopes` in `crm.config.json`, every allowed user has the same access: they read and
+write every record. With it, see [Record scopes](#record-scopes). Use separate deployments if
+you need the separation a database gives.
+
+## Record scopes
+
+With [`scopes`](configuration.md#scopes) in the config, each record of a scoped object belongs
+to one scope, and a person reaches only the scopes they hold.
+
+| Who                                            | Can do                                                                                                      |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| A person who holds a scope with a writing role | Read and change that scope's records, and what hangs off them: timeline, tasks, notes, files, sequence runs |
+| A person who holds it with a read-only role    | Read them. Any change is refused                                                                            |
+| A person whose role has `all`                  | The same, in every scope                                                                                    |
+| A person on the access list who holds nothing  | Shared objects only. They see no scoped record and nobody on the team list                                  |
+| A workflow calling the tool API                | What its signed grant says: the scope of the record it was started for. With no grant, no scoped record     |
+| A cron job, a webhook, a script                | Nothing scoped, unless the code that runs says it is the system (`asSystem`)                                |
+
+**Where it is kept.** In one place, under everything: every store is behind a guard
+(`packages/spools/src/server/store/scope.ts`) that narrows each read, count, change and delete
+to the scopes of whoever the request is for. Pages, search, reports, exports, imports, saved
+views, the assistant's tools and your own extensions all reach the database through it, on
+every database adapter. A record of another scope is not found; it is never "forbidden". With
+nobody said, a scoped table refuses the call, so new code that forgets fails closed.
+
+**What to know.**
+
+- **The scope a person works in is a preference, not proof.** The `spools-scope` cookie (or
+  Clerk's active organization) is checked against what the person holds on every request.
+- **Relations stay inside a scope.** A record can't point at a scoped record of another scope,
+  and can't move to another scope while scoped records point at it: move or unlink those
+  first. Its timeline, tasks, notes, folder and sequence runs move with it.
+- **Records that crossed before scopes were turned on.** A relation that already pointed
+  into another scope is left as it is. The related record's title is not shown, and filters
+  can't ask about it, but the row keeps the related record's id, and a list sorted by that
+  relation is still ordered by the title that isn't shown. Clear such relations when you
+  turn scopes on.
+- **Rows written before scopes were turned on** have no scope and are only there for a role
+  with `all`, until `bun run db:scopes` (`spools scopes backfill`) has given them their
+  record's. A task or note on no record stays with head office: nothing says whose it was.
+- **Owners and assignees.** A `user` field can name anyone, including someone who can't open
+  the record. The pickers only offer people who share the scope.
+- **Saved views are shared by everyone who uses the object**, whatever their scope: a view's
+  name and its filters are seen by all. The titles of records a filter names are not.
+- **Files.** The file store knows nothing of scopes, so the CRM checks every folder and file
+  it is asked about: a record's folder, and everything under it, is only reached by those who
+  reach the record. A file is opened, renamed, moved or deleted through the folder it is in
+  (the link carries it), never by its id alone. Anyone with access to the store itself still
+  reads all of it. The shared library, and folders the team made outside a record's folder,
+  are everyone's.
+- **The assistant.** Its chats must be each person's own, which needs federation with your
+  sign-in provider: with a project API key everyone would read everyone's chats, so the
+  assistant is refused and says so. And the assistant's record tools are refused in chat,
+  because a chat has no way to carry a grant that the model can't relay; see
+  [Swirls](swirls.md#record-scopes). Workflows started from a record do carry one.
+- **Marketing, integrations and guides** are not scoped: the Marketing page and its posts
+  are the whole business's.
+- **Read-only people still see edit controls.** The server refuses the change and says why.
+- **Only PGlite has been run** with scopes. The guard is the same code for every adapter,
+  but run the integration tests on your database (`TEST_STORE`) before relying on it.
 
 ## Things to know
 

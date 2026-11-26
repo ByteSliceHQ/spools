@@ -98,6 +98,39 @@ and set `crm_app::CRM_APP_URL` to the tunnel URL. Add the tunnel's hostname to
 The app resolves workflow names to ids from the active deployment and caches them
 for a minute.
 
+## Record scopes
+
+In a Spool with [record scopes](security.md#record-scopes) the tool API reaches only what a
+**grant** says. A grant is a short-lived token the CRM signs; nothing else carries a scope,
+and nothing in a tool call's body (which a model writes) can switch one.
+
+- A workflow started for a record gets `grant` in its input, beside `objectKey`, `record`,
+  `actor` and `trigger`. It is good for the record's scope, and to write only if whoever
+  started the workflow could. Send it back with every call to the tool API:
+
+  ```
+  headers: @ts {
+    return {
+      "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN,
+      "X-Spools-Grant": context.nodes.root.input.grant,
+      "Content-Type": "application/json"
+    }
+  }
+  ```
+
+  The workflows a new Spool comes with don't send it yet: add the header to each `http`
+  node that calls `/api/swirls/tools/*` before turning scopes on, or their write-backs are
+  refused. A grant lasts a day.
+
+- **The assistant's record tools are refused in chat.** A chat's tool workflows are started
+  by the engine, not the CRM, so there is no input to put a grant in, and a value the model
+  could relay would be a scope switch. With scopes on, `crm_search`, `crm_get`, `crm_create`,
+  `crm_update` and `crm_add_note` answer that the call reached no record; `crm_describe` and
+  the marketing tools still work.
+- **Chats must be each person's own.** With `SWIRLS_API_KEY` set, chats belong to the
+  project and everyone reads everyone's, so the Ask page is refused and says so. Use
+  federation.
+
 ## The assistant
 
 `/assistant` (the **Ask** button in the top bar, or the box on Home) streams chat

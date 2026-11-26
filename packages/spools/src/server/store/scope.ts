@@ -101,13 +101,6 @@ export const SCOPE_DECISIONS = {
   ping: 'passes: it reads no table',
 } as const satisfies { readonly [Method in keyof StoreShape]: string }
 
-/**
- * Whether scopes are kept everywhere they have to be. While they aren't (the
- * boundary and the background work are still to do), a server whose config has
- * `scopes` refuses to start (src/server/entry.ts).
- */
-export const SCOPES_ENFORCED: boolean = false
-
 /** Why the guard refused a call. Its message is what staff read. */
 export class ScopeRefusal extends Error {
   readonly _tag = 'ScopeRefusal'

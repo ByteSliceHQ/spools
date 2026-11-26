@@ -121,7 +121,7 @@ export type AdNetwork = {
 /**
  * Who holds which scope, for a Spool with `scopes` in crm.config.json whose
  * auth adapter doesn't say (or whose groups are kept somewhere of your own: a
- * table, a directory, a payroll system). Asked once a minute per person.
+ * table, a directory, a payroll system). Asked on each request: cache what is slow.
  */
 export type ScopeSource = {
   /** The scopes this person holds, each with a role from `scopes.roles`. Nothing held means they see no scoped record. */

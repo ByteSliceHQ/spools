@@ -22,6 +22,7 @@ bun run db:push   # with DATABASE_URL set: apply the schema to that database
 | `app.timezone`     | no       | Where the business keeps its calendar, as an IANA name such as `"America/New_York"` (default `"UTC"`). Decides when "today" and "this month" begin in [filters](search-and-filters.md#operators).                   |
 | `access`           | yes      | Who may use the CRM. See [Access](#access).                                                                                                                                                                         |
 | `objects`          | yes      | The record types. See [Objects](#objects).                                                                                                                                                                          |
+| `scopes`           | no       | Keep groups of the business (branches, regions, teams) to their own records. See [Scopes](#scopes).                                                                                                                 |
 | `files`            | no       | The shared library on the Files page: `{ "label": "Company files", "folders": ["Templates"] }`. The library exists without it. See [Files](files.md#the-library).                                                   |
 | `automations`      | no       | Run something when records change. See [Automations](#automations).                                                                                                                                                 |
 | `app.sendingHours` | no       | The hours a sequence's later emails may go out in, on the clock of `app.timezone`: `{ "from": "08:00", "to": "18:00" }`, weekdays only unless `"weekdaysOnly": false`. See [Campaigns](campaigns.md#sending-hours). |
@@ -43,6 +44,48 @@ verified primary email that matches the allowlist.
 
 At least one entry is required. With Clerk, restrict sign-ups there too (Clerk dashboard →
 Restrictions) so strangers can't create accounts at all.
+
+## Scopes
+
+Without this key every allowed user reads and writes every record. With it, each record of
+the objects you name belongs to one scope, and a person only sees and changes the scopes
+they hold.
+
+```json
+"scopes": {
+  "label": "Branch",
+  "labelPlural": "Branches",
+  "objects": { "companies": "branch", "contacts": "branch", "deals": "branch" },
+  "roles": {
+    "member": { "write": true },
+    "viewer": {},
+    "headOffice": { "write": true, "all": true }
+  }
+}
+```
+
+| Key                    | Description                                                                                                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`, `labelPlural` | What a scope is called in the CRM. Default "Scope", "Scopes".                                                                                                                                           |
+| `objects`              | For each scoped object, the field that says which scope a record is in: a `select`, a `text` or a `relation` field, not encrypted. An object left out is shared by everyone.                            |
+| `roles`                | What a scope can be held with. `write` lets the role create, change and delete (without it the role only reads). `all` makes the role reach every scope, whichever one it was granted in (head office). |
+
+- **Who holds what** is not in the config: it comes from your sign-in provider
+  ([Clerk organizations](auth.md#record-scopes), or `devAuth({ scopes })` in development) or
+  from a resolver of your own ([Extending](extending.md#scopes-who-holds-what)). Someone on
+  the access list who holds nothing sees no scoped record.
+- **The scope's value** is what the field holds: a select option's `value`, the text, or the
+  related record's id. With Clerk organizations it is the organization's slug.
+- **Working in a scope.** Someone who holds several works in one at a time, or in all of
+  theirs at once, from the switcher at the top of the sidebar. A new record takes the scope
+  being worked in; working in all of them, it has to say.
+- **A relation between two scoped objects stays inside one scope.** A record can't move to
+  another scope while scoped records point at it.
+- **Turning it on for a database that has records:** give every record of a scoped object
+  its scope, run `bun run crm:gen` and `bun run db:push`, then `bun run db:scopes` so the
+  timeline, tasks, notes, favourites, folders and sequence runs take their record's scope.
+
+What it does and doesn't keep apart is in [Security](security.md#record-scopes).
 
 ## Objects
 

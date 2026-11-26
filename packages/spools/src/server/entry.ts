@@ -8,8 +8,6 @@ import { validateIntegrations } from './integrations'
 import { startMarketing } from './marketing'
 import { validateMarketing } from './marketing-networks'
 import { runtime } from './runtime/app'
-import { crmConfig } from './spool'
-import { SCOPES_ENFORCED } from './store/scope'
 import { startSync } from './sync'
 
 type Handler = { fetch(request: Request): Response | Promise<Response> }
@@ -31,14 +29,6 @@ const abort = z.object({ name: z.literal('AbortError') })
  */
 export function serveSpool(start: Handler): Handler {
   logEnvironment()
-
-  // A config that asks for scopes must get them. Until the store keeps to them, don't serve it.
-  if (crmConfig().scopes && !SCOPES_ENFORCED) {
-    throw new Error(
-      'crm.config.json has "scopes", which this version reads but does not enforce yet: ' +
-        'every allowed user would still see every record. Remove the key to start the server.',
-    )
-  }
 
   // Fail loudly if the config references a workflow kind, campaign or handler that doesn't exist.
   const problems = validateRunTargets()

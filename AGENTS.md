@@ -90,7 +90,13 @@ In the rest of this file `P` is `packages/spools/src`, and a path that starts wi
   keys. An adapter may add its own (`tables`), which must not depend on the environment.
 - **Timeline summaries are sentence fragments** that follow the actor's name
   ("changed Stage to Won", "added a note: Pricing call"): lower-case, no full stop.
-- **Single business per deployment**, deny-by-default `access` allowlist, no roles.
+- **Single business per deployment**, deny-by-default `access` allowlist. No roles unless the
+  config has `scopes` (record scopes: `P/crm/scopes.ts`, docs/security.md#record-scopes). Then
+  every store is behind the guard in `P/server/store/scope.ts`, which narrows each call to the
+  scopes of whoever the request is for (`CurrentAccess`). Don't work around it: code with
+  nobody signed in (a cron route, a schedule, a script) runs inside `asSystem(...)` or it is
+  refused a scoped table, and a new store method doesn't build until it says what it does
+  about scopes. The file store is checked separately, in `P/server/files.ts`.
 - **Encryption:** fields marked `"encrypted"` are stored as plaintext because
   `@cipherstash/stack-prisma` 1.2.1 only supports Prisma Next 0.17, not Prisma 8.
   `crm:gen` warns about each one. Don't remove the markers.

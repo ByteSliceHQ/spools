@@ -109,6 +109,32 @@ first address the access list lets in. `DEV_AUTH_SIGNED_OUT=1` shows the app sig
 A new Spool uses it until you set a real provider's keys. It refuses to run with
 `NODE_ENV=production`, and a production build leaves it out.
 
+## Record scopes
+
+With [`scopes`](configuration.md#scopes) in the config, something has to say which scopes
+each person holds.
+
+- **Clerk organizations.** `clerk({ scopes: 'organizations' })`: a person holds the scope of
+  each organization they belong to, with their role in it. The scope is the organization's
+  slug (so `north` for records whose scope field holds `north`) and the role is the
+  membership's without Clerk's prefix: `org:member` is `member` in `scopes.roles`. Give head
+  office a role marked `all`. The organization active in the session is the scope the person
+  works in; switching with Clerk's own switcher switches the CRM. Not run against a live
+  Clerk account yet: the mapping is tested, the calls to Clerk are not.
+- **Development.** `devAuth({ scopes: { list, grants } })`, by email address:
+
+  ```ts
+  auth: devAuth({
+    scopes: {
+      list: [{ key: 'north', label: 'North' }, { key: 'south', label: 'South' }],
+      grants: { 'dev@example.com': [{ scope: 'north', role: 'member' }] },
+    },
+  }),
+  ```
+
+- **Better Auth, or anything else.** A resolver of your own, in
+  [`src/app/extensions.ts`](extending.md#scopes-who-holds-what).
+
 ## Your own
 
 An auth adapter has a server half (a directory of people, the session of a request, and

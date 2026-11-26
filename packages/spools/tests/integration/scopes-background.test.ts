@@ -8,6 +8,7 @@ import { toolsHandlers } from '../../src/api/tools'
 import type { ScopeAccess } from '../../src/crm/scopes'
 import { runTarget } from '../../src/server/actions'
 import { activeRuns, enroll } from '../../src/server/campaigns'
+import * as api from '../../src/server/extension-api'
 import * as files from '../../src/server/files'
 import * as records from '../../src/server/records'
 import { Agents } from '../../src/server/runtime/agents'
@@ -502,4 +503,12 @@ test('a public route reaches a shared object, and is refused a scoped one unless
   expect(refused.status).toBe(500)
   expect(refused.body.ok).toBe(false)
   expect(refused.body.n).toBeUndefined()
+})
+
+test('a script says it is the system, in plain promises, or is refused', async () => {
+  const list = () => api.listRecords({ objectKey: 'contacts', limit: 500, relations: 'none' })
+  await expect(list()).rejects.toThrow()
+  expect(await api.asSystem(list)).toHaveLength(3)
+  // Saying so lasts as long as the work it was said for.
+  await expect(list()).rejects.toThrow()
 })
