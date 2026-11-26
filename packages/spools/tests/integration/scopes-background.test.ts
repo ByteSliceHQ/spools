@@ -1,0 +1,361 @@
+import { expect, test } from 'bun:test'
+
+import { toolsHandlers } from '../../src/api/tools'
+import type { ScopeAccess } from '../../src/crm/scopes'
+import { runTarget } from '../../src/server/actions'
+import { activeRuns, enroll, tick } from '../../src/server/campaigns'
+import * as files from '../../src/server/files'
+import * as records from '../../src/server/records'
+import { GRANT_HEADER, mintGrant } from '../../src/server/scopes'
+import * as service from '../../src/server/service'
+import { Store } from '../../src/server/store/store'
+import { Note, SequenceRun } from '../../src/server/store/tables'
+import {
+  as,
+  column,
+  drive,
+  ids,
+  northIn,
+  pending,
+  people,
+  scopedWorld,
+  sent,
+  sightings,
+  southIn,
+  sys,
+  TOOL_TOKEN,
+  unattended,
+} from './scopes-world'
+
+// Record scopes where nobody is signed in, or where the app's own code runs:
+// sequences and their cron tick, hooks, automations and run targets, the tool
+// API the agent engine calls back into, and the file store.
+
+scopedWorld()
+
+const { nora, sam } = people
+
+const sweep = async (objectKey: string, q: string) => {
+  for (const row of await sys(records.listRecords({ objectKey, q, limit: 500 }))) {
+    await sys(records.deleteRecord(objectKey, row.id))
+  }
+}
+
+const record = async (objectKey: string, id: string) => {
+  const found = await sys(records.getRecord(objectKey, id))
+
+  if (!found) {
+    throw new Error(`The world has no ${objectKey} ${id}`)
+  }
+
+  return found
+}
+
+// ── Sequences ───────────────────────────────────────────────────────────────
+
+/** Both branches' contacts in the welcome sequence, each enrolled by its own people. */
+const enrolBoth = async () => {
+  await as('nora', enroll('welcome', 'contacts', await record('contacts', ids.north.contact), nora))
+  await as('sam', enroll('welcome', 'contacts', await record('contacts', ids.south.contact), sam))
+}
+
+pending(
+  'sequences: a record of another scope can’t be enrolled, and runs are counted per scope',
+  async () => {
+    await enrolBoth()
+    expect(await as('hana', activeRuns(), null)).toEqual({ welcome: 2 })
+    expect(await as('nora', activeRuns())).toEqual({ welcome: 1 })
+
+    // A run target is handed the record by its caller. One of another scope is not there for Nora.
+    const { id } = await sys(
+      records.createRecord('contacts', { name: 'Birch unenrolled', branch: 'south' }, 'seed'),
+    )
+
+    try {
+      const theirs = await record('contacts', id)
+      await expect(as('nora', enroll('welcome', 'contacts', theirs, nora))).rejects.toThrow()
+
+      await expect(
+        as(
+          'nora',
+          runTarget('campaign:welcome', {
+            objectKey: 'contacts',
+            record: theirs,
+            actor: nora,
+            trigger: 'action:welcome',
+          }),
+        ),
+      ).rejects.toThrow()
+
+      expect(
+        await sys(Store.use((store) => store.count(SequenceRun, { where: { recordId: id } }))),
+      ).toBe(0)
+    } finally {
+      await sys(Store.use((store) => store.remove(SequenceRun, { where: { recordId: id } })))
+      await sys(records.deleteRecord('contacts', id))
+    }
+  },
+)
+
+pending(
+  'sequences: the cron tick sends for every scope, and what it writes stays in the record’s scope',
+  async () => {
+    await enrolBoth()
+    sent.length = 0
+
+    // The scheduler: nobody is signed in, and nothing says whose work this is.
+    const result = await unattended(tick({ now: new Date(Date.now() + 2 * 86_400_000) }))
+    expect(result.sent).toBe(2)
+    expect(sent.map((e) => e.to).toSorted()).toEqual(['nina@alder.test', 'sofia@birch.test'])
+
+    // The email to Sofia is on her timeline, which is South's.
+    const south = await as('sam', records.listActivities('contacts', ids.south.contact))
+    expect(JSON.stringify(south)).toContain('Welcome, Sofia Birch')
+
+    const recent = await as('nora', records.recentActivities(200))
+    expect(JSON.stringify(recent)).toContain('Welcome, Nina Alder')
+    expect(southIn(recent)).toEqual([])
+  },
+)
+
+// ── The app's own code ──────────────────────────────────────────────────────
+
+pending(
+  'hooks, automations and run targets are handed the actor, and reach only the actor’s scope',
+  async () => {
+    sightings.length = 0
+
+    try {
+      // afterCreate lists contacts through `@swirls/spools/extensions`, as an app's hook would.
+      const made = await as(
+        'nora',
+        service.createRecord('contacts', { name: 'Alder hooked' }, nora),
+      )
+
+      // The automation on contacts.updated runs a handler from the app.
+      await as('nora', service.updateRecord('contacts', made.id, { status: 'customer' }, nora))
+
+      const ctx = { objectKey: 'contacts', record: made, actor: nora, trigger: 'action:probe' }
+      await as('nora', runTarget('local:probe', ctx))
+      // A run-target kind the app added.
+      await as('nora', runTarget('look:around', ctx))
+
+      expect(sightings.map((s) => s.where)).toEqual([
+        'afterCreate',
+        'handler:contacts.updated',
+        'handler:action:probe',
+        'target:around',
+      ])
+
+      for (const seen of sightings) {
+        expect(seen.actor).toBe(nora.id)
+        // Not nothing: the app's code works as Nora does.
+        expect(seen.contacts).toContain('Nina Alder')
+        expect(southIn(seen.contacts)).toEqual([])
+      }
+
+      sightings.length = 0
+      await as('sam', service.updateRecord('contacts', ids.south.contact, { status: 'lead' }, sam))
+      expect(sightings.map((s) => s.actor)).toEqual([sam.id])
+      expect(sightings[0]?.contacts).toEqual(['Sofia Birch'])
+    } finally {
+      await sweep('contacts', 'hooked')
+    }
+  },
+)
+
+// ── The tool API ────────────────────────────────────────────────────────────
+
+type ToolAnswer = { ok: boolean; data?: unknown; error?: string }
+
+/** One call to /api/swirls/tools/<tool>, as the agent engine makes it. */
+const call = async (tool: string, body: unknown, grant?: string): Promise<ToolAnswer> => {
+  const headers = new Headers({
+    authorization: `Bearer ${TOOL_TOKEN}`,
+    'content-type': 'application/json',
+  })
+
+  if (grant !== undefined) {
+    headers.set(GRANT_HEADER, grant)
+  }
+
+  const request = new Request(`http://crm.test/api/swirls/tools/${tool}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+
+  return (await toolsHandlers.POST({ request, params: { tool } })).json()
+}
+
+const grantFor = (access: ScopeAccess, userId?: string) => sys(mintGrant(access, { userId }))
+const northOnly: ScopeAccess = { read: ['north'], write: ['north'], active: 'north' }
+
+test('the tool API answers only the bearer token, scopes or not', async () => {
+  const request = new Request('http://crm.test/api/swirls/tools/describe', {
+    method: 'POST',
+    body: '{}',
+  })
+
+  expect((await toolsHandlers.POST({ request, params: { tool: 'describe' } })).status).toBe(401)
+})
+
+pending('the tool API fails closed: a call that carries no grant reaches no record', async () => {
+  // What the objects and fields are is the config, not a record.
+  expect((await call('describe', {})).ok).toBe(true)
+
+  for (const answer of [
+    await call('search', { objectKey: 'contacts' }),
+    await call('get', { objectKey: 'contacts', id: ids.north.contact }),
+    // A grant that isn't one the server signed.
+    await call('search', { objectKey: 'contacts' }, ''),
+    await call('search', { objectKey: 'contacts' }, 'north'),
+    await call('search', { objectKey: 'contacts' }, `${await grantFor(northOnly)}x`),
+  ]) {
+    expect(answer.ok).toBe(false)
+    expect(northIn(answer)).toEqual([])
+    expect(southIn(answer)).toEqual([])
+  }
+
+  try {
+    expect(
+      (await call('create', { objectKey: 'contacts', values: { name: 'Alder tooled' } })).ok,
+    ).toBe(false)
+
+    expect(await sys(records.listRecords({ objectKey: 'contacts', q: 'tooled' }))).toEqual([])
+  } finally {
+    await sweep('contacts', 'tooled')
+  }
+})
+
+pending('the tool API: a grant reaches its own scope, and writes nowhere else', async () => {
+  const grant = await grantFor(northOnly, nora.id)
+  const rows = (answer: ToolAnswer) => (Array.isArray(answer.data) ? answer.data : [])
+
+  try {
+    const found = await call('search', { objectKey: 'contacts' }, grant)
+    expect(found.ok).toBe(true)
+    expect(column(rows(found), 'name')).toEqual(['Nell Crossing', 'Nina Alder'])
+    expect(southIn(found)).toEqual([])
+
+    // Not found, as for a person: the tool can't tell the agent the record exists.
+    const hidden = await call('get', { objectKey: 'contacts', id: ids.south.contact }, grant)
+    expect(hidden).toEqual({ ok: false, error: 'Record not found' })
+
+    // What the model puts in a tool call is a value like any other.
+    const made = await call(
+      'create',
+      { objectKey: 'contacts', values: { name: 'Alder tooled' } },
+      grant,
+    )
+
+    expect(made.ok).toBe(true)
+    expect(made.data).toMatchObject({ name: 'Alder tooled', branch: 'north' })
+
+    const strayed = await call(
+      'create',
+      { objectKey: 'contacts', values: { name: 'Alder tooled south', branch: 'south' } },
+      grant,
+    )
+
+    expect(strayed.ok).toBe(false)
+
+    const changed = await call(
+      'update',
+      { objectKey: 'contacts', id: ids.south.contact, values: { status: 'customer' } },
+      grant,
+    )
+
+    expect(changed).toEqual({ ok: false, error: 'Record not found' })
+
+    const noted = await call(
+      'add_note',
+      { objectKey: 'contacts', id: ids.south.contact, body: 'planted by a tool' },
+      grant,
+    )
+
+    expect(noted).toEqual({ ok: false, error: 'Record not found' })
+
+    // A grant to read is not a grant to write.
+    const reader = await grantFor({ read: ['north'], write: [], active: 'north' })
+
+    const refused = await call(
+      'create',
+      { objectKey: 'contacts', values: { name: 'Alder tooled reader' } },
+      reader,
+    )
+
+    expect(refused.ok).toBe(false)
+
+    const now = await sys(records.listRecords({ objectKey: 'contacts', q: 'tooled' }))
+    expect(now.map((r) => [r.name, r.branch])).toEqual([['Alder tooled', 'north']])
+    expect((await sys(records.getRecord('contacts', ids.south.contact)))?.status).toBe('lead')
+
+    expect(
+      await sys(Store.use((store) => store.count(Note, { where: { body: 'planted by a tool' } }))),
+    ).toBe(0)
+  } finally {
+    await sweep('contacts', 'tooled')
+    await sys(records.updateRecord('contacts', ids.south.contact, { status: 'lead' }))
+    await sys(Store.use((store) => store.remove(Note, { where: { body: 'planted by a tool' } })))
+  }
+})
+
+// ── Files ───────────────────────────────────────────────────────────────────
+
+pending(
+  'record folders and files: another scope’s can’t be listed, found, opened, changed or deleted',
+  async () => {
+    const folder = await as('sam', files.recordFolder('companies', ids.south.company))
+
+    const ticket = await as(
+      'sam',
+      files.startUpload(
+        {
+          folderId: folder.folderId,
+          name: 'Birch contract.txt',
+          sizeBytes: 5,
+          sha256: 'a'.repeat(64),
+        },
+        sam,
+      ),
+    )
+
+    // The browser's part: the bytes go straight to the store.
+    await drive.handle(ticket.url, {
+      method: 'PUT',
+      body: new TextEncoder().encode('hello').buffer,
+    })
+
+    await as('sam', files.finishUpload(ticket.id, sam))
+
+    const theirs = await as('sam', files.listFolder(folder.folderId))
+    const file = theirs.files.find((f) => f.name === 'Birch contract.txt')
+    expect(file).toBeDefined()
+    const fileId = file?.id ?? ''
+
+    // The record's own folder, asked for by the record or by the folder's id.
+    await expect(as('nora', files.recordFolder('companies', ids.south.company))).rejects.toThrow()
+    await expect(as('nora', files.listFolder(folder.folderId))).rejects.toThrow()
+
+    // Browsing down from the top: "Companies" holds a folder per company.
+    const top = await as('nora', files.listFolder(null))
+    expect(southIn(top)).toEqual([])
+    const parent = top.folders.find((f) => f.name === 'Companies')
+
+    if (parent) {
+      expect(southIn(await as('nora', files.listFolder(parent.id)))).toEqual([])
+    }
+
+    expect(southIn(await as('nora', files.searchFiles('contract')))).toEqual([])
+
+    // By its id alone.
+    await expect(as('nora', files.openFile(fileId))).rejects.toThrow()
+    await expect(as('nora', files.changeFile(fileId, { name: 'Alder.txt' }))).rejects.toThrow()
+    await expect(as('nora', files.deleteFile(fileId))).rejects.toThrow()
+    await expect(as('nora', files.deleteFolder(folder.folderId))).rejects.toThrow()
+
+    const kept = await as('sam', files.listFolder(folder.folderId))
+    expect(column(kept.files, 'name')).toEqual(['Birch contract.txt'])
+  },
+)
