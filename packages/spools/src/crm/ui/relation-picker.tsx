@@ -1,6 +1,7 @@
 import { Check, ChevronDown, X } from 'lucide-react'
 import { type RefObject, useEffect, useId, useRef, useState } from 'react'
 
+import { linksChange, writeLinksChange } from '../links-form'
 import { cx, inputClass, useDismiss } from './kit'
 import { relationTitle, searchRelation } from './session'
 import { useCrmConfig } from './use-crm'
@@ -72,6 +73,17 @@ type SearchProps = {
   selected?: string
   /** Its title, when known: it is listed first even if it isn't on the first page of results. */
   selectedTitle?: string
+  /**
+   * For a field that holds many records: the ids chosen now. Each is ticked,
+   * and choosing one again is how it is taken away, so the search stays open.
+   */
+  selectedIds?: readonly string[]
+  /**
+   * Told the ids of the records listed, each time results arrive. For a field
+   * that may hold more than `selectedIds` says: its owner asks which of these
+   * are held too.
+   */
+  onOptions?: (ids: readonly string[]) => void
   /** Offer to clear the choice. */
   clearable?: boolean
   /** A record was chosen, or the choice was cleared (`null`). */
@@ -91,11 +103,19 @@ export function RelationSearch({
   objectKey,
   selected,
   selectedTitle,
+  selectedIds,
+  onOptions,
   clearable,
   onPick,
   onEscape,
   listClassName = 'max-h-60',
 }: SearchProps) {
+  // The latest one is called when results arrive, without asking again because its owner drew again.
+  const listed = useRef(onOptions)
+  listed.current = onOptions
+
+  const isChosen = (id: string) => (selectedIds ? selectedIds.includes(id) : id === selected)
+
   const plural = useCrmConfig().objects[objectKey]?.labelPlural.toLowerCase() ?? 'records'
   const listId = useId()
   const root = useRef<HTMLDivElement>(null)
@@ -127,6 +147,7 @@ export function RelationSearch({
             setFound({ objectKey, q, options: res.options, more: res.more })
             setFailed(false)
             setActive(0)
+            listed.current?.(res.options.map((o) => o.id))
           },
           () => {
             if (!stale) {
@@ -222,14 +243,20 @@ export function RelationSearch({
         onMouseDown={(e) => e.preventDefault()}
         className={cx('overflow-y-auto p-1', listClassName, !settled && current && 'opacity-60')}
       >
-        <div id={listId} role="listbox" aria-label={plural} tabIndex={-1}>
+        <div
+          id={listId}
+          role="listbox"
+          aria-label={plural}
+          aria-multiselectable={selectedIds ? true : undefined}
+          tabIndex={-1}
+        >
           {options.map((o, i) => (
             // oxlint-disable-next-line jsx-a11y/click-events-have-key-events -- Focus stays in the search box, which handles the arrow keys and Enter.
             <div
               key={o.id}
               id={`${listId}-${i}`}
               role="option"
-              aria-selected={o.id === selected}
+              aria-selected={isChosen(o.id)}
               tabIndex={-1}
               onClick={() => onPick(o)}
               onPointerMove={() => setActive(i)}
@@ -239,7 +266,7 @@ export function RelationSearch({
               )}
             >
               <span className="truncate">{o.title}</span>
-              {o.id === selected && <Check className="text-c-accent size-3.5 shrink-0" />}
+              {isChosen(o.id) && <Check className="text-c-accent size-3.5 shrink-0" />}
             </div>
           ))}
         </div>
@@ -411,6 +438,154 @@ export function RelationInput({
             setPicked(p)
             setOpen(false)
             trigger.current?.focus()
+          }}
+          onClose={(how) => {
+            setOpen(false)
+
+            if (how === 'escape') {
+              trigger.current?.focus()
+            }
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** One chosen record of a relations field: its title, and a button that takes it away. */
+function PickedChip({
+  objectKey,
+  picked,
+  titles,
+  onRemove,
+}: {
+  objectKey: string
+  picked: { id: string; title?: string | undefined }
+  titles?: RelationTitles | undefined
+  onRemove: () => void
+}) {
+  const looked = useRelationTitle(
+    objectKey,
+    picked.title === undefined ? picked.id : undefined,
+    titles,
+  )
+
+  const title = picked.title ?? looked ?? (looked === null ? 'Unknown record' : '…')
+
+  return (
+    <span className="bg-c-hov text-c-fg flex max-w-full items-center gap-1 rounded-md py-0.5 pr-1 pl-1.5 text-xs font-medium">
+      <span className="truncate">{title}</span>
+      <button
+        type="button"
+        aria-label={`Remove ${title}`}
+        onClick={onRemove}
+        className="text-c-fg3 hover:text-c-fg rounded p-0.5"
+      >
+        <X className="size-3" />
+      </button>
+    </span>
+  )
+}
+
+/**
+ * A relations field in a form: the records chosen, each with a button that
+ * takes it away, and a button that opens the search to add more. The search
+ * stays open while records are ticked and unticked.
+ *
+ * What travels with the form under `name` is the change, not the set:
+ * `{"add":[…],"remove":[…]}` against what the saved record holds (`held`). A
+ * record can hold more than a page shows (`total`), and the ones not shown
+ * must stay as they are. A new record holds nothing, so what its form starts
+ * with (`value` from a preset) is all to add.
+ */
+export function RelationsInput({
+  objectKey,
+  name,
+  value,
+  held,
+  total,
+  titles,
+}: {
+  objectKey: string
+  /** Form control name (`<field>Ids`); also the id a `<label htmlFor>` points at. */
+  name: string
+  /** The records chosen when the form opens, with their titles where the page has them. */
+  value: readonly { id: string; title?: string | undefined }[]
+  /** The ids among them that the saved record holds already. Empty for a record that is being made. */
+  held: readonly string[]
+  /** How many the record holds in all, when that is more than `value`. */
+  total?: number | undefined
+  titles?: RelationTitles | undefined
+}) {
+  const plural = useCrmConfig().objects[objectKey]?.labelPlural.toLowerCase() ?? 'records'
+  const wrap = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const [saved] = useState(() => [...held])
+  const [picked, setPicked] = useState<{ id: string; title?: string | undefined }[]>([...value])
+  const [open, setOpen] = useState(false)
+  const ids = picked.map((p) => p.id)
+  const hidden = Math.max(0, (total ?? 0) - saved.length)
+  const change = linksChange(saved, ids)
+
+  const toggle = (option: Picked) =>
+    setPicked((now) =>
+      now.some((p) => p.id === option.id)
+        ? now.filter((p) => p.id !== option.id)
+        : [...now, option],
+    )
+
+  return (
+    // Watches focus leaving the field; the buttons inside are what is clicked.
+    <div
+      ref={wrap}
+      className="relative"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setOpen(false)
+        }
+      }}
+    >
+      <div className={cx(inputClass, 'flex h-auto min-h-8 flex-wrap items-center gap-1 py-1')}>
+        {picked.map((p) => (
+          <PickedChip
+            key={p.id}
+            objectKey={objectKey}
+            picked={p}
+            titles={titles}
+            onRemove={() => setPicked((now) => now.filter((other) => other.id !== p.id))}
+          />
+        ))}
+        {hidden > 0 && <span className="text-c-fg3 text-xs">and {hidden} more</span>}
+        <button
+          ref={trigger}
+          id={name}
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault()
+              setOpen(true)
+            }
+          }}
+          className="text-c-fg2 hover:text-c-fg flex items-center gap-1 rounded-md px-1 py-0.5 text-xs"
+        >
+          <ChevronDown className="text-c-fg3 size-3.5 shrink-0" />
+          {picked.length === 0 && hidden === 0 ? `Choose ${plural}` : 'Add or remove'}
+        </button>
+      </div>
+      <input type="hidden" name={name} value={writeLinksChange(change)} />
+      {open && (
+        <RelationPopover
+          anchor={wrap}
+          className="w-full"
+          objectKey={objectKey}
+          selectedIds={ids}
+          onPick={(option) => {
+            if (option) {
+              toggle(option)
+            }
           }}
           onClose={(how) => {
             setOpen(false)

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { Kind } from '../server/store/table'
+import { LINKS_WRITE } from './links'
 
 /**
  * Field types: the single server-side definition of every `type` a field in
@@ -93,6 +94,22 @@ export const fieldSchema = z.discriminatedUnion('type', [
     /** Key of the target object in `objects`. Stored as `<field>Id`. */
     to: ident,
   }),
+  z.object({
+    ...fieldBase,
+    type: z.literal('relations'),
+    /**
+     * Key of the target object in `objects`: this field holds any number of
+     * its records ("a contact has many tags"). Kept as rows of a links table,
+     * read as `<field>` and written as `<field>Ids`.
+     */
+    to: ident,
+    /**
+     * A `relations` field on the target object that this field is the other
+     * side of: both show and change the same links. Set it on one side only;
+     * the side without it owns the links table.
+     */
+    inverse: ident.optional(),
+  }),
   /** A teammate, by the auth provider's user id (record owner, assignee, ...). */
   z.object({ ...fieldBase, type: z.literal('user') }),
 ])
@@ -102,8 +119,12 @@ export type FieldType = CrmField['type']
 type FieldOf<T extends FieldType> = Extract<CrmField, { type: T }>
 
 export type FieldTypeDef<T extends FieldType> = {
-  /** What the column holds (src/server/store/table.ts). A relation's is its record's id. */
-  column: Kind
+  /**
+   * What the column holds (src/server/store/table.ts). A relation's is its
+   * record's id. `null` for a type with no column: its values are rows of
+   * another table (`relations`).
+   */
+  column: Kind | null
   /** Text stored as a string: may be `searchable` and `encrypted`. */
   textLike?: boolean
   /** Parses one submitted value (forms send strings) into what Prisma stores, or null. */
@@ -119,6 +140,88 @@ const plainText = {
   textLike: true,
   input: () => nullable(z.string().trim().max(20_000)),
 } as const
+
+const recordId = z.string().uuid()
+const recordIds = z.array(recordId)
+const unique = (ids: string[]) => [...new Set(ids)]
+
+/**
+ * A change to the records a `relations` field holds: `set` replaces them all,
+ * `add` and `remove` change some and leave the rest.
+ */
+export type LinksChange = { set: string[] } | { add: string[]; remove: string[] }
+
+const linksSet = z.strictObject({ set: recordIds })
+const linksSome = z.strictObject({ add: recordIds.default([]), remove: recordIds.default([]) })
+
+const counted = (n: number) => n.toLocaleString('en-US')
+
+/**
+ * What a `relations` field is written with, under `<field>Ids`: a list of ids
+ * or the ids in one string (a form, a CSV row), which replace the set, or
+ * `{ add, remove }`. Nothing at all (`null`, `""`) is an empty set.
+ *
+ * Which of the two shapes was sent is settled first, so what is wrong with it
+ * is said about that shape; and a list longer than one write takes
+ * (`LINKS_WRITE`) is refused by saying so.
+ */
+const linksInput = z
+  .preprocess((value) => {
+    if (value === null || value === undefined) {
+      return { set: [] }
+    }
+
+    const typed = z.string().safeParse(value)
+
+    if (typed.success) {
+      return {
+        set: typed.data
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id !== ''),
+      }
+    }
+
+    return Array.isArray(value) ? { set: value } : value
+  }, z.unknown())
+  .transform((value, ctx): LinksChange => {
+    // An object with `set` is a set that replaces; anything else is read as `{ add, remove }`.
+    const sent = z.record(z.string(), z.unknown()).safeParse(value)
+    const replaces = sent.success && Object.hasOwn(sent.data, 'set')
+    const read = (replaces ? linksSet : linksSome).safeParse(value)
+
+    if (!read.success) {
+      for (const issue of read.error.issues) {
+        ctx.addIssue({ code: 'custom', path: [...issue.path], message: issue.message })
+      }
+
+      return z.NEVER
+    }
+
+    // Counted as they were sent, before an id named twice is taken once.
+    const long = Object.entries(read.data).filter(([, ids]) => ids.length > LINKS_WRITE)
+
+    for (const [list, ids] of long) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `${list === 'set' ? 'this names' : `"${list}" names`} ${counted(ids.length)} records, and one write takes at most ${counted(LINKS_WRITE)}. Send the rest in further writes, as { "add": [...] }`,
+      })
+    }
+
+    if (long.length > 0) {
+      return z.NEVER
+    }
+
+    return 'set' in read.data
+      ? { set: unique(read.data.set) }
+      : { add: unique(read.data.add), remove: unique(read.data.remove) }
+  })
+
+/** A checked value of a `relations` field, read back as the change it is. */
+export const linksChangeSchema: z.ZodType<LinksChange> = z.union([
+  z.object({ set: z.array(z.string()) }),
+  z.object({ add: z.array(z.string()), remove: z.array(z.string()) }),
+])
 
 /** Every field type's definition, each typed by its own field's shape. */
 type FieldTypes = { [T in FieldType]: FieldTypeDef<T> }
@@ -159,7 +262,8 @@ export const fieldTypes: FieldTypes = {
     column: 'text',
     input: (field) => nullable(z.enum(field.options.map((o) => o.value))),
   },
-  relation: { column: 'text', input: () => nullable(z.string().uuid()) },
+  relation: { column: 'text', input: () => nullable(recordId) },
+  relations: { column: null, input: () => linksInput },
   user: { column: 'text', input: () => nullable(z.string().trim().max(200)) },
 }
 
@@ -176,7 +280,7 @@ const inputOf = <T extends FieldType>(type: T, field: FieldOf<T>): z.ZodType =>
 /** Zod schema for one field's submitted value, honouring `required`. */
 export function fieldInputSchema(field: CrmField): z.ZodType {
   const schema = inputOf(field.type, field)
-  return field.required && field.type !== 'boolean'
+  return field.required && field.type !== 'boolean' && field.type !== 'relations'
     ? schema.refine((v) => v !== null, 'Required')
     : schema
 }

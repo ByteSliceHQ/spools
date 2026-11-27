@@ -3,8 +3,10 @@ import { Check, X } from 'lucide-react'
 import { useContext, useRef, useState } from 'react'
 import { z } from 'zod'
 
-import { updateRecordFn } from '../../server/crm.functions'
+import { heldLinksFn, updateRecordFn } from '../../server/crm.functions'
 import type { CrmField } from '../field-types'
+import { countKey } from '../links'
+import { heldState } from '../links-form'
 import { allowedOptions } from '../options'
 import {
   Badge,
@@ -13,6 +15,7 @@ import {
   FieldValue,
   inputName,
   type RecordData,
+  relatedListSchema,
   relatedSchema,
   textOf,
   toMoment,
@@ -23,7 +26,8 @@ import { RelationPopover } from './relation-picker'
 /**
  * A field value that edits in place: click to edit, Enter or blur to save,
  * Escape to cancel. Select and user fields open a picker of their options; a
- * relation opens a search over the related object's records.
+ * relation opens a search over the related object's records, and a relations
+ * field the same search, where each record ticked or unticked is saved at once.
  * Used by table cells and the record details panel.
  */
 
@@ -81,6 +85,50 @@ export function InlineField({
   const [error, setError] = useState<string>()
   const name = inputName(fieldKey, field)
   const current = record[name]
+
+  // A record brings the first of its links only. For one that holds more, what the server
+  // said about the records the picker listed: whether each is held, by id.
+  const [asked, setAsked] = useState<ReadonlyMap<string, boolean>>(new Map())
+
+  /** Asks which of the records the picker lists are held, when the page can't tell. */
+  async function askHeld(ids: readonly string[]) {
+    try {
+      const held = await heldLinksFn({
+        data: { objectKey, id: textOf(record.id), field: fieldKey, ids: [...ids] },
+      })
+
+      setAsked(
+        (now) => new Map([...now, ...ids.map((id): [string, boolean] => [id, held.includes(id)])]),
+      )
+    } catch (err) {
+      // Left unknown: those records stay unticked and can't be picked, and this says why.
+      setError(err instanceof Error ? err.message : 'Could not check which are linked')
+    }
+  }
+
+  /** Links or lets go of one record of a relations field, at once. The picker stays open for the next. */
+  async function toggleLink(otherId: string, held: boolean) {
+    setSaving(true)
+    setError(undefined)
+
+    try {
+      await updateRecordFn({
+        data: {
+          objectKey,
+          id: textOf(record.id),
+          values: { [name]: held ? { remove: [otherId] } : { add: [otherId] } },
+        },
+      })
+
+      // The page's next read may not show this one (it shows the first linked), so what was just done is kept.
+      setAsked((now) => new Map([...now, [otherId, !held]]))
+      await router.invalidate()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function save(value: string | boolean) {
     setEditing(false)
@@ -166,6 +214,59 @@ export function InlineField({
           clearable={!field.required}
           align={variant === 'detail' ? 'right' : 'left'}
           onPick={(picked) => save(picked?.id ?? '')}
+          onClose={() => setEditing(false)}
+        />
+      </div>
+    )
+  }
+
+  if (editing && field.type === 'relations') {
+    const shown = (relatedListSchema.safeParse(record[fieldKey]).data ?? []).map((r) =>
+      String(r.id),
+    )
+
+    const total = z.number().safeParse(record[countKey(fieldKey)]).data ?? shown.length
+    const page = { shown, hidden: Math.max(0, total - shown.length), asked }
+
+    const ticked = [...new Set([...shown, ...asked.keys()])].filter(
+      (id) => heldState(page, id) === 'held',
+    )
+
+    return (
+      <div className={shell} title={error}>
+        <span className="min-w-0 truncate">
+          <FieldValue
+            field={field}
+            fieldKey={fieldKey}
+            record={record}
+            titleFieldOf={titleFieldOf}
+          />
+        </span>
+        {error && <span className="text-c-danger ml-2 shrink-0 text-xs">!</span>}
+        <RelationPopover
+          objectKey={field.to}
+          selectedIds={ticked}
+          // Only a record with more links than the page shows needs asking about.
+          onOptions={
+            page.hidden > 0
+              ? (ids) => {
+                  const unknown = ids.filter((id) => !shown.includes(id))
+
+                  if (unknown.length > 0) {
+                    void askHeld(unknown)
+                  }
+                }
+              : undefined
+          }
+          align={variant === 'detail' ? 'right' : 'left'}
+          onPick={(picked) => {
+            const state = picked ? heldState(page, picked.id) : 'unknown'
+
+            // Unknown for a moment while the server is asked: a click then would guess.
+            if (picked && !saving && state !== 'unknown') {
+              void toggleLink(picked.id, state === 'held')
+            }
+          }}
           onClose={() => setEditing(false)}
         />
       </div>
@@ -259,7 +360,9 @@ export function InlineField({
       <span
         className={cx(
           'min-w-0',
-          field.type === 'longtext' && variant === 'detail' ? 'py-1.5' : 'truncate',
+          (field.type === 'longtext' || field.type === 'relations') && variant === 'detail'
+            ? 'py-1'
+            : 'truncate',
         )}
       >
         <FieldValue field={field} fieldKey={fieldKey} record={record} titleFieldOf={titleFieldOf} />

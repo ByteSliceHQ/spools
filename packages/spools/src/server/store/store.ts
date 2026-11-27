@@ -59,7 +59,11 @@ export type StoreShape = {
     column: keyof Row & string,
     which: Which<Row> & { atLeast: number },
   ) => Read<ValueCount[]>
-  /** Add a row. Breaking a uniqueness rule is a `DatabaseError`; catch it and look for the row that won. */
+  /**
+   * Add a row. Breaking a uniqueness rule is a `DatabaseError`; catch it and look for the row that won.
+   * Not inside a transaction: there Postgres ends the whole transaction with the statement that failed,
+   * so hold what the row depends on first (`lock`) and look before adding it.
+   */
   readonly insert: <Row, Insert>(table: Table<Row, Insert>, values: Insert) => Write<Row>
   /**
    * Change every row that matches, in one statement, and say how many there
@@ -102,6 +106,10 @@ export type StoreShape = {
    * anyone else who wants to change or hold them waits. For reading a row and
    * then writing something that depends on what was read. Says how many rows
    * are held. Outside a transaction it holds nothing.
+   *
+   * The rows of one call are taken in the order of their primary keys. Two
+   * transactions that hold several rows each must take them in the same order
+   * (table by table, the same way round), or each can end up waiting for the other.
    */
   readonly lock: <Row, Insert>(table: Table<Row, Insert>, which: Which<Row>) => Write<number>
   /** One small read, to open (or keep open) a connection. Says whether the database answered. */
@@ -235,7 +243,7 @@ export type Backend<E = DatabaseError> = {
     kinds: DateKinds,
     recordId: string | undefined,
   ) => Effect.Effect<void, E>
-  /** Hold the matching rows until the transaction ends (`SELECT ... FOR UPDATE`), and say how many. */
+  /** Hold the matching rows until the transaction ends, in the order of their primary keys (`SELECT ... ORDER BY id FOR UPDATE`), and say how many. */
   readonly lock: (table: AnyTable, predicate: Predicate) => Effect.Effect<number, E>
   /** Run a program as one transaction. Never asked for one inside another. */
   readonly transaction: Transact

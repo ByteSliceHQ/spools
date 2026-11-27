@@ -47,8 +47,11 @@ database: postgres({ maxConnections: 20 }),
 ## Schema and migrations
 
 `bun run crm:gen` writes `prisma/schema.prisma` from `crm.config.json`, the system
-tables, and any tables your adapters keep. Prisma's CLI migrates a Postgres from it,
-whichever adapter the server uses:
+tables, and any tables your adapters keep. An object has a table, and so has each
+[`relations`](configuration.md#many-related-records) field that owns its links:
+`<object>_<field>`, with `source_id` and `target_id`, one row per pair, and a foreign
+key on each that deletes the row with either record. Prisma's CLI migrates a Postgres
+from it, whichever adapter the server uses:
 
 ```sh
 bun run db:push                       # development: make the database match
@@ -83,7 +86,10 @@ const open =
 
 `where` is columns that must equal a value, and `null` means empty. `filter` is
 anything else: comparisons, text, relations, full-text search
-(`packages/spools/src/server/store/query.ts`). A row's TypeScript type follows from its
+(`packages/spools/src/server/store/query.ts`). A links table is a table like any
+other (`linkTables` and `linkSide` in `store/objects.ts`): each object's table has a
+relation to its rows of it, so "has this tag" is `some('tagsLinks', eq('targetId', id))`,
+with no condition of its own for an adapter to learn. A row's TypeScript type follows from its
 table, and `update` and `remove` refuse to run with no condition.
 
 Writes that belong together go in a transaction: everything in it is kept, or none of it.
@@ -103,7 +109,12 @@ const record =
 A failure, a bug or the request going away undoes what the program had written. Inside one,
 `store.lock(table, { where: { id } })` holds a row until the transaction ends, so reading a
 row and then writing something that depends on it can't be interleaved with someone else
-doing the same. Creating, changing and deleting a record are each a transaction: a record is
+doing the same. One call takes its rows in the order of their ids. A transaction that holds
+rows of several tables must take the tables in the same order as every other that holds the
+same rows (`holdRecord` in `records.ts` goes by table name), or two of them can each wait
+for the other. On Postgres a statement that fails ends its transaction, so inside one a
+unique index is not something to run into and catch: hold what the new row depends on, look
+for it, then add it. Creating, changing and deleting a record are each a transaction: a record is
 never saved without its line on the timeline. Keep a transaction to store calls: code that
 reaches the store some other way (an app's hook) is on another connection and doesn't see
 what isn't kept yet.
@@ -121,4 +132,18 @@ TEST_STORE=prisma   DATABASE_URL=... bun run test:integration
 ```
 
 Point `DATABASE_URL` at a database made for tests, with the schema pushed
-(`bun run db:push`). The tests write to it.
+(`bun run db:push` in `apps/starter`). The tests write to it.
+
+The tests of many-to-many relations have a config of their own
+(`packages/spools/tests/fixtures/relations.config.json`), and so a database of
+their own on Postgres: the one `DATABASE_URL` names with `_relations` after it,
+on the same server. Make it and push that config's schema to it before a run on
+`postgres` or `prisma`:
+
+```sh
+DATABASE_URL=... bun run --cwd packages/spools db:push:relations
+```
+
+It creates the database if it isn't there, writes the fixture's Prisma schema and
+contract (not committed) and pushes them. Those tests empty that database's
+records each time they start.

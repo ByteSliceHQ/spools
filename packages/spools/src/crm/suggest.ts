@@ -322,7 +322,9 @@ export function suggest(text: string, ctx: SuggestContext): Suggestion[] {
 
   // Records the object can point to.
   for (const r of (ctx.records ?? []).slice(0, PER_KIND * 2)) {
-    add({ field: r.field, op: 'in', value: [r.id] })
+    // A relations field holds many: "has any of" this one.
+    const many = fieldOf(obj, r.field)?.type === 'relations'
+    add({ field: r.field, op: many ? 'anyOf' : 'in', value: [r.id] })
   }
 
   // Amounts and dates, on every field that can hold one.

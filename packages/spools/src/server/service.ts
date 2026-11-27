@@ -39,11 +39,21 @@ type Change = { field: string; summary: string }
  * Values of encrypted and long-text fields are left out: the timeline is not
  * encrypted, and long text is noise.
  */
-function describeChanges(objectKey: string, previous: CrmRecord, next: CrmRecord): Change[] {
+function describeChanges(
+  objectKey: string,
+  previous: CrmRecord,
+  next: CrmRecord,
+  links: readonly records.LinksChanged[],
+): Change[] {
   const obj = getObject(objectKey)
   const changes: Change[] = []
 
   for (const [key, field] of Object.entries(obj.fields)) {
+    // What a relations field holds is not a value to compare: its changes are told apart below.
+    if (field.type === 'relations') {
+      continue
+    }
+
     const column = field.type === 'relation' ? `${key}Id` : key
     const before = previous[column] ?? null
     const after = next[column] ?? null
@@ -89,7 +99,29 @@ function describeChanges(objectKey: string, previous: CrmRecord, next: CrmRecord
     })
   }
 
+  // A relations field: the records it gained, then the ones it lost ("added Tags: VIP, Partner").
+  for (const { field, added, removed } of links) {
+    const label = fieldLabel(field, obj.fields[field])
+
+    if (added.length > 0) {
+      changes.push({ field, summary: `added ${label}: ${titleList(added)}` })
+    }
+
+    if (removed.length > 0) {
+      changes.push({ field, summary: `removed ${label}: ${titleList(removed)}` })
+    }
+  }
+
   return changes
+}
+
+/** How many titles a line on the timeline names before it counts the rest. */
+const TITLES_NAMED = 5
+
+const titleList = (options: readonly records.TitleOption[]): string => {
+  const named = options.slice(0, TITLES_NAMED).map((o) => o.title || 'Untitled')
+  const rest = options.length - named.length
+  return rest > 0 ? `${named.join(', ')} and ${rest} more` : named.join(', ')
 }
 
 export const createRecord = Effect.fn('service.createRecord')(function* (
@@ -192,13 +224,15 @@ export const updateRecord = Effect.fn('service.updateRecord')(function* (
     Effect.gen(function* () {
       // Held until the change is kept. A value that depends on another field (a stage on its
       // pipeline) is then checked against what the record really holds, not what it held a moment ago.
-      if (!(yield* records.holdRecord(objectKey, id))) {
+      // The records its relations fields are about to link are held with it, all in one order.
+      if (!(yield* records.holdRecord(objectKey, id, next))) {
         return null
       }
 
       const previous = yield* records.getRecord(objectKey, id)
+      const made = previous && (yield* records.changeRecord(objectKey, id, next))
 
-      if (!previous || !(yield* records.updateRecord(objectKey, id, next))) {
+      if (!previous || !made) {
         return null
       }
 
@@ -209,7 +243,7 @@ export const updateRecord = Effect.fn('service.updateRecord')(function* (
         return null
       }
 
-      for (const change of describeChanges(objectKey, previous, record)) {
+      for (const change of describeChanges(objectKey, previous, record, made.links)) {
         yield* records.addActivity({
           objectKey,
           recordId: id,

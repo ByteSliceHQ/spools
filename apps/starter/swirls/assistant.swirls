@@ -169,7 +169,7 @@ workflow crm_get {
 
 workflow crm_create {
   label: "Create record"
-  description: "Create a record. For relation fields pass <field>Id with the related record id."
+  description: "Create a record. For relation fields pass <field>Id with the related record id; for relations fields pass <field>Ids with a list of ids."
   root {
     type: code
     label: "Input"
@@ -204,7 +204,7 @@ workflow crm_create {
 
 workflow crm_update {
   label: "Update record"
-  description: "Update some fields of a record; only the fields passed in values change"
+  description: "Update some fields of a record; only the fields passed in values change. For relations fields pass <field>Ids: a list replaces the set, { add, remove } changes some of it."
   root {
     type: code
     label: "Input"

@@ -472,13 +472,17 @@ export function removeSql(table: AnyTable, predicate: Predicate): Sql {
   return w.done()
 }
 
-/** Holds the matching rows for the transaction it runs in. */
+/**
+ * Holds the matching rows for the transaction it runs in. They are taken in the
+ * order of their primary keys, so two transactions that hold the same rows of a
+ * table never each wait for a row the other has.
+ */
 export function lockSql(table: AnyTable, predicate: Predicate): Sql {
   const w = new Writer()
   const alias = w.alias()
   w.text(`SELECT 1 AS "n" FROM ${from(table)} AS ${alias}`)
   writeWhere(w, table, alias, predicate)
-  w.text(` FOR UPDATE OF ${alias}`)
+  w.text(` ORDER BY ${ref(alias, table.primary)} FOR UPDATE OF ${alias}`)
   return w.done()
 }
 

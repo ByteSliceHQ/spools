@@ -1,7 +1,7 @@
 import { Predicate } from 'effect'
 
 import type { CrmConfig } from '../../crm/config-schema'
-import { objectTables } from './objects'
+import { linkTables, objectTables } from './objects'
 import { searchDocument } from './sql'
 import { type AnyTable, type Column, columnName, type Kind } from './table'
 import { systemTables } from './tables'
@@ -25,6 +25,8 @@ const TYPE: Record<Kind, string> = {
   date: 'date',
   timestamp: 'timestamptz(3)',
 }
+
+const ON_DELETE = { restrict: 'RESTRICT', 'set null': 'SET NULL', cascade: 'CASCADE' } as const
 
 const ident = (name: string) => `"${name.replace(/"/g, '""')}"`
 const quoted = (text: string) => `'${text.replace(/'/g, "''")}'`
@@ -113,7 +115,7 @@ function createForeignKeys(table: AnyTable): string[] {
 
     const target = relation.table()
     const name = named(table.name, columnName(relation.column), 'fkey')
-    const rule = relation.onDelete === 'restrict' ? 'RESTRICT' : 'SET NULL'
+    const rule = ON_DELETE[relation.onDelete ?? 'set null']
     return [
       `DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = ${quoted(name)} AND conrelid = ${quoted(tableRef(table))}::regclass) THEN
@@ -141,6 +143,7 @@ export const allTables = (
   adapters: readonly { tables?: readonly AnyTable[] }[] = [],
 ): AnyTable[] => [
   ...Object.values(objectTables(cfg)),
+  ...linkTables(cfg).map((link) => link.table),
   ...systemTables,
   ...adapters.flatMap((a) => a.tables ?? []),
 ]

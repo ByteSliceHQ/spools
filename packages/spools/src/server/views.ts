@@ -313,13 +313,26 @@ export const calculate = Effect.fn('views.calculate')(function* (
 
   for (let offset = 0; offset < Math.min(total, CALCULATION_ROW_LIMIT); offset += 500) {
     rows.push(
-      ...(yield* listRecords({ objectKey, ...filter, limit: 500, offset, relations: 'titles' })),
+      // Only what is calculated: a relations field that isn't has none of its links read.
+      ...(yield* listRecords({
+        objectKey,
+        ...filter,
+        limit: 500,
+        offset,
+        relations: 'titles',
+        fields: columns,
+      })),
     )
   }
 
   for (const column of columns) {
     const values = rows.map((r) => r[column])
-    const present = values.filter((v) => v !== null && v !== undefined && v !== '')
+
+    // A relations field that holds nothing is an empty list.
+    const present = values.filter(
+      (v) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0),
+    )
+
     const numbers = present.map(Number).filter((n) => Number.isFinite(n))
     const kind = calculations[column]
 

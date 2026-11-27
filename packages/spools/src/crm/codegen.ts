@@ -1,6 +1,7 @@
 /**
  * Compiles a validated CRM config into a Prisma 8 schema (PSL): the system
- * tables (src/server/store/tables.ts) and one table per object. Pure function;
+ * tables (src/server/store/tables.ts), one table per object and one per
+ * many-to-many relation (src/server/store/objects.ts). Pure function;
  * scripts/crm-gen.ts does the file I/O.
  *
  * Every table is marked `@@rls` with no policies: the app connects as a
@@ -20,6 +21,8 @@ const SCALARS: Record<Kind, string> = {
   date: 'DateString',
   timestamp: 'DateTime',
 }
+
+const ON_DELETE = { restrict: 'Restrict', 'set null': 'SetNull', cascade: 'Cascade' } as const
 
 const doc = (words: string | undefined, indent = '') =>
   (words ?? '')
@@ -67,7 +70,7 @@ function model(table: AnyTable): string {
     }
 
     const opt = table.columns[relation.column]?.nullable ? '?' : ''
-    const onDelete = relation.onDelete === 'restrict' ? 'Restrict' : 'SetNull'
+    const onDelete = ON_DELETE[relation.onDelete ?? 'set null']
 
     lines.push(
       `  ${key} ${target.model}${opt} @relation("${table.model}_${key}", fields: [${relation.column}], references: [id], onDelete: ${onDelete})`,

@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import type { CrmField } from '../crm/field-types'
 import { cleanFilters } from '../crm/filters'
+import { idsKey } from '../crm/links'
 import * as marketing from './marketing'
 import * as records from './records'
 import { Invalid, messageOf, NotFound } from './runtime/errors'
@@ -106,6 +107,12 @@ function describeField(key: string, f: CrmField): FieldSummary {
   if (f.type === 'relation') {
     summary.to = f.to
     summary.writeAs = `${key}Id`
+  }
+
+  // Many records: a list of ids replaces them, `{ add, remove }` changes some.
+  if (f.type === 'relations') {
+    summary.to = f.to
+    summary.writeAs = idsKey(key)
   }
 
   if (f.searchable) {

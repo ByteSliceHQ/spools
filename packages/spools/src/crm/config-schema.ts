@@ -1,10 +1,13 @@
 import { z } from 'zod'
 
+import { systemTables } from '../server/store/tables'
 import { fieldSchema, ident, isTextLike } from './field-types'
 import { isFolderName } from './files'
 import { cleanFilters, cleanSort, resolveTarget, SYSTEM_COLUMNS } from './filters'
 import { checkGuides } from './guides'
+import { inverseOf, linkEnds, linksTableName, reservedBy } from './links'
 import { DELIVERIES, type TagKind, TAGS } from './marketing'
+import { modelName, tableName } from './naming'
 import { durationPattern } from './sequences'
 
 export { type CrmField, fieldSchema } from './field-types'
@@ -423,6 +426,69 @@ export const crmConfigSchema = z
 
     const reserved = new Set(['id', ...Object.keys(SYSTEM_COLUMNS)])
 
+    // Every table has a name and a model of its own. The CRM's own tables come first: a server
+    // on PGlite makes its tables from the config as it starts, without `crm:gen` to refuse a
+    // clash, and would keep an object's records or a field's links in a system table of that name.
+    const own = "one of the CRM's own tables"
+    const tableNames = new Map(systemTables.map((t) => [t.name, own]))
+    const modelNames = new Map(systemTables.map((t) => [t.model, own]))
+
+    for (const [objKey, obj] of Object.entries(cfg.objects)) {
+      for (const [names, name, what] of [
+        [tableNames, tableName(objKey), 'table'],
+        [modelNames, modelName(objKey, obj), 'model'],
+      ] as const) {
+        if (names.get(name) === own) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['objects', objKey],
+            message: `its records would be kept in the ${what} "${name}", which is ${own}. Rename the object`,
+          })
+        }
+
+        names.set(name, `${objKey}'s`)
+      }
+    }
+
+    // A relations field's links are rows of a table of their own, named after the field that owns
+    // it. That name, and the name of its model, must be no other table's.
+    for (const [objKey, obj] of Object.entries(cfg.objects)) {
+      for (const [fKey, f] of Object.entries(obj.fields)) {
+        if (f.type !== 'relations' || f.inverse !== undefined) {
+          continue
+        }
+
+        const name = linksTableName(objKey, fKey)
+        const model = `${modelName(objKey, obj)}${fKey.charAt(0).toUpperCase()}${fKey.slice(1)}`
+        const fPath = ['objects', objKey, 'fields', fKey]
+
+        for (const [taken, what] of [
+          [tableNames.get(name), `table "${name}"`],
+          [modelNames.get(model), `model "${model}"`],
+        ] as const) {
+          if (taken !== undefined) {
+            ctx.addIssue({
+              code: 'custom',
+              path: fPath,
+              message: `its links would be kept in the ${what}, which is ${taken}. Rename the field${taken === own ? '' : ' or that object'}`,
+            })
+          }
+        }
+
+        tableNames.set(name, `${objKey}.${fKey}'s`)
+        modelNames.set(model, `${objKey}.${fKey}'s`)
+
+        // Postgres cuts a longer name short without saying so.
+        if (name.length > 63) {
+          ctx.addIssue({
+            code: 'custom',
+            path: fPath,
+            message: `its links table would be named "${name}", which is longer than the 63 characters Postgres allows. Use a shorter key`,
+          })
+        }
+      }
+    }
+
     for (const [objKey, obj] of Object.entries(cfg.objects)) {
       const path = ['objects', objKey]
       const fieldKeys = new Set(Object.keys(obj.fields))
@@ -432,6 +498,12 @@ export const crmConfigSchema = z
           code: 'custom',
           path: [...path, 'titleField'],
           message: `unknown field "${obj.titleField}"`,
+        })
+      } else if (obj.fields[obj.titleField]?.type === 'relations') {
+        ctx.addIssue({
+          code: 'custom',
+          path: [...path, 'titleField'],
+          message: `"${obj.titleField}" holds many records; a title is one value`,
         })
       }
 
@@ -456,12 +528,75 @@ export const crmConfigSchema = z
           })
         }
 
-        if (f.type === 'relation' && !objectKeys.has(f.to)) {
+        if ((f.type === 'relation' || f.type === 'relations') && !objectKeys.has(f.to)) {
           ctx.addIssue({
             code: 'custom',
             path: [...fPath, 'to'],
             message: `unknown object "${f.to}"`,
           })
+        }
+
+        if (f.type === 'relations') {
+          for (const name of reservedBy(fKey)) {
+            if (fieldKeys.has(name)) {
+              ctx.addIssue({
+                code: 'custom',
+                path: [...path, 'fields', name],
+                message: `"${name}" is reserved by the relations field "${fKey}"`,
+              })
+            }
+          }
+
+          if (f.required) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [...fPath, 'required'],
+              message: 'a relations field can be empty; it has no "required"',
+            })
+          }
+
+          const other = objectKeys.has(f.to) ? cfg.objects[f.to] : undefined
+          const named = f.inverse === undefined ? undefined : other?.fields[f.inverse]
+
+          if (f.inverse !== undefined && other) {
+            const iPath = [...fPath, 'inverse']
+            const theirs = `${f.to}.${f.inverse}`
+
+            if (!Object.hasOwn(other.fields, f.inverse) || named?.type !== 'relations') {
+              ctx.addIssue({
+                code: 'custom',
+                path: iPath,
+                message: `${f.to} has no relations field "${f.inverse}"`,
+              })
+            } else if (named.to !== objKey) {
+              ctx.addIssue({
+                code: 'custom',
+                path: iPath,
+                message: `${theirs} leads to ${named.to}, not ${objKey}`,
+              })
+            } else if (named.inverse !== undefined) {
+              ctx.addIssue({
+                code: 'custom',
+                path: iPath,
+                message:
+                  named.inverse === fKey
+                    ? `${objKey}.${fKey} and ${theirs} name each other: set "inverse" on one of them only (the other owns the links)`
+                    : `${theirs} is itself the inverse of ${objKey}.${named.inverse}; name a field that has no "inverse"`,
+              })
+            } else if (inverseOf(cfg.objects, f.to, f.inverse) !== fKey) {
+              ctx.addIssue({
+                code: 'custom',
+                path: iPath,
+                message: `${theirs} already has an inverse (${objKey}.${inverseOf(cfg.objects, f.to, f.inverse)})`,
+              })
+            } else if (!linkEnds(cfg.objects, objKey, fKey)) {
+              ctx.addIssue({
+                code: 'custom',
+                path: iPath,
+                message: `${theirs} can't be its inverse`,
+              })
+            }
+          }
         }
 
         if (f.encrypted && !isTextLike(f.type)) {
@@ -556,7 +691,17 @@ export const crmConfigSchema = z
           }
         }
 
-        if (cleanSort(cfg.objects, objKey, sorts).length !== sorts.length) {
+        const unsortable = sorts.filter((s) => obj.fields[s.field]?.type === 'relations')
+
+        for (const s of unsortable) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [...vPath, 'sort'],
+            message: `can't sort by "${s.field}": it holds many records`,
+          })
+        }
+
+        if (cleanSort(cfg.objects, objKey, sorts).length !== sorts.length - unsortable.length) {
           ctx.addIssue({
             code: 'custom',
             path: [...vPath, 'sort'],
