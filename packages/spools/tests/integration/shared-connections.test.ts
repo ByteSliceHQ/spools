@@ -72,6 +72,7 @@ const base = (label: string): IntegrationProvider => ({
 
 /** Who may manage the ledger. Changed by a test to play someone losing the right mid-flow. */
 let managers = [ada.email]
+
 /** The provider objects, so a test can change what one says between the two halves of a flow. */
 const offered: Record<string, IntegrationProvider> = {
   // The whole company's books: only Ada may connect or remove them.
@@ -211,6 +212,7 @@ const connect = async (who: CrmUser | string, provider: string, flow: Flow = {})
   finish(who, provider, flow, await start(who, provider, flow))
 
 const rows = (provider: string) => db.find(Integration, { where: { provider } })
+
 const refused = (promise: Promise<unknown>) =>
   expect(promise).rejects.toBeInstanceOf(IntegrationError)
 
@@ -247,6 +249,7 @@ describe('a connection for the team', () => {
     const [found] = await run(
       findConnections({ provider: ledger, shared: 'team', usableBy: bob.id }),
     )
+
     expect(found).toMatchObject({ account: 'company-1', connectedBy: 'Ada' })
     expect(await run(getAccessToken(found!.id, undefined, bob.id))).toMatch(/^access-/)
     // A schedule or an automation: nobody to check, as before.
@@ -313,6 +316,7 @@ describe('a connection for a group', () => {
 
   test('is only returned for its group', async () => {
     const south = await connect(bob, branch, { group: 'south', company: 'South-Co' })
+
     const of = async (filter: Parameters<typeof findConnections>[0]) =>
       (await run(findConnections({ provider: branch, ...filter }))).map((c) => c.account)
 
@@ -329,10 +333,12 @@ describe('a connection for a group', () => {
   test('one account can serve two groups, as two connections', async () => {
     const again = await connect(ada, branch, { group: 'south', company: 'North-Co' })
     const all = await run(findConnections({ provider: branch, shared: 'group' }))
+
     expect(all.filter((c) => c.account === 'north-co').map((c) => c.group)).toEqual([
       'north',
       'south',
     ])
+
     expect(await run(disconnect(ada, again.id))).toBe(true)
   })
 })
@@ -362,6 +368,7 @@ describe('who may connect, replace and disconnect', () => {
   test('a rule that throws lets nobody in', async () => {
     const provider = offered[ledger]!
     const rule = provider.canManage
+
     provider.canManage = () => {
       throw new Error('directory is down')
     }
@@ -414,6 +421,7 @@ describe("the callback's state", () => {
     const connection = await finish(ada, branch, { company: 'North-Co' }, started, {
       group: 'south',
     })
+
     expect(connection).toMatchObject({ shared: 'group', group: 'north' })
     expect(await run(findConnections({ provider: branch, group: 'south' }))).toEqual([])
   })
@@ -426,6 +434,7 @@ describe("the callback's state", () => {
       const forged = Buffer.from(JSON.stringify({ ...payloadOf(state), ...change })).toString(
         'base64url',
       )
+
       await refused(
         finish(bob, branch, { company: 'South-Co' }, { state: `${forged}.${signature}`, cookie }),
       )
@@ -444,6 +453,7 @@ describe("the callback's state", () => {
     await refused(
       finish(ada, ledger, {}, { state: signed({ u: ada.id, p: ledger, n: nonce, e }), cookie }),
     )
+
     // A shared state, sent to a provider whose connections are each person's own.
     await refused(
       finish(
@@ -453,6 +463,7 @@ describe("the callback's state", () => {
         { state: signed({ u: ada.id, p: own, n: nonce, e, o: 'team' }), cookie },
       ),
     )
+
     // A team state, sent where connections are per group, and a group one where they are the team's.
     await refused(
       finish(
@@ -462,6 +473,7 @@ describe("the callback's state", () => {
         { state: signed({ u: ada.id, p: branch, n: nonce, e, o: 'team' }), cookie },
       ),
     )
+
     await refused(
       finish(
         ada,
@@ -470,6 +482,7 @@ describe("the callback's state", () => {
         { state: signed({ u: ada.id, p: ledger, n: nonce, e, o: 'group', g: 'north' }), cookie },
       ),
     )
+
     // A group the provider does not list.
     await refused(
       finish(
@@ -539,6 +552,7 @@ describe('sealed tokens', () => {
     expect(ownerOf(row)).toBe(JSON.stringify(['integration', 'u', 'p', 'a']))
     expect(ownerOf({ ...row, shared: '', groupKey: '' })).toBe(ownerOf(row))
     expect(ownerOf({ ...row, shared: 'team', groupKey: '' })).not.toBe(ownerOf(row))
+
     expect(ownerOf({ ...row, shared: 'group', groupKey: 'north' })).not.toBe(
       ownerOf({ ...row, shared: 'group', groupKey: 'south' }),
     )
@@ -588,6 +602,7 @@ describe('what the Integrations page is sent', () => {
       shared: 'team',
       canManage: false,
     })
+
     expect(forBob.providers.find((p) => p.id === own)).toMatchObject({ shared: null })
   })
 
@@ -628,6 +643,7 @@ describe('what the Integrations page is sent', () => {
     const shown = (await run(connectionsOverview(bob))).shared.find((c) => c.id === team!.id)
     expect(shown).toMatchObject({ status: 'error' })
     expect(shown?.lastError).toContain('Reconnect company-1')
+
     expect(await connect(ada, ledger)).toMatchObject({
       id: team!.id,
       status: 'connected',
@@ -674,8 +690,10 @@ describe('connections made before a provider was shared', () => {
     const [found] = await run(
       findConnections({ provider: always, shared: 'team', usableBy: bob.id }),
     )
+
     expect(found).toMatchObject({ id: old.id, shared: 'team', connectedBy: 'Ada', userId: ada.id })
     expect(await run(getAccessToken(old.id, undefined, bob.id))).toBe('old-legacy-co')
+
     expect(await run(listConnections(ada.id))).not.toContainEqual(
       expect.objectContaining({ id: old.id }),
     )

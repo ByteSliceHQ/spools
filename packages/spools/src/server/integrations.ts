@@ -410,8 +410,20 @@ const signer = Effect.gen(function* () {
     createHmac('sha256', secret).update(`oauth:${payload}`).digest('base64url')
 })
 
-/** What a signed `state` carries: the user, the provider, the nonce and when it expires. */
-const State = z.object({ u: z.string(), p: z.string(), n: z.string(), e: z.number() })
+/**
+ * What a signed `state` carries: the user, the provider, the nonce and when it
+ * expires, and for a shared connection whose it will be (`o`, and the group in
+ * `g`). A state that names no owner is for a connection of the user's own.
+ */
+const State = z.object({
+  u: z.string(),
+  p: z.string(),
+  n: z.string(),
+  e: z.number(),
+  o: z.enum(['team', 'group']).optional(),
+  g: z.string().optional(),
+})
+
 type State = z.infer<typeof State>
 
 export type AuthRequest = {
@@ -422,16 +434,53 @@ export type AuthRequest = {
 }
 
 /**
+ * Checks that a connection may be made for an owner, by this person, now: the
+ * provider's connections are that kind, the group is one it lists, and the
+ * person may manage it. Asked when a connection is started and again when the
+ * provider sends the browser back, because ten minutes pass in between and
+ * the answer is the provider's as it stands, not as it was signed.
+ */
+const checkOwner = Effect.fn('integrations.checkOwner')(function* (
+  id: string,
+  p: IntegrationProvider,
+  who: Who,
+  owner: Owner,
+) {
+  if (owner.shared !== (p.shared ?? null)) {
+    return yield* refuse(
+      `Who ${p.label} is connected for changed while you were connecting it. Try connecting again.`,
+    )
+  }
+
+  if (
+    owner.shared === 'group' &&
+    !(yield* groupsOf(id, p)).some((group) => group.key === owner.group)
+  ) {
+    return yield* refuse(`That is not a group ${p.label} can be connected for`)
+  }
+
+  // A connection of one's own is one's own to make.
+  if (owner.shared !== null && !(yield* mayManage(id, p, who, owner.group))) {
+    return yield* refuse(`Only the people who manage ${p.label} for this CRM can connect it`)
+  }
+
+  return owner
+})
+
+/**
  * Build the provider's consent URL for a teammate.
  *
  * The `state` is signed and names the user, so a callback can't be replayed for
  * someone else; a nonce and the PKCE verifier stay in a cookie, so the callback
- * only works in the browser that started it.
+ * only works in the browser that started it. For a shared provider the state
+ * also says whose the connection will be: the team's, or the group in
+ * `options.group`. Nothing else ever decides that.
  */
 export const createAuthRequest = Effect.fn('integrations.createAuthRequest')(function* (
   id: string,
-  userId: string,
+  who: Who,
   now = Date.now(),
+  options: { group?: string } = {},
 ) {
   const p = yield* provider(id)
   const env = yield* config.environment
@@ -446,14 +495,36 @@ export const createAuthRequest = Effect.fn('integrations.createAuthRequest')(fun
     return yield* refuse(`Accounts can't be connected yet: ${problems.join('; ')}`)
   }
 
+  if (p.shared !== 'group' && options.group !== undefined) {
+    return yield* refuse(`${p.label} is not connected for one group`)
+  }
+
+  if (p.shared === 'group' && !options.group) {
+    return yield* refuse(`Choose who to connect ${p.label} for`)
+  }
+
+  const owner: Owner =
+    p.shared === 'group'
+      ? { shared: 'group', group: options.group ?? '' }
+      : { shared: p.shared ?? null, group: null }
+
+  yield* checkOwner(id, p, who, owner)
+
   const sign = yield* signer
 
   const nonce = randomBytes(16).toString('base64url')
   const verifier = randomBytes(32).toString('base64url')
+  const state: State = { u: idOf(who), p: id, n: nonce, e: now + STATE_TTL_MS }
 
-  const payload = Buffer.from(
-    JSON.stringify({ u: userId, p: id, n: nonce, e: now + STATE_TTL_MS } satisfies State),
-  ).toString('base64url')
+  if (owner.shared !== null) {
+    state.o = owner.shared
+  }
+
+  if (owner.group !== null) {
+    state.g = owner.group
+  }
+
+  const payload = Buffer.from(JSON.stringify(state)).toString('base64url')
 
   const params = new URLSearchParams({
     client_id: env[p.clientId] ?? '',
@@ -474,8 +545,12 @@ export const createAuthRequest = Effect.fn('integrations.createAuthRequest')(fun
   return request
 })
 
-/** Check a callback's `state` against its signature, expiry, user and cookie. Returns the PKCE verifier. */
-export const verifyState = Effect.fn('integrations.verifyState')(function* (
+/**
+ * Check a callback's `state` against its signature, expiry, user and cookie.
+ * Returns the PKCE verifier and whose the connection is to be, which the
+ * signature covers: the callback has no other say in it.
+ */
+export const readState = Effect.fn('integrations.readState')(function* (
   id: string,
   state: string | null,
   cookie: string | null | undefined,
@@ -515,12 +590,26 @@ export const verifyState = Effect.fn('integrations.verifyState')(function* (
     parsed.e < now ||
     !nonce ||
     !verifier ||
-    parsed.n !== nonce
+    parsed.n !== nonce ||
+    // A group's state names its group, and no other state names one.
+    (parsed.o === 'group') !== (parsed.g !== undefined && parsed.g !== '')
   ) {
     return yield* expired
   }
 
-  return verifier
+  const owner: Owner = { shared: parsed.o ?? null, group: parsed.g ?? null }
+  return { verifier, ...owner }
+})
+
+/** Check a callback's `state` against its signature, expiry, user and cookie. Returns the PKCE verifier. */
+export const verifyState = Effect.fn('integrations.verifyState')(function* (
+  id: string,
+  state: string | null,
+  cookie: string | null | undefined,
+  userId: string,
+  now = Date.now(),
+) {
+  return (yield* readState(id, state, cookie, userId, now)).verifier
 })
 
 // ── Talking to the provider ─────────────────────────────────────────────────
@@ -799,6 +888,10 @@ const accountOf = Effect.fn('integrations.accountOf')(function* (
  * Finish a connection: trade the code for tokens, find out which account it is,
  * encrypt the tokens and store them. Connecting the same account again replaces
  * its stored tokens.
+ *
+ * Whose the connection is comes from the signed state alone. A shared one
+ * replaces the team's (or that group's) connection to the same account whoever
+ * made it, keeping its id, and records who connected it now.
  */
 export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
   id: string,
@@ -808,11 +901,15 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
     cookie: string | null | undefined
     query?: URLSearchParams
   },
-  userId: string,
+  who: Who,
+  now = Date.now(),
 ) {
   const p = yield* provider(id)
   const env = yield* config.environment
-  const verifier = yield* verifyState(id, input.state, input.cookie, userId)
+  const userId = idOf(who)
+  const { verifier, ...owner } = yield* readState(id, input.state, input.cookie, userId, now)
+  // Before the code is spent: a flow that may not finish asks the provider for nothing.
+  yield* checkOwner(id, p, who, owner)
 
   const token = yield* tokenRequest(id, {
     grant_type: 'authorization_code',
@@ -838,9 +935,16 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
   }
 
   // Sealed before anything is written: if encryption fails, nothing is stored.
-  const where = { userId, provider: id, account }
+  const where = {
+    userId,
+    provider: id,
+    account,
+    shared: owner.shared ?? '',
+    groupKey: owner.group ?? '',
+  }
+
   const vault = yield* Vault
-  const credentials = yield* vault.seal(toCredentials(token), ownerOf(where))
+  const credentials = yield* vault.seal(toCredentials(token, undefined, now), ownerOf(where))
   const store = yield* Store
 
   const row = {
@@ -850,12 +954,38 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
     lastError: null,
   }
 
-  const existing = yield* store.first(Integration, { where })
+  if (owner.shared === null) {
+    const existing = yield* store.first(Integration, { where })
 
-  if (existing) {
-    yield* store.update(Integration, { where: { id: existing.id } }, row)
+    if (existing) {
+      yield* store.update(Integration, { where: { id: existing.id } }, row)
+    } else {
+      yield* store.insert(Integration, { ...where, ...row })
+    }
   } else {
-    yield* store.insert(Integration, { ...where, ...row })
+    // The team's (or the group's) connection to this account, whoever connected it, and
+    // whether its row says so or it is one of a provider whose rows were always the team's.
+    const candidates = owned(
+      yield* store.find(Integration, {
+        where: { provider: id, account },
+        order: [asc('createdAt')],
+      }),
+    ).filter((c) => c.owner.shared === owner.shared && c.owner.group === owner.group)
+
+    const existing = (candidates.find((c) => c.row.userId === userId) ?? candidates[0])?.row
+
+    const shared = {
+      ...row,
+      connectedByName: personOf(who)?.name ?? null,
+      connectedAt: new Date(now),
+    }
+
+    if (existing) {
+      // The row becomes this person's connection for the team: the tokens were sealed for exactly that.
+      yield* store.update(Integration, { where: { id: existing.id } }, { ...where, ...shared })
+    } else {
+      yield* store.insert(Integration, { ...where, ...shared })
+    }
   }
 
   const saved = yield* store.first(Integration, { where })
@@ -864,7 +994,7 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
     return yield* refuse('The connection could not be saved')
   }
 
-  return toConnection(saved, PERSONAL)
+  return toConnection(saved, owner)
 })
 
 /** A teammate's own connections. Tokens never leave this module. */

@@ -58,7 +58,8 @@ export const integrationCallbackHandlers = {
           cookie: cookieValue(request.headers.get('cookie'), OAUTH_COOKIE),
           query,
         },
-        user.id,
+        // Whose the connection is comes from the signed state: nothing in this address decides it.
+        user,
       ).pipe(
         Effect.tap(() =>
           Effect.sync(() => {

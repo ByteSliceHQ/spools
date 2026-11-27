@@ -105,6 +105,7 @@ describe('what a provider says about whose its connections are', () => {
       },
       () => {
         expect(validateIntegrations()).toEqual([])
+
         expect(Object.keys(providers())).toEqual([
           'google',
           'microsoft',
@@ -185,6 +186,7 @@ describe('the state of a connection in progress', () => {
   test("names the team or the group, and nothing for a connection of one's own", async () => {
     await withIntegrations(app, async () => {
       const own = await start('own')
+
       expect(await run(readState('own', own.state, own.cookie, ada.id))).toEqual({
         verifier: own.cookie.split('.')[1]!,
         shared: null,
@@ -192,12 +194,14 @@ describe('the state of a connection in progress', () => {
       })
 
       const team = await start('team')
+
       expect(await run(readState('team', team.state, team.cookie, ada.id))).toMatchObject({
         shared: 'team',
         group: null,
       })
 
       const north = await start('branch', 'north')
+
       expect(await run(readState('branch', north.state, north.cookie, ada.id))).toMatchObject({
         shared: 'group',
         group: 'north',
@@ -205,6 +209,7 @@ describe('the state of a connection in progress', () => {
 
       // The group is in the signed state and nowhere else in the address the browser is sent to.
       expect([...north.url.searchParams.keys()]).not.toContain('group')
+
       // The older check still answers with the verifier alone.
       expect(await run(verifyState('branch', north.state, north.cookie, ada.id))).toBe(
         north.cookie.split('.')[1]!,
@@ -216,6 +221,7 @@ describe('the state of a connection in progress', () => {
     await withIntegrations(app, async () => {
       const north = await start('branch', 'north')
       const other = await start('branch', 'south')
+
       const read = (...args: Parameters<typeof readState>) =>
         expect(run(readState(...args))).rejects.toBeInstanceOf(IntegrationError)
 
