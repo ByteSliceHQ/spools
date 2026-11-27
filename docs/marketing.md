@@ -55,7 +55,15 @@ as every integration does. A network's account is offered on the Integrations pa
 a channel or ad account in the config uses it. Any teammate can connect it. The account is
 then shared: the CRM posts through it whoever presses the button, so connect the account
 the business posts as, not a personal one you would not lend. Its tokens stay sealed in
-the vault, and no teammate can read them or remove the connection but the one who made it.
+the vault, and no teammate can read them.
+
+It is a [shared connection](integrations.md#shared-connections) like any other: the page
+lists it under **Shared with the team** for everyone, with who connected it, and any
+teammate can reconnect or disconnect it, so it does not depend on the person who
+connected it still being here. An account connected before shared connections were
+listed this way needs nothing done to it. To limit who may connect and disconnect one,
+replace its provider with your own of the same id in `src/app/extensions.ts` (its OAuth
+settings and all) and give it `canManage`.
 
 **LinkedIn.** Create an app at linkedin.com/developers and add the products _Sign In with
 LinkedIn using OpenID Connect_ and _Share on LinkedIn_. Posting to a company page needs

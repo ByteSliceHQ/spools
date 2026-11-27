@@ -18,7 +18,9 @@ These are the boundaries the code enforces:
 | The email provider                        | Report bounces and complaints to `/api/webhooks/email`                                                                 | The email adapter checks the signature (Resend: Svix, with `RESEND_WEBHOOK_SECRET`). Refused when no secret is set                                         |
 
 There are no per-user roles inside the CRM: every allowed user has the same access.
-Use separate deployments if you need hard separation.
+Use separate deployments if you need hard separation. The one narrower rule is who may
+connect and disconnect an account shared with the team, when its provider says
+(`canManage`, below). It limits managing the connection, not using it.
 
 ## Things to know
 
@@ -61,10 +63,33 @@ Use separate deployments if you need hard separation.
   teammate and is tied to their browser by a cookie. A teammate removed from
   `access` keeps their stored tokens until they are deleted, but their mailboxes
   stop being read. See [docs/integrations.md](integrations.md).
-- **Marketing.** An account connected for marketing (LinkedIn, X, Google Ads) is the
-  one kind of connection that is shared: any CRM user can publish through it from the
-  Marketing page, whoever connected it. Its tokens are sealed like any other, and no
-  browser is sent one. `META_ACCESS_TOKEN` is a token for the business's page and ad
+- **Shared connections.** A provider can make its connections the team's, or one group's
+  (`shared` in `src/app/extensions.ts`). Every CRM user can then see that the connection
+  exists and act through it, whoever connected it, and it goes on working after that
+  person is removed from `access`: it was connected for the business, not for them. So
+  connect an account the business owns, and remember that removing a person does not
+  remove what they connected for the team; disconnect it if it should go with them.
+  - Who may connect, reconnect and disconnect one is every CRM user, or only those the
+    provider's `canManage` names. It is checked on the server when a connection is
+    started, again when the provider sends the browser back, and on disconnect. A rule
+    that fails lets nobody in.
+  - The signed `state` also says whose the connection will be (the team's, or which
+    group's), and the callback reads that from nowhere else, then checks it against what
+    the provider says now. A `state` for a personal connection can't be replayed to make
+    a shared one, nor one group's for another.
+  - A shared connection's tokens are sealed for a name that includes whose it is. Editing
+    a row in the database to turn a personal connection into a shared one, or to move it
+    to another group, leaves tokens the CRM refuses to open.
+  - Groups are labels today, not permissions: any CRM user can use any group's
+    connection. `findConnections({ usableBy })` and `getAccessToken(id, { as })` refuse
+    someone who is not a CRM user, and a personal connection to anyone but its owner,
+    when an app's code says who it is acting for. Code that does not say is trusted.
+  - No browser is sent a token. The page is sent the account's name, whose it is, who
+    connected it and its state.
+- **Marketing.** An account connected for marketing (LinkedIn, X, Google Ads) is a
+  shared connection: any CRM user can publish through it from the Marketing page,
+  whoever connected it, and can see, reconnect or disconnect it on the Integrations
+  page. Its tokens are sealed like any other, and no browser is sent one. `META_ACCESS_TOKEN` is a token for the business's page and ad
   account: treat it as you treat the database's password. Only a CRM user can schedule or
   publish a post. The tool API can save a draft and nothing more, so text the assistant
   read can't put a post out. The website check fetches the address in `crm.config.json`
