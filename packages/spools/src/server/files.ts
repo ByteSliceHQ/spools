@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { Clock, Effect } from 'effect'
+import { Clock, Effect, Predicate } from 'effect'
 import { z } from 'zod'
 
 import { LIBRARY_LABEL, MAX_UPLOAD_BYTES, safeName } from '../crm/files'
@@ -11,7 +11,7 @@ import { FilesError, fromHook, type StaffError } from './runtime/errors'
 import { type FileChange, FileStore, type FolderChange, type StoredFolder } from './runtime/files'
 import { asSystem, recordScope, scopesOn } from './scopes'
 import { crmConfig, getObject, objectTable, spool } from './spool'
-import { oneOf } from './store/query'
+import { neq, oneOf } from './store/query'
 import { Store } from './store/store'
 import { FileUpload, RecordFolder } from './store/tables'
 import type { CrmUser } from './users'
@@ -166,6 +166,64 @@ const notThere = () => new FilesError({ message: 'Not found', status: 404 })
 const within = (held: ScopeAccess['read'], scope: string | null) =>
   held === 'all' || scope === EVERY_SCOPE || (scope !== null && held.includes(scope))
 
+/**
+ * What a record's row holds in place of a folder's id while its folder is being
+ * made (`recordFolder`): where the folder is going. No store gives out an id
+ * like it: theirs are UUIDs. Until the row learns the folder's id it owns the
+ * folder at that path.
+ */
+const RESERVED = 'reserved:'
+const isReserved = (folderId: string) => folderId.startsWith(RESERVED)
+const reservation = (drive: string, path: string) => `${RESERVED}${drive}:${path}`
+
+/** A folder by its id and where it is from the store's top level, which is how a row still being made knows it. */
+type Placed = { id: string; path: string }
+
+/** The folders of a trail, each with its path. */
+const placed = (trail: readonly Crumb[]): Placed[] =>
+  trail.map((crumb, i) => ({
+    id: crumb.id,
+    path: trail
+      .slice(0, i + 1)
+      .map((c) => c.name)
+      .join('/'),
+  }))
+
+/**
+ * The scopes of the records these folders belong to, by folder: none for a
+ * folder that is no record's. Asked as the system, since a record out of reach
+ * has a row the person asking can't see.
+ */
+const ownersOf = Effect.fn('files.ownersOf')(function* (folders: readonly Placed[]) {
+  const owners = new Map<string, (string | null)[]>()
+
+  if (folders.length === 0) {
+    return owners
+  }
+
+  const db = yield* Store
+  const drive = yield* (yield* FileStore).drive
+
+  for (let at = 0; at < folders.length; at += 250) {
+    const batch = folders.slice(at, at + 250)
+    const byPath = new Map(batch.map((f) => [reservation(drive, f.path), f.id]))
+
+    const rows = yield* asSystem(
+      db.find(RecordFolder, {
+        select: ['folderId', 'scope'],
+        filter: oneOf('folderId', [...batch.map((f) => f.id), ...byPath.keys()]),
+      }),
+    )
+
+    for (const row of rows) {
+      const id = byPath.get(row.folderId) ?? row.folderId
+      owners.set(id, [...(owners.get(id) ?? []), row.scope])
+    }
+  }
+
+  return owners
+})
+
 /** Fails as a missing folder would unless `folderId` is within reach. Nothing to check in a Spool without scopes. */
 const folderInReach = Effect.fn('files.folderInReach')(function* (
   folderId: string | null,
@@ -190,42 +248,28 @@ const folderInReach = Effect.fn('files.folderInReach')(function* (
     return undefined
   }
 
-  const trail = yield* trailTo(folderId)
-  const db = yield* Store
+  const owners = yield* ownersOf(placed(yield* trailTo(folderId)))
 
-  // Whose folders these are is asked as the system: a record out of reach has a row this person can't see.
-  const owners = yield* asSystem(
-    db.find(RecordFolder, {
-      filter: oneOf(
-        'folderId',
-        trail.map((crumb) => crumb.id),
-      ),
-    }),
-  )
-
-  return owners.every((owner) => within(access[mode], owner.scope)) ? undefined : yield* notThere()
+  return [...owners.values()].flat().every((scope) => within(access[mode], scope))
+    ? undefined
+    : yield* notThere()
 })
 
 /** Of these folders, the ones that are the folder of a record out of reach. */
-const foldersOutOfReach = Effect.fn('files.foldersOutOfReach')(function* (ids: readonly string[]) {
+const foldersOutOfReach = Effect.fn('files.foldersOutOfReach')(function* (
+  folders: readonly Placed[],
+) {
   const hidden = new Set<string>()
 
-  if (!scopesOn() || ids.length === 0) {
+  if (!scopesOn() || folders.length === 0) {
     return hidden
   }
 
   const access = yield* CurrentAccess
-  const db = yield* Store
 
-  for (let at = 0; at < ids.length; at += 500) {
-    const owners = yield* asSystem(
-      db.find(RecordFolder, { filter: oneOf('folderId', ids.slice(at, at + 500)) }),
-    )
-
-    for (const owner of owners) {
-      if (!access || !within(access.read, owner.scope)) {
-        hidden.add(owner.folderId)
-      }
+  for (const [id, scopes] of yield* ownersOf(folders)) {
+    if (!access || !scopes.every((scope) => within(access.read, scope))) {
+      hidden.add(id)
     }
   }
 
@@ -255,15 +299,15 @@ const nothingBeneathOutOfReach = Effect.fn('files.nothingBeneathOutOfReach')(fun
   }
 
   const files = yield* FileStore
-  const db = yield* Store
-  const beneath: string[] = []
+  const beneath: Placed[] = []
+  const [top] = placed(yield* trailTo(folderId)).slice(-1)
 
-  for (let queue = [folderId]; queue.length > 0;) {
-    const next: string[] = []
+  for (let queue = top ? [top] : []; queue.length > 0;) {
+    const next: Placed[] = []
 
-    for (const id of queue) {
+    for (const { id, path } of queue) {
       const inside = yield* files.list(id)
-      next.push(...inside.folders.map((f) => f.id))
+      next.push(...inside.folders.map((f) => ({ id: f.id, path: `${path}/${f.name}` })))
 
       if (inside.truncated || beneath.length + next.length > BENEATH_LIMIT) {
         return yield* fail(
@@ -276,16 +320,12 @@ const nothingBeneathOutOfReach = Effect.fn('files.nothingBeneathOutOfReach')(fun
     queue = next
   }
 
-  for (let at = 0; at < beneath.length; at += 500) {
-    const owners = yield* asSystem(
-      db.find(RecordFolder, { filter: oneOf('folderId', beneath.slice(at, at + 500)) }),
-    )
+  const owners = yield* ownersOf(beneath)
 
-    if (owners.some((owner) => !within(access.write, owner.scope))) {
-      return yield* fail(
-        "This folder holds the folders of records you can't change, so it can't be renamed, moved or deleted by you.",
-      )
-    }
+  if (![...owners.values()].flat().every((scope) => within(access.write, scope))) {
+    return yield* fail(
+      "This folder holds the folders of records you can't change, so it can't be renamed, moved or deleted by you.",
+    )
   }
 
   return undefined
@@ -364,10 +404,14 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
     yield* remember(folder)
   }
 
-  // A record's folder is listed only for those who can reach the record.
-  const hidden = yield* foldersOutOfReach(inside.folders.map((f) => f.id))
-  const shownFolders = inside.folders.filter((f) => !hidden.has(f.id))
   const under = trail.map((c) => c.name).join('/')
+
+  // A record's folder is listed only for those who can reach the record.
+  const hidden = yield* foldersOutOfReach(
+    inside.folders.map((f) => ({ id: f.id, path: under ? `${under}/${f.name}` : f.name })),
+  )
+
+  const shownFolders = inside.folders.filter((f) => !hidden.has(f.id))
 
   // Which of the folders shown are a record's own, for their badge.
   const owners = new Map<string, RecordRef>()
@@ -632,6 +676,70 @@ const plannedPath = Effect.fn('files.plannedPath')(function* (
   return `${safeName(obj.labelPlural)}/${name}`
 })
 
+/** What `recordFolder` reads of a record's row. */
+type FolderRow = { id: string; driveId: string; folderId: string; path: string }
+
+/**
+ * The row that will be a record's folder's, written before the folder is made:
+ * it names where the folder goes and, in place of its id, `RESERVED`. A row
+ * left that way by a visit that was cut short is taken up again as it is, so
+ * the folder is looked for where that visit was making it. Gives back another
+ * visit's finished row when there is one.
+ */
+const reserveFolder = Effect.fn('files.reserveFolder')(function* (
+  objectKey: string,
+  recordId: string,
+  existing: FolderRow | null,
+  drive: string,
+): Effect.fn.Return<{ id: string; folderId: string; path: string }, StaffError, FileStore | Store> {
+  if (existing && existing.driveId === drive && isReserved(existing.folderId)) {
+    return existing
+  }
+
+  const db = yield* Store
+  let path = yield* plannedPath(objectKey, recordId)
+
+  // Two records with the same name each get a folder: the second carries part of its id. In a
+  // Spool with record scopes every folder does, so a name never says whether another scope has
+  // a record called the same, and a new record never takes over a folder a deleted one left.
+  if (
+    scopesOn() ||
+    (yield* asSystem(
+      db.count(RecordFolder, {
+        where: { driveId: drive, path },
+        // Its own row, whose folder is gone, doesn't make the name taken.
+        filter: existing ? neq('id', existing.id) : undefined,
+      }),
+    )) > 0
+  ) {
+    path = `${path} (${recordId.slice(0, 8)})`
+  }
+
+  const folderId = reservation(drive, path)
+
+  if (existing) {
+    // Its folder was deleted, or the CRM was pointed at another store: the record gets a new one.
+    yield* db.update(
+      RecordFolder,
+      { where: { id: existing.id } },
+      { driveId: drive, folderId, path },
+    )
+
+    return { id: existing.id, folderId, path }
+  }
+
+  return yield* db
+    .insert(RecordFolder, { objectKey, recordId, driveId: drive, folderId, path })
+    .pipe(
+      // Two visits at once: the other one's row stands, finished or not.
+      Effect.catchTag('DatabaseError', (error) =>
+        db
+          .first(RecordFolder, { where: { objectKey, recordId } })
+          .pipe(Effect.filterOrFail(Predicate.isNotNull, () => error)),
+      ),
+    )
+})
+
 /**
  * The folder that holds a record's files, made the first time it is asked for
  * (with the folders its object's config names inside it). Renaming the record
@@ -651,12 +759,11 @@ export const recordFolder = Effect.fn('files.recordFolder')(function* (
   const files = yield* FileStore
   const db = yield* Store
   const drive = yield* files.drive
-  let existing = yield* db.first(RecordFolder, { where: { objectKey, recordId } })
+  const existing = yield* db.first(RecordFolder, { where: { objectKey, recordId } })
+  const here = existing && existing.driveId === drive ? existing : null
 
-  if (existing && existing.driveId === drive) {
-    const row = existing
-
-    const kept = yield* folderInfo(row.folderId).pipe(
+  if (here && !isReserved(here.folderId)) {
+    const kept = yield* folderInfo(here.folderId).pipe(
       Effect.as(true),
       Effect.catchTag('FilesError', (error) =>
         error.status === 404 ? Effect.succeed(false) : Effect.fail(error),
@@ -664,17 +771,14 @@ export const recordFolder = Effect.fn('files.recordFolder')(function* (
     )
 
     if (kept) {
-      return { folderId: row.folderId, path: row.path }
+      return { folderId: here.folderId, path: here.path }
     }
 
-    // The folder was deleted, here or in the store itself: forget it and make the record a new one.
-    yield* db.remove(RecordFolder, { where: { id: row.id } })
-    existing = null
+    // The folder was deleted, here or in the store itself: the record gets a new one below.
   }
 
-  // The folder is made in the file store before its row is written, and the store has no way
-  // to take it back. So whoever can't write the row is stopped here, with nothing made: a
-  // read-only person who finds no folder is told there is none yet.
+  // Whoever can't write the row is stopped here, with nothing made: a read-only person who
+  // finds no folder is told there is none yet.
   if (scopesOn()) {
     const access = yield* CurrentAccess
     const record = yield* getRecord(objectKey, recordId)
@@ -691,18 +795,18 @@ export const recordFolder = Effect.fn('files.recordFolder')(function* (
     }
   }
 
-  let path = yield* plannedPath(objectKey, recordId)
+  // The row is written before the folder is made, and learns the folder's id after. The file
+  // store and the database can't be changed together, and a folder with no row is everyone's
+  // (see "Record scopes" above), so there must be no moment a failure could leave one. Until the
+  // row holds the id it owns the folder by its path, which `ownersOf` reads; a visit that was
+  // cut short anywhere after this is finished by the next one, at the same path.
+  const reserved = yield* reserveFolder(objectKey, recordId, existing, drive)
 
-  // Two records with the same name each get a folder: the second carries part of its id. In a
-  // Spool with record scopes every folder does, so a name never says whether another scope has
-  // a record called the same, and a new record never takes over a folder a deleted one left.
-  if (
-    scopesOn() ||
-    (yield* asSystem(db.count(RecordFolder, { where: { driveId: drive, path } }))) > 0
-  ) {
-    path = `${path} (${recordId.slice(0, 8)})`
+  if (!isReserved(reserved.folderId)) {
+    return { folderId: reserved.folderId, path: reserved.path }
   }
 
+  const { path } = reserved
   const ids = yield* files.ensureFolders([path, ...obj.files.folders.map((f) => `${path}/${f}`)])
   const folderId = ids.get(path)
 
@@ -710,36 +814,22 @@ export const recordFolder = Effect.fn('files.recordFolder')(function* (
     return yield* fail('The file store did not create the folder. Try again.')
   }
 
-  const finalPath = path
+  const confirmed = yield* db.update(
+    RecordFolder,
+    { where: { id: reserved.id, folderId: reserved.folderId } },
+    { folderId },
+  )
 
-  if (existing) {
-    // The CRM was pointed at another store: the record gets a folder there.
-    yield* db.update(
-      RecordFolder,
-      { where: { id: existing.id } },
-      { driveId: drive, folderId, path: finalPath },
-    )
-
-    return { folderId, path: finalPath }
+  if (confirmed > 0) {
+    return { folderId, path }
   }
 
-  return yield* db
-    .insert(RecordFolder, { objectKey, recordId, driveId: drive, folderId, path: finalPath })
-    .pipe(
-      Effect.as({ folderId, path: finalPath }),
-      // Two visits at once: the other one's row stands.
-      Effect.catchTag('DatabaseError', (error) =>
-        db
-          .first(RecordFolder, { where: { objectKey, recordId } })
-          .pipe(
-            Effect.flatMap((other) =>
-              other
-                ? Effect.succeed({ folderId: other.folderId, path: other.path })
-                : Effect.fail(error),
-            ),
-          ),
-      ),
-    )
+  // Two visits at once: the other one's row stands.
+  const other = yield* db.first(RecordFolder, { where: { objectKey, recordId } })
+
+  return other && !isReserved(other.folderId)
+    ? { folderId: other.folderId, path: other.path }
+    : yield* fail('The folder could not be kept for this record. Try again.')
 })
 
 /**
