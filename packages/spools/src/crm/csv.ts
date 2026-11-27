@@ -1,4 +1,5 @@
 import type { PublicCrmConfig } from './config'
+import { idsKey, splitCell } from './links'
 import { fieldLabel } from './naming'
 
 /** CSV import helpers. Pure, so the import dialog and the tests share them. */
@@ -87,11 +88,18 @@ export function relationCells(obj: Obj, table: string[][]): Record<string, strin
   const cells = new Map<string, string[]>()
 
   matchColumns(obj, header).forEach((col, i) => {
-    if (col?.field.type !== 'relation') {
+    if (col?.field.type !== 'relation' && col?.field.type !== 'relations') {
       return
     }
 
-    const said = body.map((row) => (row[i] ?? '').trim()).filter((raw) => raw !== '')
+    // A relations cell names several records, with ";" between them.
+    const many = col.field.type === 'relations'
+
+    const said = body.flatMap((row) => {
+      const raw = (row[i] ?? '').trim()
+      return many ? splitCell(raw) : raw === '' ? [] : [raw]
+    })
+
     cells.set(col.field.to, [...new Set([...(cells.get(col.field.to) ?? []), ...said])])
   })
 
@@ -100,7 +108,8 @@ export function relationCells(obj: Obj, table: string[][]): Record<string, strin
 
 /**
  * Turn CSV rows into record values: columns are matched to fields by key or label,
- * select labels become option values, and relation titles become record ids.
+ * select labels become option values, and relation titles become record ids
+ * (for a `relations` field, every title in the cell, under `<field>Ids`).
  * `relationOptions` holds the records the relation cells may name.
  */
 export function mapCsv(obj: Obj, relationOptions: RelationTitles, table: string[][]) {
@@ -130,6 +139,17 @@ export function mapCsv(obj: Obj, relationOptions: RelationTitles, table: string[
 
         if (related) {
           values[`${col.key}Id`] = related.id
+        }
+      } else if (col.field.type === 'relations') {
+        const options = relationOptions[col.field.to] ?? []
+
+        // Each title in the cell that names a record; the ids travel as one value, like a form's.
+        const ids = splitCell(raw).flatMap(
+          (said) => options.find((o) => o.id === said || norm(o.title) === norm(said))?.id ?? [],
+        )
+
+        if (ids.length > 0) {
+          values[idsKey(col.key)] = [...new Set(ids)].join(',')
         }
       } else {
         values[col.key] = raw

@@ -162,11 +162,11 @@ const linksInput = z.preprocess(
       return { set: [] }
     }
 
-    const text = z.string().safeParse(value)
+    const typed = z.string().safeParse(value)
 
-    if (text.success) {
+    if (typed.success) {
       return {
-        set: text.data
+        set: typed.data
           .split(',')
           .map((id) => id.trim())
           .filter((id) => id !== ''),
@@ -183,6 +183,12 @@ const linksInput = z.preprocess(
     }),
   ]),
 )
+
+/** A checked value of a `relations` field, read back as the change it is. */
+export const linksChangeSchema: z.ZodType<LinksChange> = z.union([
+  z.object({ set: z.array(z.string()) }),
+  z.object({ add: z.array(z.string()), remove: z.array(z.string()) }),
+])
 
 /** Every field type's definition, each typed by its own field's shape. */
 type FieldTypes = { [T in FieldType]: FieldTypeDef<T> }

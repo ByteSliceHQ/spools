@@ -138,6 +138,7 @@ describe('reading and writing', () => {
     const other = await named('people', 'Joan')
 
     const changed = await change('tags', tag, { peopleIds: [person, other] })
+
     expect(changed?.['people']).toEqual([
       { id: person, name: 'Hedy' },
       { id: other, name: 'Joan' },
@@ -334,6 +335,7 @@ describe('lists, filters and search', () => {
     const refused = await failure(
       records.listRecords({ objectKey: 'people', where: { tags: tag } }),
     )
+
     expect(refused).toBeInstanceOf(Invalid)
     expect(refused.message).toContain('filters')
   })
@@ -361,6 +363,25 @@ describe('lists, filters and search', () => {
   })
 })
 
+describe('a record page', () => {
+  test('lists the records that hold it in a relations field with no inverse here', async () => {
+    const team = await named('teams', 'Page Team')
+    const tag = await named('tags', 'Page Tag')
+    const member = await make('people', { name: 'Page Pat', teamsIds: [team], tagsIds: [tag] })
+
+    const onTeam = await run(records.relatedRecords('teams', team))
+
+    expect(onTeam.map((g) => [g.objectKey, g.field, g.rows.map((r) => r.id)])).toEqual([
+      ['people', 'teams', [member.id]],
+    ])
+
+    // A tag shows its people in its own `people` field, so only the companies' side is listed here.
+    expect(
+      (await run(records.relatedRecords('tags', tag))).map((g) => [g.objectKey, g.field, g.rows]),
+    ).toEqual([['companies', 'tags', []]])
+  })
+})
+
 describe('CSV', () => {
   test('export writes the titles in one cell, and import finds them again', async () => {
     const [x, y] = [await named('tags', 'Csv Xylo'), await named('tags', 'Csv Yarn')]
@@ -380,9 +401,11 @@ describe('CSV', () => {
 
     // Back in under other names: what the import dialog does with the file.
     const people = toPublicConfig(crmConfig()).objects['people']!
+
     const renamed = table.map((row, i) =>
       i === 0 ? row : row.map((c) => c.replace('Csv C', 'Csv2 C')),
     )
+
     const asked = relationCells(people, renamed)
     expect(asked['tags']).toEqual(['Csv Xylo', 'Csv Yarn'])
 
@@ -421,6 +444,7 @@ describe('the tool API', () => {
     const other = await named('tags', 'Tool Other')
 
     const described = await data('describe', { objectKey: 'people' })
+
     expect(described['people'].fields.tags).toEqual({
       type: 'relations',
       required: false,

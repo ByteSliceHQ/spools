@@ -9,6 +9,7 @@ import {
   summariseActivity,
 } from '../crm/activity'
 import type { Filters, Sort } from '../crm/filters'
+import { LINKS_EXPORT, LINKS_SEPARATOR } from '../crm/links'
 import { hasProbabilities, weighted } from '../crm/options'
 import {
   addActivity,
@@ -16,6 +17,7 @@ import {
   listRecords,
   recordTitlesOf,
   refreshStats,
+  relatedField,
   relatedRecord,
   valueText,
 } from './records'
@@ -504,7 +506,11 @@ function csvCell(value: CrmValue): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
 }
 
-/** CSV of every record matching a query (up to 10,000). Relations export as the related title. */
+/**
+ * CSV of every record matching a query (up to 10,000). Relations export as the
+ * related title; a `relations` field as its titles in one cell, with "; "
+ * between them (up to `LINKS_EXPORT` of them), which an import reads back.
+ */
 export const exportCsv = Effect.fn('workspace.exportCsv')(function* (
   objectKey: string,
   filter: { q?: string; filters?: Filters; sort?: Sort[]; viewerId?: string },
@@ -520,6 +526,7 @@ export const exportCsv = Effect.fn('workspace.exportCsv')(function* (
       limit: 500,
       offset,
       relations: 'titles',
+      links: LINKS_EXPORT,
     })
 
     for (const r of page) {
@@ -533,6 +540,14 @@ export const exportCsv = Effect.fn('workspace.exportCsv')(function* (
 
             if (field?.type === 'relation' && related) {
               return related[getObject(field.to).titleField]
+            }
+
+            if (field?.type === 'relations') {
+              const titleField = getObject(field.to).titleField
+
+              return (Array.isArray(value) ? value : [])
+                .map((item) => valueText(relatedField(item, titleField) ?? ''))
+                .join(`${LINKS_SEPARATOR} `)
             }
 
             return value

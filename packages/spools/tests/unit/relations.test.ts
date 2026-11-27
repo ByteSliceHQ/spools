@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 
 import { PGlite } from '@electric-sql/pglite'
-import { Effect, Exit, Layer } from 'effect'
+import type { Effect } from 'effect'
+import { Exit, Layer } from 'effect'
 
 import { pglite } from '../../src/adapters/database/pglite/server'
 import { generatePrisma } from '../../src/crm/codegen'
@@ -17,6 +18,7 @@ import {
   operatorsFor,
   relationIds,
 } from '../../src/crm/filters'
+import { suggest } from '../../src/crm/suggest'
 import { compileFilters } from '../../src/server/filter-query'
 import { httpLayer } from '../../src/server/runtime/http'
 import { linkSide, linkTables, objectTables } from '../../src/server/store/objects'
@@ -292,6 +294,7 @@ describe('the links table, in a store', async () => {
     ])
 
     expect(inverse.link).toBe(side.link)
+
     expect([side.relation, side.near, side.far, side.to]).toEqual([
       'tagsLinks',
       'sourceId',
@@ -333,6 +336,7 @@ describe('the links table, in a store', async () => {
     expect(Exit.isFailure(dangling)).toBe(true)
 
     expect(await names(people, some('tagsLinks', oneOf('targetId', [partner.id])))).toEqual(['Ada'])
+
     expect(await names(people, none('tagsLinks', oneOf('targetId', [partner.id])))).toEqual([
       'Alan',
     ])
@@ -363,6 +367,7 @@ describe('filters', () => {
 
   test('a relations field has its own operators, each with the values it takes', () => {
     expect(operatorsFor(tags())).toEqual(['anyOf', 'allOf', 'noneOf', 'empty', 'notEmpty'])
+
     expect([arityOf('anyOf'), arityOf('allOf'), arityOf('noneOf')]).toEqual([
       'many',
       'many',
@@ -474,6 +479,27 @@ describe('filters', () => {
         ],
       ]),
     ).toEqual(some('peopleViaCompany', some('tagsLinks', oneOf('targetId', [A]))))
+  })
+})
+
+describe('the filter box', () => {
+  test('a record found for a relations field is offered as "has any of"', () => {
+    const { objects } = crmConfigSchema.parse(relationsConfig)
+
+    const out = suggest('vip', {
+      objects,
+      objectKey: 'people',
+      users: [],
+      records: [
+        { field: 'tags', id: A, title: 'VIP' },
+        { field: 'company', id: B, title: 'Vipond Ltd' },
+      ],
+    })
+
+    expect(out.flatMap((s) => (s.kind === 'condition' ? [s.condition] : []))).toEqual([
+      { field: 'tags', op: 'anyOf', value: [A] },
+      { field: 'company', op: 'in', value: [B] },
+    ])
   })
 })
 

@@ -38,8 +38,13 @@ for (const what of ['model', 'name'] as const) {
   const clash = tables.find((t, i) => tables.findIndex((other) => other[what] === t[what]) !== i)
 
   if (clash) {
+    // Either an object's table or a relations field's links table is the one to rename.
+    const links = linkTables(config).some(
+      (link) => link.table[what] === clash[what] && tables.includes(link.table),
+    )
+
     console.error(
-      `crm.config.json has an object or a relations field whose table would be another table's: "${clash[what]}". Rename its key.`,
+      `crm.config.json has ${links ? 'a relations field' : 'an object'} whose table would be another table's: "${clash[what]}". Rename its key.`,
     )
 
     process.exit(1)

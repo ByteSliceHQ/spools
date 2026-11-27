@@ -13,7 +13,7 @@ import {
 } from '../crm/filters'
 import { phoneDigits } from '../crm/search'
 import { crmConfig } from './spool'
-import { backRelation } from './store/objects'
+import { backRelation, linkSide } from './store/objects'
 import {
   and,
   contains,
@@ -61,13 +61,53 @@ export function containsText(column: string, field: CrmField | undefined, text: 
   return digits ? digitsContain(column, digits) : contains(column, text)
 }
 
-/** One condition on a column of the object itself. */
+/**
+ * One condition on a relations field: a condition on the object's rows of the
+ * field's links table, reached through its relation to them. "Has all of" is
+ * one such test for each record named.
+ */
+function onLinks(objectKey: string, key: string, cond: Condition): Predicate | undefined {
+  const side = linkSide(crmConfig(), objectKey, key)
+
+  if (!side) {
+    return undefined
+  }
+
+  const ids = (Array.isArray(cond.value) ? cond.value : []).map(String)
+
+  switch (cond.op) {
+    case 'empty':
+      return none(side.relation)
+    case 'notEmpty':
+      return some(side.relation)
+    case 'anyOf':
+      return some(side.relation, oneOf(side.far, ids))
+    case 'noneOf':
+      return none(side.relation, oneOf(side.far, ids))
+
+    case 'allOf': {
+      const each = ids.map((id) => some(side.relation, eq(side.far, id)))
+      const [only] = each
+      return each.length === 1 && only ? only : and(...each)
+    }
+
+    default:
+      return undefined
+  }
+}
+
+/** One condition on a field of an object: a column of its own, or its links. */
 function onColumn(
+  objectKey: string,
   key: string,
   field: CrmField,
   cond: Condition,
   ctx: Context,
 ): Predicate | undefined {
+  if (field.type === 'relations') {
+    return onLinks(objectKey, key, cond)
+  }
+
   const c = field.type === 'relation' ? `${key}Id` : key
   const family = familyOf(field)
   const { op, value } = cond
@@ -187,6 +227,7 @@ type Context = Required<FilterContext>
 /** Operators that are true of an empty field: "is not X", "does not contain", "is empty", "is no". */
 const TRUE_OF_NOTHING = new Set<Condition['op']>([
   'empty',
+  'noneOf',
   'notIn',
   'isNot',
   'notContains',
@@ -210,7 +251,7 @@ function compile(objectKey: string, cond: Condition, ctx: Context): Predicate | 
 
   if (target.via) {
     // Through a relation: the record it points to must meet the condition.
-    const condition = onColumn(target.key, target.field, cond, ctx)
+    const condition = onColumn(target.objectKey, target.key, target.field, cond, ctx)
     const related = condition && some(target.via.key, condition)
     // A record that points to nothing has no such field at all, which is what
     // "is empty" and "is not X" ask for: the same answer as for an empty field of its own.
@@ -219,7 +260,7 @@ function compile(objectKey: string, cond: Condition, ctx: Context): Predicate | 
       : related
   }
 
-  return onColumn(target.key, target.field, cond, ctx)
+  return onColumn(target.objectKey, target.key, target.field, cond, ctx)
 }
 
 /**

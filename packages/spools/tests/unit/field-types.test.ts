@@ -59,6 +59,7 @@ describe('field types', () => {
     expect(parse(tags, { remove: [a, a] }).data).toEqual({ add: [], remove: [a] })
     expect(parse(tags, ['nope']).success).toBe(false)
     expect(parse(tags, { add: [a], set: [b] }).success).toBe(false)
+
     expect(
       parse(
         tags,

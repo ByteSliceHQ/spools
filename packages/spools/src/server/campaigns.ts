@@ -165,7 +165,19 @@ export function templateValues(
     }
 
     if (Array.isArray(value)) {
-      return ''
+      // What a relations field holds, by title: "VIP, Partner".
+      if (field?.type !== 'relations') {
+        return ''
+      }
+
+      const titleField = getObject(field.to).titleField
+
+      return value
+        .flatMap((item) => {
+          const title = printableTitle.safeParse(relatedRecord(item)?.[titleField])
+          return title.success ? [String(title.data)] : []
+        })
+        .join(', ')
     }
 
     const related = relatedRecord(value)

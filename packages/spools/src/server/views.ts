@@ -319,7 +319,12 @@ export const calculate = Effect.fn('views.calculate')(function* (
 
   for (const column of columns) {
     const values = rows.map((r) => r[column])
-    const present = values.filter((v) => v !== null && v !== undefined && v !== '')
+
+    // A relations field that holds nothing is an empty list.
+    const present = values.filter(
+      (v) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0),
+    )
+
     const numbers = present.map(Number).filter((n) => Number.isFinite(n))
     const kind = calculations[column]
 
