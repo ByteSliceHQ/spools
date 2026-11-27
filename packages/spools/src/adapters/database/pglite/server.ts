@@ -15,9 +15,10 @@ import type { StoreAdapter } from '../../../server/store/store'
  * For trying a Spool out, for development and for tests.
  *
  * The tables are made, and kept up with the config, each time it starts
- * (src/server/store/schema-sql.ts: it only adds). One process can open a data
- * directory at a time, so it is not for a deployment with several instances;
- * use `postgres()` there.
+ * (src/server/store/schema-sql.ts: it only adds, except that an index a table
+ * no longer declares is dropped). One process can open a data directory at a
+ * time, so it is not for a deployment with several instances; use `postgres()`
+ * there.
  */
 export type PgliteOptions = {
   /** Where the data is kept. Default `.data/pglite`. `"memory"` keeps it in this process only. */

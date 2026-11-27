@@ -206,8 +206,19 @@ no longer be on the access list when it is shown.`,
     connectedAt: optional(
       timestamp({ doc: 'When a shared connection was last connected or connected again.' }),
     ),
+    ownerKey: optional(
+      text({
+        doc: `For a shared connection, what it is: its provider, its account, and the team or
+which group, as one value. No two rows may hold the same one, so an account is
+connected once for the team (or for a group) whoever connects it. Empty on a
+connection of one's own, and on a shared one stored before this column: connecting
+the account again fills it in.`,
+      }),
+    ),
   },
-  unique: [['userId', 'provider', 'account', 'shared', 'groupKey']],
+  // The first keeps one row per person for an account of their own. The second keeps one
+  // row per shared account: an empty `ownerKey` is no value, so it limits nothing else.
+  unique: [['userId', 'provider', 'account', 'shared', 'groupKey'], ['ownerKey']],
 })
 
 export const RecordFolder = defineTable({

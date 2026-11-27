@@ -143,6 +143,14 @@ export type Extensions = {
   marketing?: {
     posts?: Record<string, PostNetwork>
     ads?: Record<string, AdNetwork>
+    /**
+     * Who may connect, reconnect and disconnect the accounts the built-in networks
+     * use (LinkedIn, X, Google Ads) on the Integrations page: email addresses, or
+     * a function asked about one person. It is a provider's `canManage`, for the
+     * providers the framework supplies. Left out, anyone on the access list may.
+     * Publishing through a connected account is never limited by this.
+     */
+    canManage?: IntegrationProvider['canManage']
   }
   /** How files attached to records are laid out in the file store. */
   files?: {

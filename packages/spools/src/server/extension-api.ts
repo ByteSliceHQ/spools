@@ -42,27 +42,33 @@ export const shareRecordFolder = (from: files.RecordRef, to: files.RecordRef): P
 /** Everyone who may use the CRM, by name. */
 export const listCrmUsers = () => runServer(Users.use((users) => users.team))
 
-/** A person some code is acting for: `ctx.actor` in a handler, or their id. `null` is nobody (a script, an import). */
+/** A person some code is acting for: `ctx.actor` in a handler, or their id. `null` is nobody (a script, an automation that ran by itself). */
 type For = string | { id: string } | null
 
+/** The person's id, or null for nobody. A value that is missing where a person was asked for is nobody too. */
 const idOf = (person: For | undefined) =>
-  person === undefined || person === null
-    ? undefined
-    : Predicate.isString(person)
-      ? person
-      : person.id
+  person === undefined || person === null ? null : Predicate.isString(person) ? person : person.id
 
 /**
  * A current access token for an account connected on the Integrations page
  * (refreshed when it is about to expire). For an app's handlers that call the
  * provider's API.
  *
- * Say who it is for with `as` whenever a person caused the call (`as: ctx.actor`):
- * the token is then only given if the connection is theirs, or is shared and
- * they are on the access list. Without it the call is trusted, as a schedule's is.
+ *   getAccessToken(id, { as: ctx.actor })   for whoever pressed the button
+ *   getAccessToken(id)                      for code nobody is behind: a schedule, a webhook
+ *
+ * With `as`, the token is only given if that person is on the access list and
+ * the connection is theirs or is shared. If `as` turns out to be nobody
+ * (`ctx.actor` is `null` when an automation or a script ran the handler), the
+ * call is refused: it is never taken to mean "trusted". To act with no person
+ * behind the call, say so by leaving the second argument out.
  */
-export const getAccessToken = (connectionId: string, options: { as?: For } = {}): Promise<string> =>
-  runServer(integrations.getAccessToken(connectionId, undefined, idOf(options.as)))
+export const getAccessToken = (connectionId: string, options?: { as: For }): Promise<string> =>
+  runServer(
+    options === undefined
+      ? integrations.getAccessToken(connectionId)
+      : integrations.getAccessToken(connectionId, undefined, idOf(options.as)),
+  )
 
 /**
  * Connections, to find which account to act with. Never return these to a browser.
@@ -71,15 +77,19 @@ export const getAccessToken = (connectionId: string, options: { as?: For } = {})
  *   findConnections({ provider: 'books', group: 'north' })     one branch's
  *   findConnections({ provider: 'phone', userId })             a teammate's own
  *
- * `usableBy` keeps only what that person may use.
+ * `usableBy` keeps only what that person may use. When it is there and names
+ * nobody (`usableBy: ctx.actor` with no actor), nothing is found. Leave it out
+ * in code nobody is behind.
  */
 export const findConnections = (
   filter: Omit<integrations.ConnectionFilter, 'usableBy'> & { usableBy?: For } = {},
 ) => {
   const { usableBy, ...rest } = filter
-  const userId = idOf(usableBy)
+
   return runServer(
-    integrations.findConnections(userId === undefined ? rest : { ...rest, usableBy: userId }),
+    integrations.findConnections(
+      Object.hasOwn(filter, 'usableBy') ? { ...rest, usableBy: idOf(usableBy) } : rest,
+    ),
   )
 }
 

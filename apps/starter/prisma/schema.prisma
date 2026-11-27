@@ -220,8 +220,15 @@ model Integration {
   connectedByName String? @map("connected_by_name")
   /// When a shared connection was last connected or connected again.
   connectedAt DateTime? @map("connected_at")
+  /// For a shared connection, what it is: its provider, its account, and the team or
+  /// which group, as one value. No two rows may hold the same one, so an account is
+  /// connected once for the team (or for a group) whoever connects it. Empty on a
+  /// connection of one's own, and on a shared one stored before this column: connecting
+  /// the account again fills it in.
+  ownerKey String? @map("owner_key")
 
   @@unique([userId, provider, account, shared, groupKey])
+  @@unique([ownerKey])
   @@map("integrations")
   @@rls
 }

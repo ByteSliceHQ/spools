@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'df1afbeacc885b3f6d949a9b51d6c657235a75f325c407fe1dba5d305d14c4cc'>;
+  StorageHashBase<'d8542f2872804c44d1f8875f396c4ad0c1ba7d0fcaadd3789cd863685c809cd8'>;
 export type ExecutionHash =
   ExecutionHashBase<'3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b'>;
 export type ProfileHash =
@@ -420,6 +420,7 @@ export namespace Models {
     groupKey: FieldOutputTypes['public']['Integration']['groupKey'];
     id: FieldOutputTypes['public']['Integration']['id'];
     lastError: FieldOutputTypes['public']['Integration']['lastError'];
+    ownerKey: FieldOutputTypes['public']['Integration']['ownerKey'];
     provider: FieldOutputTypes['public']['Integration']['provider'];
     scopes: FieldOutputTypes['public']['Integration']['scopes'];
     shared: FieldOutputTypes['public']['Integration']['shared'];
@@ -1322,6 +1323,12 @@ type ContractBase = Omit<
                   readonly nullable: true;
                   readonly many: false;
                 };
+                readonly owner_key: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
                 readonly provider: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
@@ -1375,6 +1382,7 @@ type ContractBase = Omit<
                     'group_key',
                   ];
                 },
+                { readonly columns: readonly ['owner_key'] },
               ];
               indexes: readonly [];
               foreignKeys: readonly [];
@@ -2896,6 +2904,10 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly ownerKey: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly provider: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
@@ -2938,6 +2950,7 @@ type ContractBase = Omit<
                 readonly groupKey: { readonly column: 'group_key' };
                 readonly id: { readonly column: 'id' };
                 readonly lastError: { readonly column: 'last_error' };
+                readonly ownerKey: { readonly column: 'owner_key' };
                 readonly provider: { readonly column: 'provider' };
                 readonly scopes: { readonly column: 'scopes' };
                 readonly shared: { readonly column: 'shared' };

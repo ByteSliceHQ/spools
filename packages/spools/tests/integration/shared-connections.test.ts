@@ -41,9 +41,15 @@ import { bodyText, db, installLiveServices, installStandIns, run } from '../../s
  * - The OAuth `state` carries whose the connection will be. The callback takes
  *   it from there and nowhere else, and checks it against what the provider
  *   says now.
- * - Server code with no person behind it (a schedule, an automation) is trusted
- *   as before. Code acting for a person says so (`usableBy`, `as`) and is
- *   refused what that person may not use.
+ * - Server code with no person behind it (a schedule, the mailbox sync) is
+ *   trusted as before, and says so by naming nobody at all. Code acting for a
+ *   person says so (`usableBy`, `as`) and is refused what that person may not
+ *   use; when the person it names turns out to be nobody, it is refused.
+ * - Which account was connected is the provider's answer to the new token. The
+ *   callback's query went through the browser, so a shared connection whose
+ *   account the provider was not asked about is refused.
+ * - A shared connection is one row for its account and owner (`ownerKey`),
+ *   whoever connects it and however many do at once.
  *
  * Against a real database, with the provider's HTTP API and the cipher stubbed.
  */
@@ -59,6 +65,11 @@ const saved = extensions.integrations
 const calls: { url: string; body: string }[] = []
 let exchanges = 0
 let refresh: 'ok' | 'refused' = 'ok'
+/** Which company each access token was issued for: what the ledger knows and the browser can't change. */
+const grants = new Map<string, string>()
+/** Set by a test to keep a refresh waiting at the provider: called when it arrives, awaited before it is answered. */
+let heldRefresh: (() => Promise<void>) | null = null
+const COMPANIES = 'https://ledger.example.com/api/companies/'
 
 const base = (label: string): IntegrationProvider => ({
   label,
@@ -68,7 +79,13 @@ const base = (label: string): IntegrationProvider => ({
   authUrl: 'https://ledger.example.com/oauth/authorize',
   tokenUrl: 'https://ledger.example.com/oauth/token',
   scopes: ['invoices.write'],
-  account: async ({ query }) => query.get('companyId') ?? undefined,
+  // The callback names the company, and the ledger is asked whether the new token is for it.
+  account: async ({ query, get }) => {
+    const named = query.get('companyId')
+    return named
+      ? (await get<{ id: string }>(`${COMPANIES}${encodeURIComponent(named)}`)).id
+      : undefined
+  },
 })
 
 /** Who may manage the ledger. Changed by a test to play someone losing the right mid-flow. */
@@ -102,6 +119,17 @@ const offered: Record<string, IntegrationProvider> = {
   [`turned_${tag}`]: { ...base('Acme Turned'), shared: 'team' },
   // Always used by everyone, like a marketing account: what was connected before is the team's.
   [`always_${tag}`]: { ...base('Acme Always'), shared: 'team', adoptExisting: true },
+  // Shared, and takes the account's name from the callback's address without asking the ledger.
+  [`unasked_${tag}`]: {
+    ...base('Acme Unasked'),
+    shared: 'team',
+    account: async ({ query }) => query.get('companyId') ?? undefined,
+  },
+  // Each person's own, at a provider that revokes tokens.
+  [`revoking_${tag}`]: {
+    ...base('Acme Revoking'),
+    revokeUrl: 'https://ledger.example.com/oauth/revoke',
+  },
 }
 
 const ledger = `ledger_${tag}`
@@ -111,6 +139,8 @@ const listed = `listed_${tag}`
 const own = `own_${tag}`
 const turned = `turned_${tag}`
 const always = `always_${tag}`
+const unasked = `unasked_${tag}`
+const revoking = `revoking_${tag}`
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -130,17 +160,31 @@ const standIns = (directory: CrmUser[]) =>
       const body = bodyText(init)
       calls.push({ url, body })
 
+      if (url.startsWith(COMPANIES)) {
+        // The ledger answers for the company the token was issued for, and no other.
+        const token = new Headers(init?.headers).get('authorization')?.replace('Bearer ', '') ?? ''
+        const asked = decodeURIComponent(url.slice(COMPANIES.length))
+        return grants.get(token) === asked ? json({ id: asked }) : json({ error: 'forbidden' }, 403)
+      }
+
       if (!url.endsWith('/token')) {
         return json({})
       }
 
-      if (new URLSearchParams(body).get('grant_type') === 'refresh_token') {
+      const form = new URLSearchParams(body)
+
+      if (form.get('grant_type') === 'refresh_token') {
+        await heldRefresh?.()
+
         return refresh === 'refused'
           ? json({ error: 'invalid_grant' }, 400)
           : json({ access_token: 'access-refreshed', expires_in: 3600 })
       }
 
       exchanges += 1
+      // The code stands for what was authorized at the ledger: `auth-code:<company>`.
+      grants.set(`access-${exchanges}`, form.get('code')?.split(':')[1] ?? '')
+
       return json({
         access_token: `access-${exchanges}`,
         refresh_token: `refresh-${exchanges}`,
@@ -201,7 +245,9 @@ const finish = (
     completeAuth(
       provider,
       {
-        code: 'auth-code',
+        // What was authorized at the ledger. The query is what the browser brought back, which
+        // says the same unless a test changes it.
+        code: `auth-code:${flow.company ?? 'Company-1'}`,
         ...started,
         query: new URLSearchParams({ companyId: flow.company ?? 'Company-1', ...query }),
       },
@@ -276,9 +322,19 @@ describe('a connection for the team', () => {
     expect(await api.getAccessToken(found!.id, { as: bob })).toMatch(/^access-/)
     await refused(api.getAccessToken(found!.id, { as: mallory }))
     expect(await api.findConnections({ provider: ledger, usableBy: mallory.id })).toEqual([])
-    // `ctx.actor` is null when nobody was signed in (a script, an import): trusted, as a schedule is.
-    expect(await api.getAccessToken(found!.id, { as: null })).toMatch(/^access-/)
-    expect(await api.findConnections({ provider: ledger, usableBy: null })).toHaveLength(1)
+  })
+
+  test('a handler run with nobody signed in is refused, not trusted; trusted code names nobody at all', async () => {
+    const [found] = await api.findConnections({ provider: ledger, shared: 'team' })
+    // `ctx.actor` is null when an automation or a script ran the handler.
+    const actor: CrmUser | null = null
+    await refused(api.getAccessToken(found!.id, { as: actor }))
+    expect(await api.findConnections({ provider: ledger, usableBy: actor })).toEqual([])
+    await refused(run(getAccessToken(found!.id, undefined, null)))
+    expect(await run(findConnections({ provider: ledger, usableBy: null }))).toEqual([])
+    // A schedule or a webhook says it acts for no one by leaving the person out.
+    expect(await api.getAccessToken(found!.id)).toMatch(/^access-/)
+    expect(await api.findConnections({ provider: ledger })).toHaveLength(1)
   })
 
   test("is not one of its connector's own connections", async () => {
@@ -775,6 +831,208 @@ describe('connections made before a provider was shared', () => {
   })
 })
 
+describe('which account a shared connection is', () => {
+  test("comes from the provider: a teammate's own company can't be sent back under the team's name", async () => {
+    const [team] = await rows(ledger)
+    const before = await run(getAccessToken(team!.id))
+
+    // Ada authorizes a company of her own at the ledger, then changes `companyId` in the
+    // address the browser is sent back to, so that it names the team's.
+    const started = await start(ada, ledger, { company: 'Adas-Own-Co' })
+
+    await refused(
+      finish(ada, ledger, { company: 'Adas-Own-Co' }, started, { companyId: 'Company-1' }),
+    )
+
+    // The team's connection holds the tokens it held, and no other row was made.
+    expect(await rows(ledger)).toEqual([team!])
+    expect(await run(getAccessToken(team!.id))).toBe(before)
+  })
+
+  test("is refused when the provider was never asked, so a name from the address can't replace the team's connection", async () => {
+    // The team's connection to its company, at a provider that reads the name from the address alone.
+    const where = { userId: ada.id, provider: unasked, account: 'team-co', shared: 'team' }
+
+    const team = await db.insert(Integration, {
+      ...where,
+      ownerKey: ownerOf(where),
+      credentials: await run(
+        Vault.use((v) =>
+          v.seal(
+            { accessToken: 'the-teams', refreshToken: null, expiresAt: Date.now() + 3_600_000 },
+            ownerOf(where),
+          ),
+        ),
+      ),
+      scopes: '',
+      status: 'connected',
+    })
+
+    // Bob authorizes his own company and sends the browser back naming the team's.
+    const started = await start(bob, unasked, { company: 'Bobs-Co' })
+    await refused(finish(bob, unasked, { company: 'Bobs-Co' }, started, { companyId: 'Team-Co' }))
+    expect(await rows(unasked)).toEqual([team])
+    expect(await run(getAccessToken(team.id))).toBe('the-teams')
+
+    // Nor does an honest name pass: the ledger was not asked whose token it is.
+    await refused(connect(ada, unasked, { company: 'Other-Co' }))
+    expect(await rows(unasked)).toHaveLength(1)
+  })
+})
+
+describe('one connection for an account and its owner', () => {
+  test('two people connecting the same account at once make one connection', async () => {
+    const [first, second] = await Promise.all([
+      connect(ada, open, { company: 'Race-Co' }),
+      connect(bob, open, { company: 'Race-Co' }),
+    ])
+
+    const stored = (await rows(open)).filter((row) => row.account === 'race-co')
+    expect(stored).toHaveLength(1)
+    expect(first.id).toBe(second.id)
+    expect(stored[0]?.ownerKey).toBe(ownerOf(stored[0]!))
+    // Whoever wrote last, the tokens open: they were sealed for the team, not for a person.
+    expect(await run(getAccessToken(first.id))).toMatch(/^access-/)
+    expect(await run(disconnect(ada, first.id))).toBe(true)
+  })
+
+  test('the database keeps it to one, whoever connected it; a person may hold the same account as their own', async () => {
+    const [team] = await rows(ledger)
+
+    const again = {
+      provider: ledger,
+      account: team!.account,
+      credentials: 'sealed',
+      scopes: '',
+      status: 'connected',
+    }
+
+    await expect(
+      db.insert(Integration, {
+        ...again,
+        userId: bob.id,
+        shared: 'team',
+        ownerKey: team!.ownerKey,
+      }),
+    ).rejects.toThrow()
+
+    // A row of one's own has no key, so any number of people can each hold the account.
+    for (const who of [ada, bob]) {
+      const mine = await db.insert(Integration, { ...again, userId: who.id })
+      expect(mine.ownerKey).toBeNull()
+    }
+
+    await db.remove(Integration, { where: { provider: ledger, shared: '' } })
+    expect(await rows(ledger)).toEqual([team!])
+  })
+
+  test('connections stored twice before there was a key become one when the account is connected again', async () => {
+    const sealedOld = (who: CrmUser) =>
+      run(
+        Vault.use((v) =>
+          v.seal(
+            { accessToken: 'old', refreshToken: null, expiresAt: Date.now() + 3_600_000 },
+            ownerOf({ userId: who.id, provider: always, account: 'twice-co' }),
+          ),
+        ),
+      )
+
+    // Two teammates each connected the account while a connection was its teammate's.
+    for (const who of [ada, bob]) {
+      await db.insert(Integration, {
+        userId: who.id,
+        provider: always,
+        account: 'twice-co',
+        credentials: await sealedOld(who),
+        scopes: '',
+        status: 'connected',
+      })
+    }
+
+    const twice = () =>
+      run(findConnections({ provider: always, shared: 'team' })).then((all) =>
+        all.filter((c) => c.account === 'twice-co'),
+      )
+
+    expect(await twice()).toHaveLength(2)
+    const one = await connect(bob, always, { company: 'twice-co' })
+    expect((await twice()).map((c) => c.id)).toEqual([one.id])
+    expect(await run(getAccessToken(one.id, undefined, ada.id))).toMatch(/^access-/)
+    expect(await run(disconnect(bob, one.id))).toBe(true)
+  })
+
+  test('disconnecting does not revoke a grant another connection to the same account stands on', async () => {
+    const adas = await connect(ada, revoking, { company: 'Shared-Inbox' })
+    const bobs = await connect(bob, revoking, { company: 'Shared-Inbox' })
+    const revoked = () => calls.filter((call) => call.url.endsWith('/revoke')).length
+    const before = revoked()
+
+    expect(await run(disconnect(ada, adas.id))).toBe(true)
+    expect(revoked()).toBe(before)
+    // Bob's connection is untouched and still gets a token.
+    expect(await run(getAccessToken(bobs.id, undefined, bob.id))).toMatch(/^access-/)
+
+    // The last connection to the account is revoked as it goes.
+    expect(await run(disconnect(bob, bobs.id))).toBe(true)
+    expect(revoked()).toBe(before + 1)
+    // Gone is gone: a second ask finds nothing to remove.
+    expect(await run(disconnect(bob, bobs.id))).toBe(false)
+  })
+})
+
+describe('a token renewed while its connection is handed to the team', () => {
+  test("is not written over the team's: the row still opens", async () => {
+    const row = { userId: ada.id, provider: turned, account: 'handover-co' }
+
+    // Ada's own connection, from before the provider was shared, with a token that has run out.
+    const old = await db.insert(Integration, {
+      ...row,
+      credentials: await run(
+        Vault.use((v) =>
+          v.seal(
+            { accessToken: 'old', refreshToken: 'old-refresh', expiresAt: Date.now() - 1000 },
+            ownerOf(row),
+          ),
+        ),
+      ),
+      scopes: '',
+      status: 'connected',
+    })
+
+    let release = () => {}
+    let arrived = () => {}
+    const atProvider = new Promise<void>((resolve) => (arrived = resolve))
+    const held = new Promise<void>((resolve) => (release = resolve))
+
+    heldRefresh = () => {
+      arrived()
+      return held
+    }
+
+    try {
+      // A schedule asks for a token: the renewal reaches the ledger and waits there.
+      const renewing = run(getAccessToken(old.id))
+      await atProvider
+      heldRefresh = null
+
+      // Meanwhile Ada connects the account for the team, which hands this row over.
+      const team = await connect(ada, turned, { company: 'handover-co' })
+      expect(team).toMatchObject({ id: old.id, shared: 'team' })
+      const handedOver = (await rows(turned)).find((r) => r.id === old.id)
+
+      release()
+      // The renewal was the old grant's, sealed under Ada's name: the caller gets the team's token.
+      expect(await renewing).toBe(await run(getAccessToken(old.id)))
+      expect(await renewing).toMatch(/^access-\d+$/)
+      expect((await rows(turned)).find((r) => r.id === old.id)).toEqual(handedOver)
+      expect(await run(getAccessToken(old.id, undefined, bob.id))).toMatch(/^access-\d+$/)
+    } finally {
+      heldRefresh = null
+      release()
+    }
+  })
+})
+
 describe('when whoever connected it is no longer on the team', () => {
   test('a shared connection is still listed, used and managed; their own connections are still only theirs', async () => {
     const [team] = await run(findConnections({ provider: listed }))
@@ -788,9 +1046,15 @@ describe('when whoever connected it is no longer on the team', () => {
       expect(await run(getAccessToken(team!.id, undefined, bob.id))).toMatch(/^access-/)
       expect(await run(getAccessToken(team!.id))).toMatch(/^access-/)
 
-      // Her own account is not handed to anyone, and she can no longer act as herself.
+      // Her own account is not handed to anyone, and she can no longer act as herself:
+      // not through the team's connection, and not through her own.
       await refused(run(getAccessToken(mine!.id, undefined, bob.id)))
       await refused(run(getAccessToken(team!.id, undefined, ada.id)))
+      await refused(run(getAccessToken(mine!.id, undefined, ada.id)))
+      await refused(api.getAccessToken(mine!.id, { as: ada }))
+      expect(await run(findConnections({ provider: own, usableBy: ada.id }))).toEqual([])
+      // Code with nobody behind it is trusted, as before.
+      expect(await run(getAccessToken(mine!.id))).toMatch(/^access-/)
 
       const [openOne] = await run(findConnections({ provider: open }))
       expect(await run(disconnect(bob, openOne!.id))).toBe(true)

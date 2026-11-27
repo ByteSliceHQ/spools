@@ -17,6 +17,7 @@ import { providersFor } from '../../src/server/marketing-providers'
 import { type AppServices, appLayer } from '../../src/server/runtime/app'
 import { Auth } from '../../src/server/runtime/auth'
 import { Vault } from '../../src/server/runtime/vault'
+import { spool } from '../../src/server/spool'
 import { testRuntime } from '../../src/testing/run'
 
 // What a provider may say about whose its connections are, and what the signed
@@ -164,6 +165,49 @@ describe('what a provider says about whose its connections are', () => {
     for (const id of ['linkedin', 'x', 'google_ads']) {
       expect(offered[id]).toMatchObject({ shared: 'team', adoptExisting: true })
       expect(offered[id]?.canManage).toBeUndefined()
+    }
+  })
+
+  test('an app says who may manage the marketing accounts, as a provider of its own would', async () => {
+    const marketing = crmConfigSchema.shape.marketing.unwrap().parse({
+      website: 'https://acme.com',
+      channels: { x: { label: 'X', network: 'x', account: 'acme' } },
+      ads: { search: { label: 'Search', network: 'google', account: '1234567890' } },
+    })
+
+    const rule = ['marketing@example.com']
+    const limited = providersFor(marketing, rule)
+    expect(limited['x']).toMatchObject({ shared: 'team', adoptExisting: true, canManage: rule })
+    expect(limited['google_ads']?.canManage).toBe(rule)
+
+    // Through the app's extensions, where it is set: Ada may not connect X, the marketing lead may.
+    const savedConfig = spool().config.marketing
+    const savedMarketing = extensions.marketing
+    const lead = { id: 'user_lead', email: 'Marketing@example.com', name: 'Lead' }
+    spool().config.marketing = marketing
+    extensions.marketing = { ...savedMarketing, canManage: rule }
+
+    try {
+      process.env['X_CLIENT_ID'] = 'x-client'
+      process.env['X_CLIENT_SECRET'] = 'x-secret'
+      expect(providers()['x']?.canManage).toBe(rule)
+      await expect(run(createAuthRequest('x', ada))).rejects.toBeInstanceOf(IntegrationError)
+      expect((await run(createAuthRequest('x', lead))).url).toContain('x.com')
+
+      // Left out, anyone on the access list may, as before.
+      extensions.marketing = {}
+      expect(providers()['x']?.canManage).toBeUndefined()
+      expect((await run(createAuthRequest('x', ada))).url).toContain('x.com')
+    } finally {
+      delete process.env['X_CLIENT_ID']
+      delete process.env['X_CLIENT_SECRET']
+      spool().config.marketing = savedConfig
+
+      if (savedMarketing === undefined) {
+        delete extensions.marketing
+      } else {
+        extensions.marketing = savedMarketing
+      }
     }
   })
 })

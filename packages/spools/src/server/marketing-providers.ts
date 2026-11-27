@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import type { CrmMarketing } from '../crm/config-schema'
 import type { IntegrationProvider } from './integrations'
-import { crmConfig } from './spool'
+import { crmConfig, spool } from './spool'
 
 /**
  * The accounts the built-in marketing networks post and read through, as
@@ -90,8 +90,15 @@ const googleAds: IntegrationProvider = {
   revokeUrl: 'https://oauth2.googleapis.com/revoke',
 }
 
-/** The providers a marketing block uses: one for each built-in network a channel or ad account reaches directly. */
-export function providersFor(marketing: CrmMarketing | undefined) {
+/**
+ * The providers a marketing block uses: one for each built-in network a channel or ad account reaches directly.
+ * `canManage` is the app's rule for who may connect and disconnect them (`marketing.canManage` in
+ * src/app/extensions.ts); without one, anyone on the access list may.
+ */
+export function providersFor(
+  marketing: CrmMarketing | undefined,
+  canManage?: IntegrationProvider['canManage'],
+) {
   const offered: [string, IntegrationProvider][] = []
 
   if (!marketing) {
@@ -116,8 +123,14 @@ export function providersFor(marketing: CrmMarketing | undefined) {
     offered.push([NETWORK_PROVIDERS.ads.google, googleAds])
   }
 
-  return Object.fromEntries(offered)
+  return Object.fromEntries(
+    offered.map(([id, p]): [string, IntegrationProvider] => [
+      id,
+      canManage === undefined ? p : { ...p, canManage },
+    ]),
+  )
 }
 
-/** The providers the config's marketing uses now: none without a `marketing` block. */
-export const marketingProviders = () => providersFor(crmConfig().marketing)
+/** The providers the config's marketing uses now, managed by whoever the app says: none without a `marketing` block. */
+export const marketingProviders = () =>
+  providersFor(crmConfig().marketing, spool().extensions.marketing?.canManage)

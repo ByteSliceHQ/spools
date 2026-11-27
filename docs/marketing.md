@@ -61,9 +61,27 @@ It is a [shared connection](integrations.md#shared-connections) like any other: 
 lists it under **Shared with the team** for everyone, with who connected it, and any
 teammate can reconnect or disconnect it, so it does not depend on the person who
 connected it still being here. An account connected before shared connections were
-listed this way needs nothing done to it. To limit who may connect and disconnect one,
-replace its provider with your own of the same id in `src/app/extensions.ts` (its OAuth
-settings and all) and give it `canManage`.
+listed this way needs nothing done to it.
+
+To limit who may connect, reconnect and disconnect these accounts, say who under
+`marketing` in `src/app/extensions.ts`:
+
+```ts
+export default defineExtensions({
+  marketing: {
+    // Email addresses, or (user) => boolean, as `canManage` on a provider of your own.
+    canManage: ['marketing@acme.example'],
+  },
+})
+```
+
+It applies to every built-in network's account (LinkedIn, X, Google Ads). Everyone else
+still sees the account on the Integrations page and publishes through it; they are not
+shown the buttons, and the server refuses them whatever they send. Left out, any teammate
+may, as before. The rule works exactly as a provider's
+[`canManage`](integrations.md#share-a-provider-with-the-team) does: a function that
+throws lets nobody in. A provider of your own with the same id still replaces the
+built-in one, and then its own `canManage` is the one that counts.
 
 **LinkedIn.** Create an app at linkedin.com/developers and add the products _Sign In with
 LinkedIn using OpenID Connect_ and _Share on LinkedIn_. Posting to a company page needs

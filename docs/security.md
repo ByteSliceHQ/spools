@@ -62,7 +62,9 @@ connect and disconnect an account shared with the team, when its provider says
   The OAuth flow uses PKCE and a `state` signed with `APP_SECRET` that names the
   teammate and is tied to their browser by a cookie. A teammate removed from
   `access` keeps their stored tokens until they are deleted, but their mailboxes
-  stop being read. See [docs/integrations.md](integrations.md).
+  stop being read, and code acting for them is given no token. Disconnecting revokes the
+  token at the provider unless another connection holds the same account, whose access
+  revoking would end too. See [docs/integrations.md](integrations.md).
 - **Shared connections.** A provider can make its connections the team's, or one group's
   (`shared` in `src/app/extensions.ts`). Every CRM user can then see that the connection
   exists and act through it, whoever connected it, and it goes on working after that
@@ -77,19 +79,33 @@ connect and disconnect an account shared with the team, when its provider says
     group's), and the callback reads that from nowhere else, then checks it against what
     the provider says now. A `state` for a personal connection can't be replayed to make
     a shared one, nor one group's for another.
+  - Which account a shared connection is comes from the provider, asked with the token it
+    just issued. Nothing in the callback's address is taken as the answer, because the
+    address passes through the browser: a connection whose provider code did not get an
+    answer from the provider is refused. Otherwise a teammate could authorize an account
+    of their own and send it back under the team's name, replacing the team's tokens with
+    theirs. The CRM checks that the provider was asked, not what it was asked: a provider
+    you add must ask for something only the right account can answer.
+  - An account is one connection for the team, or one for a group. The database holds it
+    to one row, so two people connecting it at once can't leave two sets of tokens.
   - A shared connection's tokens are sealed for a name that includes whose it is. Editing
     a row in the database to turn a personal connection into a shared one, or to move it
     to another group, leaves tokens the CRM refuses to open.
   - Groups are labels today, not permissions: any CRM user can use any group's
     connection. `findConnections({ usableBy })` and `getAccessToken(id, { as })` refuse
-    someone who is not a CRM user, and a personal connection to anyone but its owner,
-    when an app's code says who it is acting for. Code that does not say is trusted.
+    someone who is not a CRM user, their own connections included, and a personal
+    connection to anyone but its owner, when an app's code says who it is acting for.
+    They also refuse when the person named is nobody: `as: ctx.actor` in a handler that
+    ran with no one signed in is not a way to be trusted. Only code that names no person
+    at all (`getAccessToken(id)`, `findConnections` without `usableBy`) is trusted, so the
+    choice is visible where it is made.
   - No browser is sent a token. The page is sent the account's name, whose it is, who
     connected it and its state.
 - **Marketing.** An account connected for marketing (LinkedIn, X, Google Ads) is a
   shared connection: any CRM user can publish through it from the Marketing page,
   whoever connected it, and can see, reconnect or disconnect it on the Integrations
-  page. Its tokens are sealed like any other, and no browser is sent one. `META_ACCESS_TOKEN` is a token for the business's page and ad
+  page, unless the app names who may with `marketing.canManage` in
+  `src/app/extensions.ts`. Its tokens are sealed like any other, and no browser is sent one. `META_ACCESS_TOKEN` is a token for the business's page and ad
   account: treat it as you treat the database's password. Only a CRM user can schedule or
   publish a post. The tool API can save a draft and nothing more, so text the assistant
   read can't put a post out. The website check fetches the address in `crm.config.json`

@@ -1126,6 +1126,13 @@
                   "kind": "scalar"
                 }
               },
+              "ownerKey": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "provider": {
                 "nullable": false,
                 "type": {
@@ -1198,6 +1205,9 @@
                 },
                 "lastError": {
                   "column": "last_error"
+                },
+                "ownerKey": {
+                  "column": "owner_key"
                 },
                 "provider": {
                   "column": "provider"
@@ -3364,6 +3374,11 @@
                   "dataType": "pg/text",
                   "nullable": true
                 },
+                "owner_key": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "provider": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -3417,6 +3432,11 @@
                     "account",
                     "shared",
                     "group_key"
+                  ]
+                },
+                {
+                  "columns": [
+                    "owner_key"
                   ]
                 }
               ]
@@ -4320,7 +4340,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "df1afbeacc885b3f6d949a9b51d6c657235a75f325c407fe1dba5d305d14c4cc"
+    "storageHash": "d8542f2872804c44d1f8875f396c4ad0c1ba7d0fcaadd3789cd863685c809cd8"
   },
   "execution": {
     "executionHash": "3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b",

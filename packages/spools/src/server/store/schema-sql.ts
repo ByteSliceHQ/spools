@@ -7,9 +7,12 @@ import { type AnyTable, type Column, columnName, type Kind } from './table'
 import { systemTables } from './tables'
 
 /**
- * The SQL that makes a database hold a Spool's tables. It only ever adds:
- * tables, columns and indexes that are missing. It never drops, renames or
- * retypes, so running it again (or against a newer config) loses nothing.
+ * The SQL that makes a database hold a Spool's tables. It adds the tables,
+ * columns and indexes that are missing, and never drops, renames or retypes a
+ * table or a column, so running it again (or against a newer config) loses no
+ * data. The one thing it takes away is an index a table no longer declares
+ * (`retireIndexes`): an index holds no data, and a unique one left behind goes
+ * on refusing rows the tables now allow.
  *
  * This is how an in-process database (PGlite) keeps up with the config, and how
  * tests make theirs. A production database is migrated with Prisma
@@ -83,25 +86,57 @@ const list = (keys: readonly string[]) => keys.map((key) => ident(columnName(key
 /** Columns, as an index's name has them. */
 const names = (keys: readonly string[]) => keys.map(columnName).join('_')
 
-function createIndexes(table: AnyTable): string[] {
+/** A table's indexes as it declares them now: each one's name and the statement that makes it. */
+function indexesOf(table: AnyTable): { name: string; create: string }[] {
   const foreign = Object.values(table.relations).flatMap((r) =>
     r.kind === 'one' ? [[r.column]] : [],
   )
 
+  const index = (name: string, kind: string, on: string) => ({
+    name,
+    create: `CREATE ${kind} IF NOT EXISTS ${ident(name)} ON ${tableRef(table)} ${on}`,
+  })
+
   return [
-    ...table.unique.map(
-      (keys) =>
-        `CREATE UNIQUE INDEX IF NOT EXISTS ${ident(named(table.name, names(keys), 'key'))} ON ${tableRef(table)} (${list(keys)})`,
+    ...table.unique.map((keys) =>
+      index(named(table.name, names(keys), 'key'), 'UNIQUE INDEX', `(${list(keys)})`),
     ),
-    ...[...table.indexes, ...foreign].map(
-      (keys) =>
-        `CREATE INDEX IF NOT EXISTS ${ident(named(table.name, names(keys), 'idx'))} ON ${tableRef(table)} (${list(keys)})`,
+    ...[...table.indexes, ...foreign].map((keys) =>
+      index(named(table.name, names(keys), 'idx'), 'INDEX', `(${list(keys)})`),
     ),
     ...(table.search
-      ? [
-          `CREATE INDEX IF NOT EXISTS ${ident(named(table.search.name, 'gin'))} ON ${tableRef(table)} USING gin (${searchDocument(table)})`,
-        ]
+      ? [index(named(table.search.name, 'gin'), 'INDEX', `USING gin (${searchDocument(table)})`)]
       : []),
+  ]
+}
+
+const createIndexes = (table: AnyTable): string[] => indexesOf(table).map((index) => index.create)
+
+/**
+ * Drops the indexes a table has in the database and no longer declares: a
+ * unique set that changed, an index or a search that was taken out. Decided by
+ * name, which is made from the table and its columns, so an index is kept
+ * exactly while the table still describes it. The primary key and anything
+ * else a constraint stands on are not this step's and are left alone.
+ *
+ * A database migrated with Prisma never runs this: its migrations drop what
+ * the schema no longer has.
+ */
+function retireIndexes(table: AnyTable): string[] {
+  const declared = indexesOf(table).map((index) => quoted(index.name))
+
+  return [
+    `DO $$ DECLARE stale record; BEGIN
+  FOR stale IN
+    SELECT c.relname AS name FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+    WHERE i.indrelid = ${quoted(tableRef(table))}::regclass
+      AND NOT i.indisprimary
+      AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conindid = i.indexrelid)
+      AND c.relname <> ALL (ARRAY[${declared.join(', ')}]::text[])
+  LOOP
+    EXECUTE format('DROP INDEX "public".%I', stale.name);
+  END LOOP;
+END $$`,
   ]
 }
 
@@ -129,6 +164,8 @@ END $$`,
 export function schemaSql(tables: readonly AnyTable[]): string[] {
   return [
     ...tables.flatMap(createTable),
+    // Before the new ones are made: a retired unique index may refuse what its replacement allows.
+    ...tables.flatMap(retireIndexes),
     ...tables.flatMap(createIndexes),
     // Last, when every table they point at exists.
     ...tables.flatMap(createForeignKeys),

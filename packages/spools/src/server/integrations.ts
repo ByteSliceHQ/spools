@@ -82,8 +82,17 @@ export type IntegrationProvider = {
   tokenAuth?: 'body' | 'basic'
   /**
    * Which account was connected: an email address, a company id, whatever tells
-   * two connections to this provider apart. `query` is the callback's query
-   * string, for providers that name the account there.
+   * two connections to this provider apart. Ask the provider with `get`, which
+   * uses the token it just issued: that answer is about the account that was
+   * really authorized.
+   *
+   * `query` is the callback's query string, for providers that name the account
+   * there. It came through the browser, so whoever is connecting can change it.
+   * Use it to know what to ask for, never as the answer: confirm it with `get`
+   * (a company the token can't read is refused by the provider). For a shared
+   * provider this is enforced as far as it can be: a connection whose `account`
+   * did not get an answer from the provider is refused, because the name
+   * decides which of the team's connections is replaced.
    */
   account: (ctx: {
     accessToken: string
@@ -855,6 +864,8 @@ const accountOf = Effect.fn('integrations.accountOf')(function* (
   query: URLSearchParams,
 ) {
   const context = yield* Effect.context<HttpClient.HttpClient>()
+  // Whether the provider answered a question asked with the new token.
+  const asked = { answered: false }
 
   const get = <T = Json>(url: string): Promise<T> =>
     Effect.runPromiseWith(context)(
@@ -869,10 +880,13 @@ const accountOf = Effect.fn('integrations.accountOf')(function* (
       ).pipe(
         Effect.flatMap((response) =>
           response.ok
-            ? // SAFETY: `get<T>` is part of the app's provider contract: the app names the shape of
-              // the answer it asked for and reads it in its own `account` function. Built-in
-              // providers ask for `Json` and parse it with a schema.
-              Effect.succeed(parseJson(response.body) as T)
+            ? Effect.sync(() => {
+                asked.answered = true
+                // SAFETY: `get<T>` is part of the app's provider contract: the app names the shape of
+                // the answer it asked for and reads it in its own `account` function. Built-in
+                // providers ask for `Json` and parse it with a schema.
+                return parseJson(response.body) as T
+              })
             : refuse(`Could not read the ${p.label} account`),
         ),
       ),
@@ -889,6 +903,15 @@ const accountOf = Effect.fn('integrations.accountOf')(function* (
     ),
   )
 
+  // A shared connection is found again by this name, and connecting it replaces the team's
+  // tokens for it. The callback's query went through the browser, so a name the provider was
+  // never asked about could be anyone's: a teammate's own company, sent back under the team's name.
+  if (p.shared !== undefined && account && !asked.answered) {
+    return yield* refuse(
+      `${p.label} could not be connected: which account it is was not confirmed with ${p.label}. Whoever set it up needs its \`account\` to ask ${p.label} with \`get\`.`,
+    )
+  }
+
   return account?.trim().toLowerCase()
 })
 
@@ -897,7 +920,8 @@ const accountOf = Effect.fn('integrations.accountOf')(function* (
  * encrypt the tokens and store them. Connecting the same account again replaces
  * its stored tokens.
  *
- * Whose the connection is comes from the signed state alone. A shared one
+ * Whose the connection is comes from the signed state alone, and which account
+ * it is from the provider, asked with the new token (`accountOf`). A shared one
  * replaces the team's (or that group's) connection to the same account whoever
  * made it, keeping its id, and records who connected it now. If there is none
  * but this person connected the account for themselves before the provider was
@@ -953,8 +977,9 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
     groupKey: owner.group ?? '',
   }
 
+  const sealedFor = ownerOf(where)
   const vault = yield* Vault
-  const credentials = yield* vault.seal(toCredentials(token, undefined, now), ownerOf(where))
+  const credentials = yield* vault.seal(toCredentials(token, undefined, now), sealedFor)
   const store = yield* Store
 
   const row = {
@@ -965,50 +990,112 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
   }
 
   if (owner.shared === null) {
-    const existing = yield* store.first(Integration, { where })
+    // One step each way, never a read and then a write: the row is changed if it is there,
+    // and made if it is not. Of two tabs finishing at once, the one whose insert loses to
+    // the unique index changes the row that won.
+    const mine = { where }
+    const written = yield* store.update(Integration, mine, row)
 
-    if (existing) {
-      yield* store.update(Integration, { where: { id: existing.id } }, row)
-    } else {
-      yield* store.insert(Integration, { ...where, ...row })
-    }
-  } else {
-    const connected = owned(
-      yield* store.find(Integration, {
-        where: { provider: id, account },
-        order: [asc('createdAt')],
-      }),
-    )
-
-    // The team's (or the group's) connection to this account, whoever connected it, and
-    // whether its row says so or it is one of a provider whose rows were always the team's.
-    const candidates = connected.filter(
-      (c) => c.owner.shared === owner.shared && c.owner.group === owner.group,
-    )
-
-    // Failing that, this person's own connection to the account, from before the provider was
-    // shared: connecting it for the team is how they hand it over, and nobody else's is touched.
-    const mine = connected.find((c) => c.owner.shared === null && c.row.userId === userId)
-    const existing = (candidates.find((c) => c.row.userId === userId) ?? candidates[0] ?? mine)?.row
-
-    const shared = {
-      ...row,
-      connectedByName: personOf(who)?.name ?? null,
-      connectedAt: new Date(now),
+    if (written === 0) {
+      yield* store
+        .insert(Integration, { ...where, ...row })
+        .pipe(
+          Effect.catchTag('DatabaseError', (error) =>
+            Effect.flatMap(store.update(Integration, mine, row), (changed) =>
+              changed > 0 ? Effect.void : Effect.fail(error),
+            ),
+          ),
+        )
     }
 
-    if (existing) {
-      // The row becomes this person's connection for the team: the tokens were sealed for exactly that.
-      yield* store.update(Integration, { where: { id: existing.id } }, { ...where, ...shared })
-    } else {
-      yield* store.insert(Integration, { ...where, ...shared })
-    }
+    const saved = yield* store.first(Integration, mine)
+    return saved ? toConnection(saved, owner) : yield* refuse('The connection could not be saved')
   }
 
-  const saved = yield* store.first(Integration, { where })
+  // A shared connection is one row for its account and its owner, whoever connects it:
+  // `ownerKey` says which, and no two rows may hold the same one.
+  const keyed = { where: { ownerKey: sealedFor } }
+
+  // The row becomes this person's connection for the team: the tokens were sealed for exactly that.
+  const shared = {
+    ...where,
+    ...row,
+    ownerKey: sealedFor,
+    connectedByName: personOf(who)?.name ?? null,
+    connectedAt: new Date(now),
+  }
+
+  const replace = store.update(Integration, keyed, shared)
+
+  // Rows from before shared connections had a key: the team's (or the group's) connection to
+  // this account, whether its row says so or it is one of a provider whose rows were always
+  // the team's. There can be several, from when two people could each connect it.
+  const connected = owned(
+    yield* store.find(Integration, {
+      where: { provider: id, account, ownerKey: null },
+      order: [asc('createdAt')],
+    }),
+  )
+
+  const unkeyed = connected.filter(
+    (c) => c.owner.shared === owner.shared && c.owner.group === owner.group,
+  )
+
+  // Failing that, this person's own connection to the account, from before the provider was
+  // shared: connecting it for the team is how they hand it over, and nobody else's is touched.
+  const mine = connected.find((c) => c.owner.shared === null && c.row.userId === userId)
+  const earlier = (unkeyed.find((c) => c.row.userId === userId) ?? unkeyed[0] ?? mine)?.row
+
+  // Each step checks and changes at once, and whoever loses a step to someone connecting the
+  // same account at the same moment ends on the row that won, by its key.
+  let written = yield* replace
+
+  if (written === 0 && earlier) {
+    // Only if it is still the row that was read: not keyed, and whose it was.
+    written = yield* store
+      .update(
+        Integration,
+        {
+          where: {
+            id: earlier.id,
+            ownerKey: null,
+            userId: earlier.userId,
+            shared: earlier.shared,
+            groupKey: earlier.groupKey,
+          },
+        },
+        shared,
+      )
+      .pipe(Effect.catchTag('DatabaseError', () => replace))
+  }
+
+  if (written === 0) {
+    written = yield* replace
+  }
+
+  if (written === 0) {
+    yield* store
+      .insert(Integration, shared)
+      .pipe(
+        Effect.catchTag('DatabaseError', (error) =>
+          Effect.flatMap(replace, (changed) => (changed > 0 ? Effect.void : Effect.fail(error))),
+        ),
+      )
+  }
+
+  const saved = yield* store.first(Integration, keyed)
 
   if (!saved) {
     return yield* refuse('The connection could not be saved')
+  }
+
+  // What is left of the earlier rows for this account and owner is the same connection, stored
+  // again with an older grant. One connection is kept. The provider is not asked to revoke
+  // theirs: at many providers that ends the grant just made as well.
+  for (const { row: duplicate } of unkeyed) {
+    if (duplicate.id !== saved.id) {
+      yield* store.remove(Integration, { where: { id: duplicate.id, ownerKey: null } })
+    }
   }
 
   return toConnection(saved, owner)
@@ -1028,8 +1115,10 @@ export const listConnections = Effect.fn('integrations.listConnections')(functio
 })
 
 /**
- * Whether a person may use each of these connections: their own, or a shared
- * one when they are on the access list. This is the one place that decides it.
+ * Whether a person may use each of these connections: they are on the access
+ * list, and it is their own or a shared one. This is the one place that
+ * decides it. Someone taken off the access list may use nothing, their own
+ * connections included.
  *
  * A group's connection is anyone's on the access list. When people come to
  * hold groups, whether this person holds `owner.group` is asked here.
@@ -1039,15 +1128,15 @@ const usableBy = Effect.fn('integrations.usableBy')(function* <
 >(who: Who, connections: readonly T[]) {
   const userId = idOf(who)
 
-  // Someone the boundary let in is on the access list. For an id alone the directory says,
-  // and it is only asked when the answer depends on it.
-  const member =
-    personOf(who) ??
-    (connections.some(({ owner }) => owner.shared !== null) ? yield* memberOf(userId) : null)
-
-  return connections.filter(({ row, owner }) =>
-    owner.shared === null ? row.userId === userId : member !== null,
+  const theirs = connections.filter(
+    ({ row, owner }) => owner.shared !== null || row.userId === userId,
   )
+
+  // Someone the boundary let in is on the access list. For an id alone the directory says,
+  // and it is only asked when there is something the answer decides.
+  const member = personOf(who) ?? (theirs.length > 0 ? yield* memberOf(userId) : null)
+
+  return member === null ? [] : theirs
 })
 
 export type ConnectionFilter = {
@@ -1058,8 +1147,13 @@ export type ConnectionFilter = {
   shared?: Sharing
   /** One group's connections. */
   group?: string
-  /** Only what this person may use: their own, and shared ones if they are on the access list. */
-  usableBy?: string
+  /**
+   * Only what this person may use: their own and shared ones, if they are on the
+   * access list. `null` says a person was meant and there is none (a handler run
+   * with nobody signed in): nothing is usable by nobody. Leave it out for code
+   * that acts for no one.
+   */
+  usableBy?: string | null
 }
 
 /**
@@ -1093,7 +1187,12 @@ export const findConnections = Effect.fn('integrations.findConnections')(functio
       (filter.group === undefined || (owner.shared === 'group' && owner.group === filter.group)),
   )
 
-  const allowed = filter.usableBy === undefined ? wanted : yield* usableBy(filter.usableBy, wanted)
+  const allowed =
+    filter.usableBy === undefined
+      ? wanted
+      : filter.usableBy === null
+        ? []
+        : yield* usableBy(filter.usableBy, wanted)
 
   // No names are looked up here: this runs on every post, sync and schedule, and must not ask the directory.
   return allowed.map(({ row, owner }) => toConnection(row, owner))
@@ -1114,21 +1213,18 @@ export const listMailboxConnections = Effect.fn('integrations.listMailboxConnect
 
 const REFRESH_MARGIN_MS = 60 * 1000
 /** One refresh at a time per connection: some providers retire a refresh token the moment it is used. */
-const refreshing = new Map<string, Deferred.Deferred<string, StaffError>>()
+const refreshing = new Map<string, Deferred.Deferred<string | null, StaffError>>()
 
 /**
- * A valid access token for a connection, refreshed when it is about to expire.
- * A refresh the provider turns down marks the connection as needing to be
- * connected again.
- *
- * With `as`, the token is only given if that person may use the connection:
- * it is their own, or it is shared and they are on the access list.
+ * One try at a token for a connection. Null when the row was changed while its
+ * token was being renewed (connected again, or handed to the team): what was
+ * renewed is then the old grant's, sealed under the old name, and is not
+ * written. The caller reads the row again.
  */
-export const getAccessToken = Effect.fn('integrations.getAccessToken')(function* (
+const tokenOnce = Effect.fn('integrations.tokenOnce')(function* (
   connectionId: string,
-  now = Date.now(),
-  /** The person this is for. Left out by code with nobody behind it (a schedule, an automation), which is trusted. */
-  as?: string,
+  now: number,
+  as: string | undefined,
 ) {
   const store = yield* Store
   const vault = yield* Vault
@@ -1153,14 +1249,14 @@ export const getAccessToken = Effect.fn('integrations.getAccessToken')(function*
     return yield* new VaultError({ message: 'Stored secret belongs to something else' })
   }
 
+  // Every write below is for the row as it was read: the same tokens, so the same owner they
+  // were sealed for. A row that was connected again or handed over in the meantime is left as it is.
+  const asRead = { where: { id: row.id, credentials: row.credentials } }
+
   if (current.expiresAt - REFRESH_MARGIN_MS > now) {
     // Sealed before tokens were tied to their row: tie them now, unless a refresh just replaced them.
     if (!bound) {
-      yield* store.update(
-        Integration,
-        { where: { id: row.id, credentials: row.credentials } },
-        { credentials: yield* vault.seal(current, owner) },
-      )
+      yield* store.update(Integration, asRead, { credentials: yield* vault.seal(current, owner) })
     }
 
     return current.accessToken
@@ -1178,7 +1274,7 @@ export const getAccessToken = Effect.fn('integrations.getAccessToken')(function*
     return yield* Deferred.await(inFlight)
   }
 
-  const done = yield* Deferred.make<string, StaffError>()
+  const done = yield* Deferred.make<string | null, StaffError>()
   refreshing.set(row.id, done)
 
   const refresh = Effect.gen(function* () {
@@ -1190,13 +1286,13 @@ export const getAccessToken = Effect.fn('integrations.getAccessToken')(function*
     const next = toCredentials(token, current, now)
     const sealed = yield* vault.seal(next, owner)
 
-    yield* store.update(
-      Integration,
-      { where: { id: row.id } },
-      { credentials: sealed, status: 'connected', lastError: null },
-    )
+    const written = yield* store.update(Integration, asRead, {
+      credentials: sealed,
+      status: 'connected',
+      lastError: null,
+    })
 
-    return next.accessToken
+    return written === 0 ? null : next.accessToken
   }).pipe(
     Effect.catchTag('IntegrationError', (error) => {
       if (!error.reconnect) {
@@ -1204,9 +1300,13 @@ export const getAccessToken = Effect.fn('integrations.getAccessToken')(function*
       }
 
       const message = `${label} no longer accepts this connection. Reconnect ${row.account} on the Integrations page.`
+
+      // The grant that was turned down may no longer be the row's: then the row is not marked.
       return store
-        .update(Integration, { where: { id: row.id } }, { status: 'error', lastError: message })
-        .pipe(Effect.andThen(refuse(message, true)))
+        .update(Integration, asRead, { status: 'error', lastError: message })
+        .pipe(
+          Effect.flatMap((marked) => (marked === 0 ? Effect.succeed(null) : refuse(message, true))),
+        )
     }),
   )
 
@@ -1217,9 +1317,41 @@ export const getAccessToken = Effect.fn('integrations.getAccessToken')(function*
 })
 
 /**
+ * A valid access token for a connection, refreshed when it is about to expire.
+ * A refresh the provider turns down marks the connection as needing to be
+ * connected again.
+ *
+ * With `as`, the token is only given if that person may use the connection:
+ * they are on the access list, and it is their own or it is shared.
+ */
+export const getAccessToken = Effect.fn('integrations.getAccessToken')(function* (
+  connectionId: string,
+  now = Date.now(),
+  /**
+   * The person this is for. Left out by code with nobody behind it (a schedule,
+   * the mailbox sync), which is trusted. `null` says a person was meant and
+   * there is none, and is refused: nobody is not someone to trust.
+   */
+  as?: string | null,
+) {
+  if (as === null) {
+    return yield* refuse(
+      'That account can only be used for someone signed in to the CRM, and nobody was',
+    )
+  }
+
+  // Twice at most: a row can be connected again under a renewal once, not for ever.
+  const token =
+    (yield* tokenOnce(connectionId, now, as)) ?? (yield* tokenOnce(connectionId, now, as))
+
+  return token ?? (yield* refuse('That account was being connected again. Try again in a moment.'))
+})
+
+/**
  * Remove a connection and its stored tokens: one of a teammate's own, or a
- * shared one they may manage. The provider is asked to revoke the token where
- * it offers that, but the local copy is deleted either way.
+ * shared one they may manage. The local copy is deleted, and the provider is
+ * asked to revoke the token where it offers that, unless another connection
+ * holds the same account: revoking would end that one's access too.
  *
  * False when there is no such connection of theirs. A shared one they can see
  * but may not manage is refused in words.
@@ -1250,8 +1382,34 @@ export const disconnect = Effect.fn('integrations.disconnect')(function* (
     )
   }
 
+  // The local copy goes first, and only once: of two people removing it, one is told they did.
+  if ((yield* store.remove(Integration, { where: { id: row.id } })) === 0) {
+    return false
+  }
+
   if (p?.revokeUrl) {
     const revokeUrl = p.revokeUrl
+
+    // Revoking one token ends the whole grant at many providers: every token that account gave
+    // this OAuth client. So it is only asked for when no other connection stands on the same
+    // grant: the same account stored again (a teammate's own beside the team's, two people's
+    // connections to one shared inbox), at this provider or another that uses the same client.
+    const sameClient = Object.entries(providers()).flatMap(([other, q]) =>
+      q.clientId === p.clientId && q.revokeUrl === revokeUrl ? [other] : [],
+    )
+
+    const siblings = yield* store.count(Integration, {
+      where: { account: row.account },
+      filter: oneOf('provider', sameClient),
+    })
+
+    if (siblings > 0) {
+      yield* Effect.logInfo(
+        `[integrations] ${row.provider}: ${row.account} was disconnected without asking ${p.label} to revoke its token, because another connection uses the same account`,
+      )
+
+      return true
+    }
 
     // Revocation is a courtesy; a vault or network failure must not keep the tokens around.
     yield* vault.open(row.credentials, ownerOf(row), Credentials).pipe(
@@ -1267,7 +1425,6 @@ export const disconnect = Effect.fn('integrations.disconnect')(function* (
     )
   }
 
-  yield* store.remove(Integration, { where: { id: row.id } })
   return true
 })
 
