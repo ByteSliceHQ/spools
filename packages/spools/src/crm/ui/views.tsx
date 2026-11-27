@@ -147,7 +147,8 @@ function TableView(props: ViewProps) {
           {columns.map((c, i) => {
             const field = obj.fields[c]
             const Icon = field ? fieldTypeIcons[field.type] : Clock
-            const sortable = c !== 'createdBy'
+            // A relations field holds many records: there is no one value to order by.
+            const sortable = c !== 'createdBy' && field?.type !== 'relations'
             const level = sort.findIndex((s) => s.field === c)
             const active = sort[level]
             const known = fieldOf(obj, c)

@@ -697,7 +697,7 @@ function SortChip({
   const [open, setOpen] = useState(false)
 
   const sortable = [
-    ...Object.keys(obj.fields),
+    ...Object.keys(obj.fields).filter((k) => obj.fields[k]?.type !== 'relations'),
     ...Object.keys(SYSTEM_COLUMNS).filter((k) => k !== 'createdBy'),
   ]
 

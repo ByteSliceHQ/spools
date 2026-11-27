@@ -6,7 +6,8 @@ import type { CrmField, FieldType } from '../field-types'
 import { countKey, idsKey } from '../links'
 import { allowedOptions } from '../options'
 import { inputClass } from './kit'
-import { RelationInput, type RelationTitles } from './relation-picker'
+import { RelationInput, RelationsInput, type RelationTitles } from './relation-picker'
+import { useCrmConfig } from './use-crm'
 
 export type { RelationTitles }
 
@@ -43,7 +44,7 @@ type Scalar = z.output<typeof scalarSchema>
 export const relatedSchema = z.looseObject({ id: scalarSchema })
 type Related = z.output<typeof relatedSchema>
 /** The related records nested under a `relations` field. */
-const relatedListSchema = z.array(relatedSchema)
+export const relatedListSchema = z.array(relatedSchema)
 
 /** What `new Date()` can read: a Date as sent, the ISO text it was written as, or a timestamp. */
 const momentSchema = z.union([z.string(), z.number(), z.date()])
@@ -199,11 +200,12 @@ const fieldDisplay = {
     )
   },
   relations: ({ field, value: list, titleFieldOf, plain, more = 0 }) => {
+    // Inline, so a table cell keeps them on its one line and a detail panel lets them wrap.
     const chip =
-      'bg-c-hov text-c-fg inline-flex h-5 max-w-40 items-center rounded-md px-1.5 text-xs font-medium'
+      'bg-c-hov text-c-fg mr-1 inline-flex h-5 max-w-40 items-center rounded-md px-1.5 align-middle text-xs font-medium'
 
     return (
-      <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+      <span>
         {list.map((rel) => {
           const named = scalarSchema.safeParse(rel[titleFieldOf(field.to)])
           const title = String(named.success ? named.data : rel.id)
@@ -341,6 +343,9 @@ type InputProps<T extends FieldType> = {
   users: CrmUserOption[]
   /** For a select with `dependsOn`: the value its controlling field holds right now. */
   controlling?: FieldData
+  /** For `relations`: the related records the record came with (under the field's key), and how many it holds. */
+  related?: FieldData
+  total?: FieldData
 }
 
 type FieldInputs = { [T in FieldType]: (props: InputProps<T>) => ReactNode }
@@ -465,8 +470,16 @@ const fieldInput = {
       titles={titles}
     />
   ),
-  // The picker for many records comes with the rest of the interface.
-  relations: () => null,
+  relations: ({ field, name, value, titles, related, total }) => (
+    <RelationsField
+      objectKey={field.to}
+      name={name}
+      ids={value}
+      related={related}
+      total={total}
+      titles={titles}
+    />
+  ),
   user: ({ field, name, value, users }) => {
     const current = asString(value)
     const known = users.some((u) => u.id === current)
@@ -489,6 +502,47 @@ const fieldInput = {
     )
   },
 } satisfies FieldInputs
+
+/** The ids a relations field starts with: a list as a record holds it, or the ids in one string. */
+const idListSchema = z.union([
+  z.array(z.string()),
+  z.string().transform((ids) =>
+    ids
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id !== ''),
+  ),
+])
+
+/** A relations field's input, given what the record (or a new record's preset) holds for it. */
+function RelationsField({
+  objectKey,
+  name,
+  ids,
+  related,
+  total,
+  titles,
+}: {
+  objectKey: string
+  name: string
+  ids: FieldData
+  related: FieldData
+  total: FieldData
+  titles?: RelationTitles | undefined
+}) {
+  const titleField = useCrmConfig().objects[objectKey]?.titleField ?? 'id'
+  const records = relatedListSchema.safeParse(related).data ?? []
+  const count = z.number().safeParse(total).data
+
+  const value = (idListSchema.safeParse(ids).data ?? []).map((id) => {
+    const title = z.string().safeParse(records.find((r) => r.id === id)?.[titleField]).data
+    return { id, title }
+  })
+
+  return (
+    <RelationsInput objectKey={objectKey} name={name} value={value} total={count} titles={titles} />
+  )
+}
 
 /** A datetime input's starting text ("2026-03-09T14:30"), or nothing when the value is not a moment. */
 function inputMoment(value: FieldData): string {
@@ -523,12 +577,38 @@ export function FieldInput({
   const value = record?.[name] ?? ('default' in field ? field.default : undefined)
   const users = useContext(CrmUsersContext)
   return (
-    <>{showInput(fieldInput, field.type, { field, name, value, titles, users, controlling })}</>
+    <>
+      {showInput(fieldInput, field.type, {
+        field,
+        name,
+        value,
+        titles,
+        users,
+        controlling,
+        related: record?.[fieldKey],
+        total: record?.[countKey(fieldKey)],
+      })}
+    </>
   )
 }
 
-/** One submitted value: an input's text, or whether a checkbox is ticked. */
-export type FormValue = FormDataEntryValue | boolean
+/** What a relations field submits: the records to link and the ones to let go. */
+const linksChangeSchema = z.object({ add: z.array(z.string()), remove: z.array(z.string()) })
+
+/** One submitted value: an input's text, whether a checkbox is ticked, or a relations field's change. */
+export type FormValue = FormDataEntryValue | boolean | z.output<typeof linksChangeSchema>
+
+/** A relations field's change, as its input wrote it into the form. Nothing readable is no change. */
+function linksChangeOf(written: FormDataEntryValue | null): z.output<typeof linksChangeSchema> {
+  const text = z.string().safeParse(written)
+
+  try {
+    const parsed = linksChangeSchema.safeParse(text.success ? JSON.parse(text.data) : undefined)
+    return parsed.success ? parsed.data : { add: [], remove: [] }
+  } catch {
+    return { add: [], remove: [] }
+  }
+}
 
 /** Convert FormData into a plain object; unchecked checkboxes become false. */
 export function formValues(form: HTMLFormElement, fields: Record<string, CrmField>) {
@@ -537,6 +617,11 @@ export function formValues(form: HTMLFormElement, fields: Record<string, CrmFiel
   return Object.fromEntries(
     Object.entries(fields).map(([key, field]): [string, FormValue] => {
       const name = inputName(key, field)
+
+      if (field.type === 'relations') {
+        return [name, linksChangeOf(data.get(name))]
+      }
+
       return [name, field.type === 'boolean' ? data.get(name) === 'on' : (data.get(name) ?? '')]
     }),
   )

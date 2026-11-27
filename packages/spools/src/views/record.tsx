@@ -18,6 +18,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { z } from 'zod'
 
 import type { LoggableKind } from '../crm/activity'
+import { idsKey } from '../crm/links'
 import { fieldLabel } from '../crm/naming'
 import { FieldValue } from '../crm/ui/fields'
 import { FileBrowser } from '../crm/ui/files'
@@ -650,7 +651,12 @@ export function RecordPage(): ReactNode {
           obj={creatingObj}
           // The new record starts out linked to this one, whose title is already on the page.
           titles={{ [object]: [{ id, title }] }}
-          preset={{ [`${creating.field}Id`]: id }}
+          // A relations field starts out holding this record, among any others it will hold.
+          preset={
+            creatingObj.fields[creating.field]?.type === 'relations'
+              ? { [idsKey(creating.field)]: [id] }
+              : { [`${creating.field}Id`]: id }
+          }
         />
       )}
     </>

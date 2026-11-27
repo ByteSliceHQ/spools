@@ -514,7 +514,7 @@ function ConditionFields({
           onToggle={toggle}
         />
       )}
-      {arity === 'many' && field.type === 'relation' && (
+      {arity === 'many' && (field.type === 'relation' || field.type === 'relations') && (
         <div>
           {list.length > 0 && (
             <div className="mb-1.5 flex flex-wrap gap-1">
@@ -1005,7 +1005,7 @@ export function FilterBar({
 
     const records = index
       ? Object.entries(obj.fields).flatMap(([key, field]) =>
-          field.type === 'relation'
+          field.type === 'relation' || field.type === 'relations'
             ? (searchRecords(index, typed, { only: field.to, per: 3 }).groups[0]?.hits ?? []).map(
                 (h) => ({
                   field: key,
@@ -1020,7 +1020,7 @@ export function FilterBar({
     for (const r of records) {
       const field = obj.fields[r.field]
 
-      if (field?.type === 'relation') {
+      if (field?.type === 'relation' || field?.type === 'relations') {
         known.current.set(`${field.to}:${r.id}`, r.title)
       }
     }
