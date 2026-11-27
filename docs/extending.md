@@ -57,6 +57,9 @@ hooks: {
 Available hooks: `beforeCreate`, `afterCreate`, `beforeUpdate`, `afterUpdate`,
 `afterDelete`. `beforeUpdate` and `afterUpdate` receive the `previous` record.
 Values returned from a `before*` hook are still validated against the config.
+A [`relations`](configuration.md#many-related-records) field arrives in `values`
+as `<field>Ids` (a list, or `{ add, remove }`), and on `record` and `previous`
+as `<field>`, `<field>Ids` and `<field>Count`.
 
 A change happens in this order:
 

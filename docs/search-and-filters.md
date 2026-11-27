@@ -83,6 +83,7 @@ operator or value, and its × to remove it.
 | `number`, `currency`                        | =, ≠, >, ≥, <, ≤, is between, is empty, is not empty                                                                      |
 | `date`, `datetime`, Created, Updated        | is, is before, is after, is between, in the last N days, in the next N days, more than N days ago, is empty, is not empty |
 | `select`, `relation`, `user`, Created by    | is any of, is none of, is empty, is not empty                                                                             |
+| `relations`                                 | has any of, has all of, has none of, is empty, is not empty                                                               |
 | `boolean`                                   | is yes, is no                                                                                                             |
 
 "Is", "is before" and "is after" take a date or a period: today, yesterday,
@@ -125,6 +126,14 @@ empty_. Field edits and automations don't count as activity.
 
 Both go one step: not the company's owner's team, and not a condition through
 a relation inside "has deals where".
+
+A [`relations`](configuration.md#many-related-records) field is filtered by the
+records it holds: _Tags has any of VIP or Partner_, _has all of_ them, _has none
+of_ them, or holds nothing at all. "Has all of" takes up to 10 records, the
+others up to 100. It works through a relation too (`company.tags`: the contact's
+company has the tag; a contact with no company has none) and inside "has … where"
+(_has contacts where Tags has any of VIP_). It does not reach into the related
+records' own fields: filter by the tags, not by a tag's colour.
 
 A list takes up to 4 sets of filters, 10 filters in a set, 5 conditions inside
 one "has … where", and 40 conditions in all. Past that the Filter button is
@@ -222,6 +231,7 @@ lists matches when any one list does.
 | `between`                                                          | number, currency, date, datetime | `[low, high]`                                                                                                                                 |
 | `on`, `before`, `after`                                            | date, datetime                   | `"YYYY-MM-DD"` or a period: `today`, `yesterday`, `tomorrow`, `thisWeek`, `lastWeek`, `nextWeek`, and the same for `Month`, `Quarter`, `Year` |
 | `inLast`, `inNext`, `olderThan`                                    | date, datetime                   | a number of days                                                                                                                              |
+| `anyOf`, `allOf`, `noneOf`                                         | relations                        | a list of record ids (`allOf`: up to 10)                                                                                                      |
 | `in`, `notIn`                                                      | select, relation, user           | a list of option values, record ids or user ids (`"@me"` for the viewer)                                                                      |
 | `yes`, `no`                                                        | boolean                          | none                                                                                                                                          |
 | `empty`, `notEmpty`                                                | any                              | none                                                                                                                                          |

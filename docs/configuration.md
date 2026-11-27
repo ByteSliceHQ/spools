@@ -98,15 +98,18 @@ Common options for every field:
 | `datetime`                                  | `timestamptz`          |                                                                                                                                        |
 | `select`                                    | `text`                 | `options: [{ value, label?, color?, probability?, when? }]`, `default`, `dependsOn`. See [Pipelines and stages](#pipelines-and-stages) |
 | `relation`                                  | `<key>_id` foreign key | `to`: target object key                                                                                                                |
+| `relations`                                 | a links table          | `to`: target object key; `inverse`: a `relations` field on that object. See [Many related records](#many-related-records)              |
 | `user`                                      | `text`                 | A person on your team (owner, assignee). Shown as a picker of everyone on the access allowlist; stores the auth provider's id for them |
 
 Need a type that isn't here? [Add one](extending.md#add-a-field-type) in two files.
 
 Colors: `gray`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `indigo`, `purple`, `pink`.
 
-Relations are many-to-one. Optional relations are cleared when the target is
-deleted; required relations block the delete. When writing a relation through the
-API or the assistant, pass `<field>Id` (for example `companyId`).
+A `relation` is many-to-one: a deal has one company. Optional relations are
+cleared when the target is deleted; required relations block the delete. When
+writing a relation through the API or the assistant, pass `<field>Id` (for
+example `companyId`). For many on both sides (a contact has several tags, a tag
+is on several contacts) use [`relations`](#many-related-records).
 
 In the app a relation is chosen by searching the related object, in forms, in a
 table cell and in a filter. The search looks at the related object's title and
@@ -116,6 +119,74 @@ or ten thousand.
 
 Select values are stored as plain text, so adding options never needs a
 migration. Removing an option leaves existing records with that value.
+
+### Many related records
+
+A `relations` field holds any number of records of another object, or of its
+own:
+
+```json
+"contacts": {
+  "fields": {
+    "tags": { "type": "relations", "to": "tags" },
+    "teams": { "type": "relations", "to": "teams" }
+  }
+},
+"tags": {
+  "fields": {
+    "name": { "type": "text", "required": true },
+    "contacts": { "type": "relations", "to": "contacts", "inverse": "tags" }
+  }
+}
+```
+
+`inverse` names a `relations` field on the target object that this field is
+the other side of. Both then show and change the same links: add a tag to a
+contact and the contact appears under that tag. Set `inverse` on one side
+only. The side without it owns the links, so adding an inverse later moves
+nothing. Without an inverse, the other object's record pages still list the
+records that hold it.
+
+In the app the field is shown as chips, in tables, on board cards and on the
+record. It is edited with the same search as a `relation`, where any number of
+records can be ticked. It can be [filtered](search-and-filters.md#operators),
+and not sorted by.
+
+A record brings its related records back under three keys:
+
+| Key            | Holds                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| `<field>`      | The related records, each as `{ "id", "<its title field>" }`, in title order.             |
+| `<field>Ids`   | Their ids, in the same order.                                                             |
+| `<field>Count` | How many there are. A record brings back at most 100; the count says when there are more. |
+
+Write the field as `<field>Ids`, through the API, the assistant, a hook or a
+form:
+
+| Value                                        | Does                                                     |
+| -------------------------------------------- | -------------------------------------------------------- |
+| `["<id>", "<id>"]`, or the ids in one string | Replaces the set. `[]` or `""` empties it.               |
+| `{ "add": ["<id>"], "remove": ["<id>"] }`    | Links and lets go of those records, and leaves the rest. |
+
+One write names at most 100 ids. An id that is not a record of the target
+object is refused, and nothing of the change is kept. A list is refused when the
+record holds more than the 100 a read brings back, because whoever sent it
+cannot have seen what it would remove: use `add` and `remove` there. The app's
+own forms and cells always send `add` and `remove`.
+
+A change to a record's links is a change to that record: it goes through its
+hooks and automations, moves its `updatedAt`, and adds a line to its timeline
+("added Tags: VIP, Partner"). The records at the other end are not changed: no
+hook runs for them and their timelines say nothing.
+
+Each field that owns its links has a table, `<object>_<field>` (`contacts_tags`),
+with one row per pair, made by `bun run crm:gen` and `bun run db:push` like any
+other. Deleting a record deletes its links, never the records at the other end.
+`crm:gen` refuses a target or an inverse that doesn't fit, `required`, a field
+named `<field>Ids`, `<field>Count` or `<field>Links` beside it, a links table
+whose name another table has, and a view sorted by the field. Renaming the
+field or its object names a new, empty table: the links stay in the old one
+until you move them.
 
 ### Pipelines and stages
 
@@ -281,8 +352,11 @@ made on a phone are only counted once someone logs them.
 
 Any view can be exported as CSV, and CSV files can be imported: columns are matched
 to fields by key or label, `select` values by option label, and relations by the
-related record's title. An import is limited to 1,000 rows and doesn't fire
-automations.
+related record's title. A `relations` field is one cell with its titles
+separated by `;` (`VIP; Partner`), up to 1,000 of them on export; on import each
+title is matched the same way, and one that matches nothing is left out. A title
+that itself contains `;` can't be matched: use the record's id in its place. An
+import is limited to 1,000 rows and doesn't fire automations.
 
 ## Actions
 

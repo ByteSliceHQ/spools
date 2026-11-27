@@ -47,8 +47,11 @@ database: postgres({ maxConnections: 20 }),
 ## Schema and migrations
 
 `bun run crm:gen` writes `prisma/schema.prisma` from `crm.config.json`, the system
-tables, and any tables your adapters keep. Prisma's CLI migrates a Postgres from it,
-whichever adapter the server uses:
+tables, and any tables your adapters keep. An object has a table, and so has each
+[`relations`](configuration.md#many-related-records) field that owns its links:
+`<object>_<field>`, with `source_id` and `target_id`, one row per pair, and a foreign
+key on each that deletes the row with either record. Prisma's CLI migrates a Postgres
+from it, whichever adapter the server uses:
 
 ```sh
 bun run db:push                       # development: make the database match
@@ -83,7 +86,10 @@ const open =
 
 `where` is columns that must equal a value, and `null` means empty. `filter` is
 anything else: comparisons, text, relations, full-text search
-(`packages/spools/src/server/store/query.ts`). A row's TypeScript type follows from its
+(`packages/spools/src/server/store/query.ts`). A links table is a table like any
+other (`linkTables` and `linkSide` in `store/objects.ts`): each object's table has a
+relation to its rows of it, so "has this tag" is `some('tagsLinks', eq('targetId', id))`,
+with no condition of its own for an adapter to learn. A row's TypeScript type follows from its
 table, and `update` and `remove` refuse to run with no condition.
 
 Writes that belong together go in a transaction: everything in it is kept, or none of it.
