@@ -891,7 +891,9 @@ const accountOf = Effect.fn('integrations.accountOf')(function* (
  *
  * Whose the connection is comes from the signed state alone. A shared one
  * replaces the team's (or that group's) connection to the same account whoever
- * made it, keeping its id, and records who connected it now.
+ * made it, keeping its id, and records who connected it now. If there is none
+ * but this person connected the account for themselves before the provider was
+ * shared, that connection becomes the shared one.
  */
 export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
   id: string,
@@ -963,16 +965,23 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
       yield* store.insert(Integration, { ...where, ...row })
     }
   } else {
-    // The team's (or the group's) connection to this account, whoever connected it, and
-    // whether its row says so or it is one of a provider whose rows were always the team's.
-    const candidates = owned(
+    const connected = owned(
       yield* store.find(Integration, {
         where: { provider: id, account },
         order: [asc('createdAt')],
       }),
-    ).filter((c) => c.owner.shared === owner.shared && c.owner.group === owner.group)
+    )
 
-    const existing = (candidates.find((c) => c.row.userId === userId) ?? candidates[0])?.row
+    // The team's (or the group's) connection to this account, whoever connected it, and
+    // whether its row says so or it is one of a provider whose rows were always the team's.
+    const candidates = connected.filter(
+      (c) => c.owner.shared === owner.shared && c.owner.group === owner.group,
+    )
+
+    // Failing that, this person's own connection to the account, from before the provider was
+    // shared: connecting it for the team is how they hand it over, and nobody else's is touched.
+    const mine = connected.find((c) => c.owner.shared === null && c.row.userId === userId)
+    const existing = (candidates.find((c) => c.row.userId === userId) ?? candidates[0] ?? mine)?.row
 
     const shared = {
       ...row,
@@ -1019,11 +1028,14 @@ export const listConnections = Effect.fn('integrations.listConnections')(functio
  */
 const usableBy = Effect.fn('integrations.usableBy')(function* <
   T extends { row: Row; owner: Owner },
->(userId: string, connections: readonly T[]) {
-  // The directory is only asked when the answer depends on it.
-  const member = connections.some(({ owner }) => owner.shared !== null)
-    ? yield* memberOf(userId)
-    : null
+>(who: Who, connections: readonly T[]) {
+  const userId = idOf(who)
+
+  // Someone the boundary let in is on the access list. For an id alone the directory says,
+  // and it is only asked when the answer depends on it.
+  const member =
+    personOf(who) ??
+    (connections.some(({ owner }) => owner.shared !== null) ? yield* memberOf(userId) : null)
 
   return connections.filter(({ row, owner }) =>
     owner.shared === null ? row.userId === userId : member !== null,
@@ -1272,7 +1284,10 @@ export const connectionsOverview = Effect.fn('integrations.connectionsOverview')
       listConnections(user.id),
       // Every row that says it is shared, and every row of a provider whose unmarked rows are.
       store.find(Integration, {
-        filter: or(neq('shared', ''), oneOf('provider', adopting)),
+        filter:
+          adopting.length > 0
+            ? or(neq('shared', ''), oneOf('provider', adopting))
+            : neq('shared', ''),
         order: [asc('createdAt')],
         limit: 1000,
       }),
@@ -1282,7 +1297,7 @@ export const connectionsOverview = Effect.fn('integrations.connectionsOverview')
 
   // Seeing a shared connection is using it, as far as who may: the same check decides.
   const shared = yield* usableBy(
-    user.id,
+    user,
     owned(others).filter(({ owner }) => owner.shared !== null),
   )
 

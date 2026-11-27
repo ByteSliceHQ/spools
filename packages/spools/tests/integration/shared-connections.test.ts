@@ -677,11 +677,25 @@ describe('connections made before a provider was shared', () => {
     await refused(run(getAccessToken(old.id, undefined, bob.id)))
     expect(await run(disconnect(bob, old.id))).toBe(false)
 
-    // Connecting it again is what hands it to the team: a second connection, and the first is still Ada's.
+    // Connecting it again is what hands it to the team: Ada's connection becomes the team's, with its id.
     const team = await connect(ada, turned, { company: 'old-co' })
+    expect(team).toMatchObject({ id: old.id, shared: 'team', connectedBy: 'Ada' })
+    expect(await rows(turned)).toHaveLength(1)
+
+    expect(await run(listConnections(ada.id))).not.toContainEqual(
+      expect.objectContaining({ id: old.id }),
+    )
+
+    expect(await run(getAccessToken(old.id, undefined, bob.id))).toMatch(/^access-/)
+  })
+
+  test("someone else connecting the same account for the team leaves a teammate's own alone", async () => {
+    const old = await before(turned, bob, 'bobs-co')
+    const team = await connect(ada, turned, { company: 'bobs-co' })
     expect(team.id).not.toBe(old.id)
-    expect(team).toMatchObject({ shared: 'team' })
-    expect(await run(disconnect(ada, old.id))).toBe(true)
+    expect((await run(listConnections(bob.id))).map((c) => c.id)).toContain(old.id)
+    await refused(run(getAccessToken(old.id, undefined, ada.id)))
+    expect(await run(disconnect(bob, old.id))).toBe(true)
   })
 
   test("are the team's when the provider says its connections always were", async () => {

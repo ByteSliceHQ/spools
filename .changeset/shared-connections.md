@@ -37,7 +37,7 @@ of to the teammate who connected it.
 shared, group. Run `bun run crm:gen` then `bun run db:push` (or `db:plan` and `db:migrate` in
 production). No row needs rewriting: a row stored before is a personal connection as it
 stands. PGlite adds the columns by itself but never drops an index, so a development
-database made before this keeps the old unique index, which only matters if one person
-connects the same account for two groups: delete `.data/pglite` to start clean.
+database made before this keeps the old unique index, which stops one person from holding
+the same account for two groups: delete `.data/pglite` to start clean.
 
 No new route files: `?group=` is read by the connect route you already have.

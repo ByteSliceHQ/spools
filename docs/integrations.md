@@ -83,8 +83,9 @@ which account, the whole team or which group, who connected it and when, and
   a group's connection with `canManage`, which is told the group.
 - **Changing your mind.** Whose a connection is was decided when it was made, and is
   stored with it. Adding `shared` to a provider people have already connected for
-  themselves does not hand those connections to the team: they stay with their owners
-  (who see a note on the page) until the account is connected again. Removing `shared`
+  themselves does not hand those connections to the team: each stays with its owner,
+  who sees a note on the page, until that person connects the same account again. That
+  turns their connection into the team's; nobody else's is touched. Removing `shared`
   leaves existing shared connections shared.
 
 ## How tokens are stored

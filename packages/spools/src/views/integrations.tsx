@@ -538,7 +538,7 @@ export function Integrations(): ReactNode {
                     reconnect={canConnect(c.provider) && !isShared(c.provider)}
                     note={
                       isShared(c.provider)
-                        ? `Yours alone: it was connected before ${c.label} was shared with the team. Connect the account again under "Shared with the team" to hand it over, then disconnect this one.`
+                        ? `Yours alone: it was connected before ${c.label} was shared with the team. Connect the account again under "Shared with the team" to hand it over.`
                         : undefined
                     }
                   />
