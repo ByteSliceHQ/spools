@@ -410,6 +410,21 @@ export function makeStore<BackendError>(backend: Backend<BackendError>): StoreSh
     ),
   }
 
+  // Every store is made here, so this is where record scopes are kept (scope.ts).
+  const kept = guard(shape)
+
+  // The guard gives a narrowed person's write a condition of its own (their scopes), which
+  // would satisfy `required` underneath. So the caller's own condition is asked for here, above
+  // the guard: a write that names no rows is refused whoever makes it.
+  const safe: RawStore = {
+    ...kept,
+    update: (table, which, changes) =>
+      Effect.flatMap(required(which, 'change'), () => kept.update(table, which, changes)),
+    remove: (table, which) =>
+      Effect.flatMap(required(which, 'delete'), () => kept.remove(table, which)),
+    lock: (table, which) => Effect.flatMap(required(which, 'hold'), () => kept.lock(table, which)),
+  }
+
   // SAFETY: `shape` is the store on rows with their types gone; StoreShape is the same store
   // with each table's row and insert types on it. A table's row type is worked out from its
   // columns (`defineTable` in table.ts, `CrmRecord` for an object's table in objects.ts), and
@@ -418,9 +433,7 @@ export function makeStore<BackendError>(backend: Backend<BackendError>): StoreSh
   // is an insert type's values, each a column's and so a `Scalar`; an object's inserts are
   // typed loosely (`ObjectTable`) and are the values its schema checked (records.ts).
   // TypeScript can't follow this: a `Table` keeps its columns as data, not in its type.
-  //
-  // Every store is made here, so this is where record scopes are kept (scope.ts).
-  return guard(shape) as StoreShape
+  return safe as StoreShape
 }
 
 /**

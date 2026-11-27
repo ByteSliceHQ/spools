@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test'
 
+import { Cause, Effect, Exit } from 'effect'
+
 import type { Filters } from '../../src/crm/filters'
 import * as records from '../../src/server/records'
 import * as service from '../../src/server/service'
 import { objectTable } from '../../src/server/spool'
-import { Store } from '../../src/server/store/store'
+import { Store, type StoreShape } from '../../src/server/store/store'
 import { Note, Task } from '../../src/server/store/tables'
 import * as workspace from '../../src/server/workspace'
 import {
@@ -554,4 +556,45 @@ test('nobody links across scopes, not even a role that reaches every scope', asy
   } finally {
     await sweep('contacts', 'crosser')
   }
+})
+
+test('a change, a delete or a hold with no condition of the caller’s own is refused, for a narrowed person too', async () => {
+  // The guard adds the person's scopes as a condition. That must not stand in for one of the caller's own.
+  const tried = (work: (store: StoreShape) => Effect.Effect<number, unknown>) =>
+    as(
+      'nora',
+      Store.use((store) =>
+        // Whatever the store let through is undone: what matters is whether it did.
+        Effect.flip(
+          store.transaction(Effect.flatMap(Effect.exit(work(store)), (exit) => Effect.fail(exit))),
+        ),
+      ),
+    )
+
+  const tasks = await sys(Store.use((store) => store.count(Task)))
+
+  for (const which of [{}, { where: {} }, { where: { id: undefined } }]) {
+    for (const work of [
+      (store: StoreShape) => store.update(Task, which, {}),
+      (store: StoreShape) => store.remove(Task, which),
+      (store: StoreShape) => store.lock(Task, which),
+    ]) {
+      const exit = await tried(work)
+
+      const said =
+        Exit.isExit(exit) && Exit.isFailure(exit) ? Cause.pretty(exit.cause) : 'let through'
+
+      expect(said).toContain('every row of a table')
+    }
+  }
+
+  expect(await sys(Store.use((store) => store.count(Task)))).toBe(tasks)
+
+  // With a condition of her own she changes what is hers, as before.
+  expect(
+    await as(
+      'nora',
+      Store.use((store) => store.update(Task, { where: { title: 'Ring Alder' } }, {})),
+    ),
+  ).toBe(1)
 })
