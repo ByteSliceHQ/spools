@@ -55,7 +55,9 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
   Clerk's active organization) is checked against what the person holds on every request.
 - **Relations stay inside a scope.** A record can't point at a scoped record of another scope,
   and can't move to another scope while scoped records point at it: move or unlink those
-  first. Its timeline, tasks, notes, folder and sequence runs move with it.
+  first. Its timeline, tasks, notes, folder and sequence runs move with it, in the same
+  transaction: a move that can't take them all is undone, and a row being added to a record
+  as it moves waits and takes the scope the record came to.
 - **Records that crossed before scopes were turned on.** A relation that already pointed
   into another scope is left as it is. The related record's title is not shown, filters can't
   ask about it, and a list sorted by that relation sorts the row as one with no related

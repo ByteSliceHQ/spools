@@ -348,6 +348,15 @@ async function seed() {
 let client: PGlite | undefined
 let seeded = false
 
+/** The world's own database, for a test that puts a store of its own over it (to watch, or to make fail). */
+export const database = (): PGlite => {
+  if (!client) {
+    throw new Error('The world has not been made yet')
+  }
+
+  return client
+}
+
 const ENV = {
   APP_SECRET: 's'.repeat(40),
   APP_URL: 'https://crm.example.com',

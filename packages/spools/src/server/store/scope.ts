@@ -100,9 +100,9 @@ export const SCOPE_DECISIONS = {
   count: 'narrowed to what can be read',
   countValues: 'narrowed to what can be read',
   insert:
-    'takes the active scope (or its record’s); a scope that is not held and a relation out of the scope are refused',
+    'takes the active scope (or its record’s, read with the record held); a scope that is not held and a relation out of the scope are refused',
   update:
-    'narrowed to what can be written; a move to a scope that is not held, and a relation out of the scope, are refused',
+    'narrowed to what can be written; a move to a scope that is not held, and a relation out of the scope, are refused; a move and its rows’ new scope are one transaction',
   remove: 'narrowed to what can be written',
   refreshDates: 'one record: only when it can be read; every record: only as the system',
   transaction: 'passes: the access set outside it is still set inside it',
@@ -372,6 +372,16 @@ const tableOf = (objectKey: string): AnyTable | undefined => {
   return Object.hasOwn(tables, objectKey) ? tables[objectKey] : undefined
 }
 
+/** Whether a hanging row is on a scoped object's record: the one case where its record has to be held. */
+const onScopedRecord = (
+  marker: Extract<TableScope, { kind: 'owner' }>,
+  values: RawChanges,
+): boolean => {
+  const objectKey = scopeText(values[marker.object])
+  const owner = objectKey === null ? undefined : tableOf(objectKey)
+  return scopeText(values[marker.record]) !== null && !!owner && markerOf(owner)?.kind === 'own'
+}
+
 /** A store that keeps to `CurrentAccess`. */
 export function guard(store: RawStore): RawStore {
   /**
@@ -431,6 +441,10 @@ export function guard(store: RawStore): RawStore {
       return EVERY_SCOPE
     }
 
+    // Held until the row is written (`hung`), so the record can't move scope in between: a move
+    // waits for this, and then takes the new row with it.
+    yield* store.lock(owner, { where: { [owner.primary]: recordId } })
+
     const record = yield* within(
       store.first(owner, {
         where: { [owner.primary]: recordId },
@@ -448,6 +462,18 @@ export function guard(store: RawStore): RawStore {
 
     return scope
   })
+
+  /**
+   * Writing a hanging row, given its record's scope by `ownerScope`. The read
+   * of the scope and the write are one transaction with the record held in it,
+   * so the row can't be stamped with a scope its record is leaving. A row on a
+   * shared object's record, or on none, has nothing to hold.
+   */
+  const hung = <A>(
+    marker: Extract<TableScope, { kind: 'owner' }>,
+    values: RawChanges,
+    write: Write<A>,
+  ): Write<A> => (onScopedRecord(marker, values) ? store.transaction(write) : write)
 
   const insert: RawStore['insert'] = Effect.fn('scope.insert')(function* (table, values) {
     const marker = markerOf(table)
@@ -486,18 +512,24 @@ export function guard(store: RawStore): RawStore {
         return yield* refuse('You can look at these records, but not add to them.')
       }
 
-      const scope = yield* ownerScope(marker, values, access)
-      const held = marker.personal ? access.read : access.write
+      return yield* hung(
+        marker,
+        values,
+        Effect.gen(function* () {
+          const scope = yield* ownerScope(marker, values, access)
+          const held = marker.personal ? access.read : access.write
 
-      if (scope !== EVERY_SCOPE && !holds(held, scope) && !(scope === null && held === 'all')) {
-        return yield* refuse(
-          scope === null
-            ? `Choose a ${label()} to work in first.`
-            : 'You can look at these records, but not change them.',
-        )
-      }
+          if (scope !== EVERY_SCOPE && !holds(held, scope) && !(scope === null && held === 'all')) {
+            return yield* refuse(
+              scope === null
+                ? `Choose a ${label()} to work in first.`
+                : 'You can look at these records, but not change them.',
+            )
+          }
 
-      return yield* store.insert(table, { ...values, [marker.column]: scope })
+          return yield* store.insert(table, { ...values, [marker.column]: scope })
+        }),
+      )
     }
 
     if (writesNothing(access)) {
@@ -562,8 +594,14 @@ export function guard(store: RawStore): RawStore {
           return yield* refuse('Say both the object and the record a row is moved onto.')
         }
 
-        const scope = yield* ownerScope(marker, changes, access)
-        return yield* store.update(table, rows, { ...changes, [marker.column]: scope })
+        return yield* hung(
+          marker,
+          changes,
+          Effect.gen(function* () {
+            const scope = yield* ownerScope(marker, changes, access)
+            return yield* store.update(table, rows, { ...changes, [marker.column]: scope })
+          }),
+        )
       }
 
       return yield* store.update(table, rows, changes)
@@ -586,74 +624,85 @@ export function guard(store: RawStore): RawStore {
 
     const all = scopedRelations(table)
 
-    // Each row is checked as it will be once changed. Inside the caller's transaction, when it has one.
-    const matched = yield* within(
-      store.find(table, {
-        ...rows,
-        select: [table.primary, marker.column, ...all.map((r) => r.relation.column)],
-      }),
-    )
-
-    const moved: string[] = []
-
-    for (const row of matched) {
-      const current = scopeText(row[marker.column])
-      const next = moves ? scopeText(changes[marker.column]) : current
-      const id = scopeText(row[table.primary]) ?? ''
-
-      if (moves && next !== current) {
-        if (next === null || !holds(access.write, next)) {
-          return yield* refuse(
-            next === null
-              ? `A record can't be left without a ${label()}.`
-              : `You can't move records to that ${label()}.`,
-          )
-        }
-
-        // What points at it would be left in the scope it came from.
-        for (const [, back] of Object.entries(table.relations)) {
-          if (back.kind !== 'many' || markerOf(back.table())?.kind !== 'own') {
-            continue
-          }
-
-          const pointing = yield* within(
-            store.count(back.table(), { where: { [back.column]: id } }),
-          )
-
-          if (pointing > 0) {
-            return yield* refuse(
-              `This record can't move to another ${label()} while ${back.table().name} point at it. Move or unlink those first.`,
-            )
-          }
-        }
-
-        // And what it points at, unless this change points it elsewhere.
-        const kept = Object.fromEntries(
-          all
-            .filter((r) => changes[r.relation.column] === undefined)
-            .map((r) => [r.relation.column, scopeText(row[r.relation.column])]),
-        )
-
-        yield* relationsInScope(table, kept, next, access)
-        moved.push(id)
+    const checkedAndChanged = Effect.gen(function* () {
+      // A record that moves is held from here until its rows have moved with it: a row being
+      // hung on it (`hung`) waits, and is then given the scope the record came to.
+      if (moves) {
+        yield* store.lock(table, rows)
       }
 
-      const pointed = Object.fromEntries(
-        related.map((r) => [r.relation.column, changes[r.relation.column]]),
+      // Each row is checked as it will be once changed. Inside the caller's transaction, when it has one.
+      const matched = yield* within(
+        store.find(table, {
+          ...rows,
+          select: [table.primary, marker.column, ...all.map((r) => r.relation.column)],
+        }),
       )
 
-      yield* relationsInScope(table, pointed, next, access)
-    }
+      const moved: string[] = []
 
-    const changed = yield* store.update(table, rows, changes)
-    const objectKey = Object.entries(objectTablesNow()).find(([, t]) => t === table)?.[0]
-    const to = scopeText(changes[marker.column])
+      for (const row of matched) {
+        const current = scopeText(row[marker.column])
+        const next = moves ? scopeText(changes[marker.column]) : current
+        const id = scopeText(row[table.primary]) ?? ''
 
-    if (moved.length > 0 && objectKey && to !== null) {
-      yield* restamp(objectKey, moved, to)
-    }
+        if (moves && next !== current) {
+          if (next === null || !holds(access.write, next)) {
+            return yield* refuse(
+              next === null
+                ? `A record can't be left without a ${label()}.`
+                : `You can't move records to that ${label()}.`,
+            )
+          }
 
-    return changed
+          // What points at it would be left in the scope it came from.
+          for (const [, back] of Object.entries(table.relations)) {
+            if (back.kind !== 'many' || markerOf(back.table())?.kind !== 'own') {
+              continue
+            }
+
+            const pointing = yield* within(
+              store.count(back.table(), { where: { [back.column]: id } }),
+            )
+
+            if (pointing > 0) {
+              return yield* refuse(
+                `This record can't move to another ${label()} while ${back.table().name} point at it. Move or unlink those first.`,
+              )
+            }
+          }
+
+          // And what it points at, unless this change points it elsewhere.
+          const kept = Object.fromEntries(
+            all
+              .filter((r) => changes[r.relation.column] === undefined)
+              .map((r) => [r.relation.column, scopeText(row[r.relation.column])]),
+          )
+
+          yield* relationsInScope(table, kept, next, access)
+          moved.push(id)
+        }
+
+        const pointed = Object.fromEntries(
+          related.map((r) => [r.relation.column, changes[r.relation.column]]),
+        )
+
+        yield* relationsInScope(table, pointed, next, access)
+      }
+
+      const changed = yield* store.update(table, rows, changes)
+      const objectKey = Object.entries(objectTablesNow()).find(([, t]) => t === table)?.[0]
+      const to = scopeText(changes[marker.column])
+
+      if (moved.length > 0 && objectKey && to !== null) {
+        yield* restamp(objectKey, moved, to)
+      }
+
+      return changed
+    })
+
+    // The move and the scope of everything that hangs off the record are kept together, or neither is.
+    return yield* moves ? store.transaction(checkedAndChanged) : checkedAndChanged
   })
 
   return {
