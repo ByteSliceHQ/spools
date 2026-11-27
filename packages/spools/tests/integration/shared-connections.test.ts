@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createHmac } from 'node:crypto'
 
 import extensions from '../../../../apps/starter/src/app/extensions'
+import * as api from '../../src/server/extension-api'
 import {
   completeAuth,
   connectionsOverview,
@@ -267,6 +268,17 @@ describe('a connection for the team', () => {
 
       await refused(run(getAccessToken(connection!.id, undefined, stranger)))
     }
+  })
+
+  test("an app's handler asks as whoever pressed the button, through the promise API", async () => {
+    const [found] = await api.findConnections({ provider: ledger, shared: 'team', usableBy: bob })
+    expect(found?.connectedBy).toBe('Ada')
+    expect(await api.getAccessToken(found!.id, { as: bob })).toMatch(/^access-/)
+    await refused(api.getAccessToken(found!.id, { as: mallory }))
+    expect(await api.findConnections({ provider: ledger, usableBy: mallory.id })).toEqual([])
+    // `ctx.actor` is null when nobody was signed in (a script, an import): trusted, as a schedule is.
+    expect(await api.getAccessToken(found!.id, { as: null })).toMatch(/^access-/)
+    expect(await api.findConnections({ provider: ledger, usableBy: null })).toHaveLength(1)
   })
 
   test("is not one of its connector's own connections", async () => {
@@ -545,6 +557,34 @@ describe('sealed tokens', () => {
 
     await expect(run(getAccessToken(copy.id))).rejects.toThrow('belongs to something else')
     await db.remove(Integration, { where: { id: copy.id } })
+  })
+
+  test('tokens that name no row at all are refused on a shared row', async () => {
+    const [team] = await rows(ledger)
+
+    // What a version before tokens were tied to rows stored. A personal row may still hold such
+    // tokens and is tied to them on first use; a shared row never legitimately does.
+    const loose = JSON.stringify({
+      c: Buffer.from(
+        JSON.stringify({
+          accessToken: 'loose-access',
+          refreshToken: null,
+          expiresAt: Date.now() + 3_600_000,
+        }),
+      ).toString('base64'),
+    })
+
+    await db.update(Integration, { where: { id: team!.id } }, { credentials: loose })
+    await expect(run(getAccessToken(team!.id))).rejects.toThrow('belongs to something else')
+    expect((await rows(ledger))[0]?.credentials).toBe(loose)
+
+    await db.update(
+      Integration,
+      { where: { id: team!.id } },
+      { credentials: team?.credentials ?? '' },
+    )
+
+    expect(await run(getAccessToken(team!.id))).toMatch(/^access-/)
   })
 
   test('the owner a shared connection is sealed for can never be a personal one', () => {
