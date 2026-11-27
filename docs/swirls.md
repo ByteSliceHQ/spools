@@ -122,6 +122,10 @@ and nothing in a tool call's body (which a model writes) can switch one.
   node that calls `/api/swirls/tools/*` before turning scopes on, or their write-backs are
   refused. A grant lasts a day.
 
+  Treat the grant as a secret of the run. Put it in the header and nowhere else: never into a
+  prompt, a message or anything a model reads or writes, or text the model was fed could send
+  it somewhere else.
+
 - **The assistant's record tools are refused in chat.** A chat's tool workflows are started
   by the engine, not the CRM, so there is no input to put a grant in, and a value the model
   could relay would be a scope switch. With scopes on, `crm_search`, `crm_get`, `crm_create`,

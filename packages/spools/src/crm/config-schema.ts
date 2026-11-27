@@ -808,6 +808,16 @@ export const crmConfigSchema = z
 
         const field = Object.hasOwn(obj.fields, fieldKey) ? obj.fields[fieldKey] : undefined
 
+        // A new record takes the scope its maker is working in. A default would put every record
+        // that names none into one scope, and be refused for everyone who doesn't hold that one.
+        if (field && 'default' in field && field.default !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [...path, 'objects', objKey],
+            message: `"${fieldKey}" holds the scope of ${objKey}, so it can't have a default: a new record takes the scope its maker is working in`,
+          })
+        }
+
         // The scope is compared as it is stored, so it must be a plain value or a key.
         if (!field || !['select', 'text', 'relation'].includes(field.type) || field.encrypted) {
           ctx.addIssue({

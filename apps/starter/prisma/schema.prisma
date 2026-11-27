@@ -89,6 +89,7 @@ model Activity {
   @@unique([objectKey, recordId, externalId])
   @@index([objectKey, recordId])
   @@index([createdAt])
+  @@index([scope])
   @@fullTextIndex([[summary], body], name: "activities_search")
   @@map("activities")
   @@rls
@@ -112,6 +113,7 @@ model Task {
 
   @@index([assigneeId])
   @@index([objectKey, recordId])
+  @@index([scope])
   @@map("tasks")
   @@rls
 }
@@ -131,6 +133,7 @@ model Note {
   scope String?
 
   @@index([objectKey, recordId])
+  @@index([scope])
   @@fullTextIndex([[title], body], name: "notes_search")
   @@map("notes")
   @@rls
@@ -165,6 +168,7 @@ model Favorite {
   scope String?
 
   @@index([userId])
+  @@index([scope])
   @@map("favorites")
   @@rls
 }
@@ -237,6 +241,7 @@ model RecordFolder {
 
   @@unique([objectKey, recordId])
   @@index([folderId])
+  @@index([scope])
   @@map("record_folders")
   @@rls
 }
@@ -293,6 +298,7 @@ model SequenceRun {
 
   @@unique([campaignKey, objectKey, recordId])
   @@index([status, dueAt])
+  @@index([scope])
   @@map("sequence_runs")
   @@rls
 }

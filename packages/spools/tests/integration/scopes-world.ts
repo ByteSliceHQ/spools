@@ -123,6 +123,9 @@ export type Sighting = {
 
 export const sightings: Sighting[] = []
 
+/** Each `before` hook the framework called: the app's code ran, whatever came of the change. */
+export const befores: string[] = []
+
 const sight = async (where: string, actor: { id: string } | null) => {
   const contacts = await api.listRecords({ objectKey: 'contacts', limit: 500, relations: 'none' })
   sightings.push({ where, actor: actor?.id ?? null, contacts: contacts.map((c) => String(c.name)) })
@@ -145,6 +148,12 @@ const extensions = defineExtensions({
     },
   },
   hooks: {
+    beforeCreate({ objectKey, actor }) {
+      befores.push(`create ${objectKey} by ${actor?.id ?? 'nobody'}`)
+    },
+    beforeUpdate({ objectKey, actor }) {
+      befores.push(`update ${objectKey} by ${actor?.id ?? 'nobody'}`)
+    },
     async afterCreate({ objectKey, actor }) {
       if (objectKey === 'contacts') {
         await sight('afterCreate', actor)

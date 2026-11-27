@@ -70,7 +70,12 @@ test('devAuth without a grant for the person signed in shows them no scoped reco
   process.env['DEV_AUTH_EMAIL'] = 'newcomer@example.com'
 
   try {
-    // Who they are is kept for a minute; what they hold is read from the sign-in each time.
+    // Who a person is and what they hold are kept for a minute. A server that starts now asks afresh.
+    await installStandIns({
+      email: Email.layerTest(async () => ({ id: 'sent', sent: true })),
+      fetch: (url, init) => drive.handle(url, init),
+    })
+
     expect((await seenWith('north')).contacts).toEqual([])
     expect((await seenWith('*')).contacts).toEqual([])
   } finally {

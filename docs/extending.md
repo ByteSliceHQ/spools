@@ -142,7 +142,7 @@ scopes: {
 },
 ```
 
-It is asked on each request and should answer quickly; cache what is slow to look up. Returning
+Its answer for a person is kept for a minute, so a change takes that long to show. Returning
 nothing for a person shows them no scoped record. A resolver here wins over the sign-in
 provider's.
 

@@ -45,6 +45,12 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
 
 **What to know.**
 
+- **With Clerk organizations, users must not be able to create organizations**, and the
+  organizations a role marked `all` counts from should be named (`everyScopeFrom`): whoever
+  creates an organization can give themselves any role in it. See
+  [Signing in](auth.md#record-scopes).
+- **What a person holds is kept for a minute.** A scope taken away at the provider stops
+  working within one.
 - **The scope a person works in is a preference, not proof.** The `spools-scope` cookie (or
   Clerk's active organization) is checked against what the person holds on every request.
 - **Relations stay inside a scope.** A record can't point at a scoped record of another scope,

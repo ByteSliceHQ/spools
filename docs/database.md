@@ -60,6 +60,21 @@ Every table has row-level security on with no policies, and `spools harden` (whi
 `db:push` and `db:migrate` run) takes Supabase's Data API roles off them. The app
 connects as a privileged role.
 
+## Record scopes
+
+Seven system tables (`activities`, `tasks`, `notes`, `favorites`, `record_folders`,
+`file_uploads`, `sequence_runs`) have a nullable `scope` column with an index on it: a copy of
+the scope of the record each row hangs off. It is empty and unused unless `crm.config.json`
+has [`scopes`](configuration.md#scopes), and an object named there gets an index on its scope
+field. Upgrading to the version that added them is one schema change and no data change:
+`bun run crm:gen`, then `bun run db:push` in development, or `bun run db:plan -- --name
+record-scopes` and `bun run db:migrate` for a production database. When you turn scopes on,
+`bun run db:scopes` fills the column in for rows that were already there.
+
+Scopes are kept by a guard every store is behind (`packages/spools/src/server/store/scope.ts`),
+so an adapter you write inherits them by building its store with `makeStore`. Code with nobody
+signed in reaches a scoped table only inside `asSystem(...)`.
+
 ## Using the store
 
 Server code in the framework, and an adapter that keeps its own tables, reach the

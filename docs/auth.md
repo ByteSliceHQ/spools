@@ -121,6 +121,20 @@ each person holds.
   office a role marked `all`. The organization active in the session is the scope the person
   works in; switching with Clerk's own switcher switches the CRM. Not run against a live
   Clerk account yet: the mapping is tested, the calls to Clerk are not.
+  **Say where head office is, and turn organization creation off.** A role marked `all`
+  reaches every scope, and in Clerk whoever creates an organization is its admin and can give
+  anyone any role in it. So name the organizations such a role counts from, and in the Clerk
+  dashboard don't let users create organizations:
+
+  ```ts
+  auth: clerk({ scopes: 'organizations', everyScopeFrom: ['head-office'] }),
+  ```
+
+  A role marked `all` held in any other organization then gives nothing. Without
+  `everyScopeFrom` it counts from every organization, which is only safe while nobody but you
+  can create one. An ordinary role in a made-up organization gives that organization's slug
+  as a scope; keep slugs you use as scopes out of reach the same way.
+
 - **Development.** `devAuth({ scopes: { list, grants } })`, by email address:
 
   ```ts
@@ -134,6 +148,10 @@ each person holds.
 
 - **Better Auth, or anything else.** A resolver of your own, in
   [`src/app/extensions.ts`](extending.md#scopes-who-holds-what).
+
+What a person holds is kept for a minute, as the access list is, so the provider is not asked
+on every click. Taking a scope away from someone takes effect within that minute. Switching
+the scope you work in is not kept: it applies to the next request.
 
 ## Your own
 

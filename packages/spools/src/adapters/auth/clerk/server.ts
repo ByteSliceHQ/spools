@@ -8,6 +8,7 @@ import { Auth, type AuthAdapter, type AuthUser } from '../../../server/runtime/a
 import { AuthError, messageOf } from '../../../server/runtime/errors'
 import { policies, withPolicy } from '../../../server/runtime/policies'
 import { Scopes } from '../../../server/scopes'
+import { spool } from '../../../server/spool'
 
 /**
  * Sign-in with Clerk (https://clerk.com). The only server code that uses the
@@ -191,11 +192,25 @@ export const organizationScope = (organization: ClerkMembership['organization'])
  * prefix: `org:admin` is the role `admin` in `scopes.roles`. Pure, so it can be
  * tested without Clerk.
  */
-export const toGrants = (memberships: readonly ClerkMembership[]): ScopeGrant[] =>
-  memberships.map((m) => ({
-    scope: organizationScope(m.organization),
-    role: m.role.replace(/^org:/, ''),
-  }))
+export const toGrants = (
+  memberships: readonly ClerkMembership[],
+  /**
+   * The roles that reach every scope, and the organizations a membership must
+   * be in for one of them to count. A person can be made anything in an
+   * organization they created themselves, so such a role held anywhere else
+   * gives nothing.
+   */
+  everyScope?: { roles: readonly string[]; from: readonly string[] },
+): ScopeGrant[] =>
+  memberships.flatMap((m) => {
+    const grant = { scope: organizationScope(m.organization), role: m.role.replace(/^org:/, '') }
+    const reachesAll = everyScope?.roles.includes(grant.role) ?? false
+    return reachesAll && !everyScope?.from.includes(grant.scope) ? [] : [grant]
+  })
+
+/** The organizations a role that reaches every scope counts from (`everyScopeFrom`), set when the adapter is made. */
+let everyScopeOrganizations: readonly string[] | undefined
+const everyScopeFrom = () => everyScopeOrganizations
 
 /** Who holds which record scope, from Clerk organizations. */
 const organizations = Layer.succeed(
@@ -208,7 +223,13 @@ const organizations = Layer.succeed(
           limit: 100,
         })
 
-        return toGrants(data)
+        const from = everyScopeFrom()
+
+        const roles = Object.entries(spool().config.scopes?.roles ?? {})
+          .filter(([, role]) => role.all)
+          .map(([name]) => name)
+
+        return toGrants(data, from && { roles, from })
       }),
     list: call('Clerk.organizations', async () => {
       const { data } = await clerkClient().organizations.getOrganizationList({ limit: 100 })
@@ -224,10 +245,23 @@ export type ClerkOptions = {
    * organization active in their session is the scope they are working in.
    */
   scopes?: 'organizations'
+  /**
+   * The organizations (by slug) in which a role that reaches every scope
+   * counts, e.g. `['head-office']`. Set it: without it such a role counts from
+   * any organization, and someone who can create an organization can give
+   * themselves any role in it. Turn organization creation by users off in
+   * Clerk as well.
+   */
+  everyScopeFrom?: string[]
 }
 
 /** Sign-in with Clerk. */
-export const clerk = (options: ClerkOptions = {}): AuthAdapter => ({
+export const clerk = (options: ClerkOptions = {}): AuthAdapter => {
+  everyScopeOrganizations = options.everyScopeFrom
+  return clerkAdapter(options)
+}
+
+const clerkAdapter = (options: ClerkOptions): AuthAdapter => ({
   id: 'clerk',
   label: 'Clerk',
   middleware: clerkMiddleware(),

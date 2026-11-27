@@ -78,7 +78,7 @@ export const Activity = defineTable({
   },
   scope: onRecord,
   unique: [['objectKey', 'recordId', 'externalId']],
-  indexes: [['objectKey', 'recordId'], ['createdAt']],
+  indexes: [['objectKey', 'recordId'], ['createdAt'], ['scope']],
   search: { name: 'activities_search', columns: ['summary', 'body'] },
 })
 
@@ -101,7 +101,7 @@ export const Task = defineTable({
     scope: scope(),
   },
   scope: onRecord,
-  indexes: [['assigneeId'], ['objectKey', 'recordId']],
+  indexes: [['assigneeId'], ['objectKey', 'recordId'], ['scope']],
 })
 
 export const Note = defineTable({
@@ -121,7 +121,7 @@ export const Note = defineTable({
     scope: scope(),
   },
   scope: onRecord,
-  indexes: [['objectKey', 'recordId']],
+  indexes: [['objectKey', 'recordId'], ['scope']],
   search: { name: 'notes_search', columns: ['title', 'body'] },
 })
 
@@ -156,7 +156,7 @@ export const Favorite = defineTable({
     scope: scope(),
   },
   scope: { ...onRecord, personal: true },
-  indexes: [['userId']],
+  indexes: [['userId'], ['scope']],
 })
 
 export const Suppression = defineTable({
@@ -232,7 +232,7 @@ Two records may share one folder. See src/server/files.ts.`,
   },
   scope: onRecord,
   unique: [['objectKey', 'recordId']],
-  indexes: [['folderId']],
+  indexes: [['folderId'], ['scope']],
 })
 
 export const FileUpload = defineTable({
@@ -299,7 +299,7 @@ minutes ahead, so a second sender leaves the run alone.`,
   },
   scope: onRecord,
   unique: [['campaignKey', 'objectKey', 'recordId']],
-  indexes: [['status', 'dueAt']],
+  indexes: [['status', 'dueAt'], ['scope']],
 })
 
 export const GuideProgress = defineTable({

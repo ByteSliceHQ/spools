@@ -2696,6 +2696,14 @@
                 },
                 {
                   "columns": [
+                    "scope"
+                  ],
+                  "name": "activities_scope_idx_5e57bd12",
+                  "prefix": "activities_scope_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
                     "summary",
                     "body"
                   ],
@@ -3191,6 +3199,14 @@
               },
               "foreignKeys": [],
               "indexes": [
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "favorites_scope_idx_5e57bd12",
+                  "prefix": "favorites_scope_idx",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "user_id"
@@ -3942,6 +3958,14 @@
                 },
                 {
                   "columns": [
+                    "scope"
+                  ],
+                  "name": "notes_scope_idx_5e57bd12",
+                  "prefix": "notes_scope_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
                     "title",
                     "body"
                   ],
@@ -4035,6 +4059,14 @@
                   ],
                   "name": "record_folders_folder_id_idx_61252c35",
                   "prefix": "record_folders_folder_id_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "record_folders_scope_idx_5e57bd12",
+                  "prefix": "record_folders_scope_idx",
                   "unique": false
                 }
               ],
@@ -4217,6 +4249,14 @@
               "indexes": [
                 {
                   "columns": [
+                    "scope"
+                  ],
+                  "name": "sequence_runs_scope_idx_5e57bd12",
+                  "prefix": "sequence_runs_scope_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
                     "status",
                     "due_at"
                   ],
@@ -4334,6 +4374,14 @@
                   "name": "tasks_object_key_record_id_idx_521c2544",
                   "prefix": "tasks_object_key_record_id_idx",
                   "unique": false
+                },
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "tasks_scope_idx_5e57bd12",
+                  "prefix": "tasks_scope_idx",
+                  "unique": false
                 }
               ],
               "primaryKey": {
@@ -4349,7 +4397,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "0566a65d4f872cca3ac0e8a49b5cdbaa5c2f3885eae50ebb1e76a14b11947ded"
+    "storageHash": "a272677f655e29f885f0875bbb9ed94eb804cf674dd0935be07bdf70f414ada4"
   },
   "execution": {
     "executionHash": "3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b",

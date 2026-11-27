@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
+import { Effect, Layer } from 'effect'
+
 import { toGrants } from '../../src/adapters/auth/clerk/server'
 import { crmConfigSchema } from '../../src/crm/config-schema'
 import { createMemory } from '../../src/crm/memory'
@@ -13,7 +15,8 @@ import {
   SYSTEM_ACCESS,
 } from '../../src/crm/scopes'
 import { createIndexStore, type QuickIndex, recentsKey } from '../../src/crm/search'
-import { wantedScope } from '../../src/server/scopes'
+import { Scopes, wantedScope } from '../../src/server/scopes'
+import { testRuntime } from '../../src/testing/run'
 import scoped from '../fixtures/scoped.config.json' with { type: 'json' }
 
 // Record scopes, the parts that need no database: the config's checks, what a
@@ -274,5 +277,65 @@ describe('Clerk organizations as record scopes', () => {
       { scope: 'org_2', role: 'admin' },
       { scope: 'south', role: 'viewer' },
     ])
+  })
+})
+
+describe('scopes in crm.config.json: defaults', () => {
+  test('a scope field can’t have a default', () => {
+    const withDefault = structuredClone(scoped)
+    Object.assign(withDefault.objects.contacts.fields.branch, { default: 'north' })
+    const result = crmConfigSchema.safeParse(withDefault)
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.map((i) => i.path.join('.'))).toEqual(['scopes.objects.contacts'])
+    expect(result.error?.issues[0]?.message).toContain("can't have a default")
+  })
+})
+
+describe('Clerk: roles that reach every scope', () => {
+  const memberships = [
+    { role: 'org:headOffice', organization: { id: 'org_1', slug: 'head-office', name: 'Office' } },
+    // An organization someone made for themselves, with themselves as head office.
+    { role: 'org:headOffice', organization: { id: 'org_9', slug: 'my-own', name: 'Mine' } },
+    { role: 'org:member', organization: { id: 'org_2', slug: 'north', name: 'North' } },
+  ]
+
+  test('count only from the organizations named', () => {
+    const only = { roles: ['headOffice'], from: ['head-office'] }
+
+    expect(toGrants(memberships, only)).toEqual([
+      { scope: 'head-office', role: 'headOffice' },
+      { scope: 'north', role: 'member' },
+    ])
+
+    // With the made-up organization alone, the role gives nothing.
+    expect(toGrants(memberships.slice(1), only)).toEqual([{ scope: 'north', role: 'member' }])
+  })
+})
+
+describe('who holds what is kept for a minute', () => {
+  test('the provider is asked once per person, not on every call', async () => {
+    let asked = 0
+
+    const provider = Layer.succeed(
+      Scopes,
+      Scopes.of({
+        grants: () => Effect.sync(() => [{ scope: 'north', role: `member${asked++}` }]),
+        list: Effect.sync(() => [{ key: `north${asked++}`, label: 'North' }]),
+      }),
+    )
+
+    const rt = testRuntime(Scopes.cached(provider))
+    const nora = { id: 'user_nora', email: 'nora@example.com', name: 'Nora' }
+    const sam = { id: 'user_sam', email: 'sam@example.com', name: 'Sam' }
+    const grants = (user: typeof nora) => rt.runPromise(Scopes.use((s) => s.grants(user)))
+
+    expect(await grants(nora)).toEqual(await grants(nora))
+    expect(asked).toBe(1)
+    await grants(sam)
+    expect(asked).toBe(2)
+    await rt.runPromise(Scopes.use((s) => s.list))
+    await rt.runPromise(Scopes.use((s) => s.list))
+    expect(asked).toBe(3)
+    await rt.dispose()
   })
 })

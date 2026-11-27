@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'0566a65d4f872cca3ac0e8a49b5cdbaa5c2f3885eae50ebb1e76a14b11947ded'>;
+  StorageHashBase<'a272677f655e29f885f0875bbb9ed94eb804cf674dd0935be07bdf70f414ada4'>;
 export type ExecutionHash =
   ExecutionHashBase<'3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b'>;
 export type ProfileHash =
@@ -711,6 +711,12 @@ type ContractBase = Omit<
                   readonly unique: false;
                 },
                 {
+                  readonly name: 'activities_scope_idx_5e57bd12';
+                  readonly prefix: 'activities_scope_idx';
+                  readonly columns: readonly ['scope'];
+                  readonly unique: false;
+                },
+                {
                   readonly name: 'activities_search_ca20d442';
                   readonly prefix: 'activities_search';
                   readonly columns: readonly ['summary', 'body'];
@@ -1142,6 +1148,12 @@ type ContractBase = Omit<
               primaryKey: { readonly columns: readonly ['id'] };
               uniques: readonly [];
               indexes: readonly [
+                {
+                  readonly name: 'favorites_scope_idx_5e57bd12';
+                  readonly prefix: 'favorites_scope_idx';
+                  readonly columns: readonly ['scope'];
+                  readonly unique: false;
+                },
                 {
                   readonly name: 'favorites_user_id_idx_6c952402';
                   readonly prefix: 'favorites_user_id_idx';
@@ -1838,6 +1850,12 @@ type ContractBase = Omit<
                   readonly unique: false;
                 },
                 {
+                  readonly name: 'notes_scope_idx_5e57bd12';
+                  readonly prefix: 'notes_scope_idx';
+                  readonly columns: readonly ['scope'];
+                  readonly unique: false;
+                },
+                {
                   readonly name: 'notes_search_f03270be';
                   readonly prefix: 'notes_search';
                   readonly columns: readonly ['title', 'body'];
@@ -1918,6 +1936,12 @@ type ContractBase = Omit<
                   readonly name: 'record_folders_folder_id_idx_61252c35';
                   readonly prefix: 'record_folders_folder_id_idx';
                   readonly columns: readonly ['folder_id'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'record_folders_scope_idx_5e57bd12';
+                  readonly prefix: 'record_folders_scope_idx';
+                  readonly columns: readonly ['scope'];
                   readonly unique: false;
                 },
               ];
@@ -2090,6 +2114,12 @@ type ContractBase = Omit<
               ];
               indexes: readonly [
                 {
+                  readonly name: 'sequence_runs_scope_idx_5e57bd12';
+                  readonly prefix: 'sequence_runs_scope_idx';
+                  readonly columns: readonly ['scope'];
+                  readonly unique: false;
+                },
+                {
                   readonly name: 'sequence_runs_status_due_at_idx_4934f71d';
                   readonly prefix: 'sequence_runs_status_due_at_idx';
                   readonly columns: readonly ['status', 'due_at'];
@@ -2190,6 +2220,12 @@ type ContractBase = Omit<
                   readonly name: 'tasks_object_key_record_id_idx_521c2544';
                   readonly prefix: 'tasks_object_key_record_id_idx';
                   readonly columns: readonly ['object_key', 'record_id'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'tasks_scope_idx_5e57bd12';
+                  readonly prefix: 'tasks_scope_idx';
+                  readonly columns: readonly ['scope'];
                   readonly unique: false;
                 },
               ];

@@ -54,7 +54,10 @@ export function appLayer(
     // Who holds which record scope: the app's own resolver when it has one, else the auth adapter's.
     Layer.provideMerge(
       swap.scopes ??
-        (spool().extensions.scopes ? Scopes.layer : (spool().auth.scopes ?? Scopes.layer)),
+        // Kept for a minute per person, as the access list is: the provider is not asked on every call.
+        Scopes.cached(
+          spool().extensions.scopes ? Scopes.layer : (spool().auth.scopes ?? Scopes.layer),
+        ),
     ),
     Layer.provideMerge(swap.auth ?? spool().auth.layer),
     // Beneath the rest: an adapter may keep tables of its own in the Spool's database.

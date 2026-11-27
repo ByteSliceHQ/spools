@@ -13,6 +13,7 @@ import * as files from '../../src/server/files'
 import * as records from '../../src/server/records'
 import { Agents } from '../../src/server/runtime/agents'
 import * as boundary from '../../src/server/runtime/boundary'
+import { backfillScopes } from '../../src/server/scope-backfill'
 import {
   asSystem,
   GRANT_HEADER,
@@ -26,6 +27,7 @@ import { Activity, Note, SequenceRun } from '../../src/server/store/tables'
 import { buildContactIndex } from '../../src/server/sync'
 import {
   as,
+  befores,
   column,
   CRON_TOKEN,
   drive,
@@ -684,5 +686,59 @@ test('whoever can write nothing changes nothing, a shared object’s records inc
   } finally {
     await sweep('products', 'Planted')
     await sys(records.updateRecord('products', ids.product, { sku: 'CR-1' }))
+  }
+})
+
+test('a change that can’t be made is refused before the app’s hooks run', async () => {
+  befores.length = 0
+  const ned = people.ned
+
+  await expect(
+    as('ned', service.createRecord('contacts', { name: 'Alder hookless' }, ned)),
+  ).rejects.toThrow('not change them')
+
+  await expect(
+    as('ned', service.updateRecord('contacts', ids.north.contact, { status: 'customer' }, ned)),
+  ).rejects.toThrow('not change them')
+
+  // Another scope's record is not found, and no hook hears of it either.
+  const hidden = service.updateRecord('contacts', ids.south.contact, { status: 'customer' }, nora)
+  expect(await as('nora', hidden)).toBeNull()
+  expect(befores).toEqual([])
+
+  // A change that can go ahead still runs them.
+  const made = await as('nora', service.createRecord('contacts', { name: 'Alder hooked ok' }, nora))
+  await sys(records.deleteRecord('contacts', made.id))
+  expect(befores).toEqual([`create contacts by ${nora.id}`])
+})
+
+test('a sequence run with no scope is held until the backfill says whose it is, not sent as the system', async () => {
+  const values = { name: 'Birch held', email: 'held@birch.test', branch: 'south' }
+  const id = (await sys(records.createRecord('contacts', values, 'seed'))).id
+
+  try {
+    await as('sam', enroll('welcome', 'contacts', await record('contacts', id), sam))
+    const due = { dueAt: new Date(Date.now() - 60_000), scope: null }
+    await sys(Store.use((store) => store.update(SequenceRun, { where: { recordId: id } }, due)))
+    sent.length = 0
+
+    const tick = async () => {
+      const request = new Request('http://crm.test/api/cron/sequences', {
+        headers: { authorization: `Bearer ${CRON_TOKEN}` },
+      })
+
+      return (await sequencesHandlers.GET({ request })).json()
+    }
+
+    expect(await tick()).toMatchObject({ sent: 0, held: 1 })
+    expect(sent).toEqual([])
+
+    // The backfill gives the run its record's scope, and the next tick sends it.
+    await sys(backfillScopes())
+    expect(await tick()).toMatchObject({ sent: 1 })
+    expect(sent.map((e) => e.to)).toEqual(['held@birch.test'])
+  } finally {
+    await sys(Store.use((store) => store.remove(SequenceRun, { where: { recordId: id } })))
+    await sys(records.deleteRecord('contacts', id))
   }
 })

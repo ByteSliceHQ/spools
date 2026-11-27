@@ -6,6 +6,7 @@ import { fireAutomations } from './actions'
 import type { CrmRecord, CrmValue, RecordInput } from './records'
 import * as records from './records'
 import { fromHook } from './runtime/errors'
+import { mustWrite } from './scopes'
 import { getObject, spool } from './spool'
 import { Store } from './store/store'
 
@@ -98,6 +99,9 @@ export const createRecord = Effect.fn('service.createRecord')(function* (
   actor: Actor,
   options: { summary?: string; automations?: boolean } = {},
 ) {
+  // Before the app's hook: it runs only for a change that can go ahead.
+  yield* mustWrite(objectKey)
+
   const next =
     (yield* fromHook('beforeCreate', () => hooks().beforeCreate?.({ objectKey, values, actor }))) ??
     values
@@ -181,6 +185,8 @@ export const updateRecord = Effect.fn('service.updateRecord')(function* (
     return null
   }
 
+  yield* mustWrite(objectKey, before)
+
   const next =
     (yield* fromHook('beforeUpdate', () =>
       hooks().beforeUpdate?.({ objectKey, id, values, previous: before, actor }),
@@ -249,6 +255,7 @@ export const deleteRecord = Effect.fn('service.deleteRecord')(function* (
     return false
   }
 
+  yield* mustWrite(objectKey, record)
   const store = yield* Store
   // The record, its timeline and its folder's row go together.
   yield* store.transaction(records.deleteRecord(objectKey, id))

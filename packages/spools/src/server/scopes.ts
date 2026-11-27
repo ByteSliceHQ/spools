@@ -6,6 +6,7 @@ import { z } from 'zod'
 import {
   accessFrom,
   EVERY_SCOPE,
+  NO_ACCESS,
   type ScopeAccess,
   type ScopeGrant,
   type ScopeInfo,
@@ -65,6 +66,48 @@ export class Scopes extends Context.Service<
     }),
   )
 
+  /**
+   * The same answers, kept for a minute per person (as the access list is), so a
+   * provider that is asked over the network is not asked on every server
+   * function. A change at the provider shows within the minute; switching scope
+   * is not kept at all, since it is not the provider's answer.
+   */
+  static readonly cached = (inner: Layer.Layer<Scopes>, ttlMs = 60_000) =>
+    Layer.effect(
+      Scopes,
+      Effect.gen(function* () {
+        const scopes = yield* Scopes
+        const held = new Map<string, { grants: ScopeGrant[]; expires: number }>()
+        let listed: { scopes: ScopeInfo[]; expires: number } | undefined
+
+        return Scopes.of({
+          grants: Effect.fn('Scopes.grants')(function* (user) {
+            const now = yield* Clock.currentTimeMillis
+            const hit = held.get(user.id)
+
+            if (hit && hit.expires > now) {
+              return hit.grants
+            }
+
+            const grants = yield* scopes.grants(user)
+            held.set(user.id, { grants, expires: now + ttlMs })
+            return grants
+          }),
+          list: Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis
+
+            if (listed && listed.expires > now) {
+              return listed.scopes
+            }
+
+            const all = yield* scopes.list
+            listed = { scopes: all, expires: now + ttlMs }
+            return all
+          }),
+        })
+      }),
+    ).pipe(Layer.provide(inner))
+
   /** These people hold these scopes, by user id, and nobody else holds any (tests, the development sign-in). */
   static readonly layerTest = (
     holding:
@@ -89,13 +132,38 @@ export class Scopes extends Context.Service<
  * The access of work done for one record, with nobody signed in: a sequence's
  * next email, which reads its record and writes on its timeline. It reaches the
  * record's scope and nothing else. A row with no scope (written before scopes
- * were turned on, and not backfilled) is the system's to deal with: whatever it
- * writes is still stamped from its record.
+ * were turned on, and not backfilled) gives no access at all: its work is held
+ * until `spools scopes backfill` has said whose it is.
  */
 export const scopeOnly = (scope: string | null): ScopeAccess =>
   scope === null
-    ? SYSTEM_ACCESS
+    ? NO_ACCESS
     : { read: [scope], write: [scope], active: scope === EVERY_SCOPE ? null : scope }
+
+/**
+ * Refuses a change the person can't make, before anything else is done about
+ * it: the app's `before` hooks run only for a change that can go ahead. The
+ * store refuses it too; this is so a hook has no side effect on one that
+ * can't. `record` is the record being changed, or nothing for a new one.
+ */
+export const mustWrite = Effect.fn('scopes.mustWrite')(function* (
+  objectKey: string,
+  record?: CrmRecord,
+) {
+  const access = scopesOn() ? yield* CurrentAccess : null
+
+  // With nobody said, the store refuses: there is nothing to add here.
+  if (!access || access.write === 'all') {
+    return undefined
+  }
+
+  const scope = record ? recordScope(objectKey, record) : null
+  const writes = scope === null ? access.write.length > 0 : access.write.includes(scope)
+
+  return writes
+    ? undefined
+    : yield* new Invalid({ message: 'You can look at these records, but not change them.' })
+})
 
 /** Whether this Spool has scopes at all (`scopes` in crm.config.json). */
 export const scopesOn = (): boolean => crmConfig().scopes !== undefined

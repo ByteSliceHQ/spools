@@ -17,7 +17,7 @@ import { runtime } from './runtime/app'
 import * as config from './runtime/config'
 import { Email, type OutboundEmail } from './runtime/email'
 import { fromHook, Invalid, messageOf, type StaffError } from './runtime/errors'
-import { asSystem, scopeOnly, withAccess } from './scopes'
+import { asSystem, scopeOnly, scopesOn, withAccess } from './scopes'
 import { Sequences } from './sequences'
 import { getObject, spool } from './spool'
 import { asc, lte } from './store/query'
@@ -365,6 +365,8 @@ export type TickResult = {
   failed: number
   /** Time ran out with emails still due: the next tick carries on. */
   more: boolean
+  /** Runs left alone because they have no record scope yet (`spools scopes backfill`). */
+  held?: number
 }
 
 /**
@@ -410,6 +412,13 @@ export const tick = Effect.fn('campaigns.tick')(function* (
         return result
       }
 
+      // A run from before scopes were turned on has no scope until the backfill gives it one.
+      // It is held, not sent as the system: nothing says whose record it is for.
+      if (scopesOn() && run.scope === null) {
+        result.held = (result.held ?? 0) + 1
+        continue
+      }
+
       const outcome = yield* withAccess(scopeOnly(run.scope))(take(run, now))
 
       if (!outcome) {
@@ -422,6 +431,12 @@ export const tick = Effect.fn('campaigns.tick')(function* (
 
     // Every run in the batch went to another tick: it is dealing with them.
     if (took === 0) {
+      if (result.held) {
+        yield* Effect.logWarning(
+          `[sequences] ${result.held} run(s) have no record scope and were not sent. Run "spools scopes backfill".`,
+        )
+      }
+
       return result
     }
   }
