@@ -613,7 +613,7 @@ export function builtInGuides(config: GuideConfig): Guide[] {
         },
         {
           title: 'What is kept',
-          body: 'Only mail and meetings with people already in the CRM are kept, as a subject and a short preview. Each person connects their own accounts; nobody else can use yours.',
+          body: 'Only mail and meetings with people already in the CRM are kept, as a subject and a short preview. Each person connects their own mailboxes; nobody else can use yours.',
           target: 'mailbox-privacy',
         },
         {

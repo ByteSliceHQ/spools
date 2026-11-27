@@ -4,7 +4,7 @@ import { type ReactNode, useState } from 'react'
 
 import { requestedScopes } from '../crm/mailbox'
 import { useAuth } from '../crm/ui/auth'
-import { Button, cx, relativeTime } from '../crm/ui/kit'
+import { Button, cx, inputClass, relativeTime } from '../crm/ui/kit'
 import { Grant } from '../crm/ui/mailbox'
 import { TopBar } from '../crm/ui/shell'
 import { disconnectIntegrationFn, type listIntegrationsFn } from '../server/integrations.functions'
@@ -15,6 +15,7 @@ const route = getRouteApi('/_crm/integrations')
 type Data = Awaited<ReturnType<typeof listIntegrationsFn>>
 type Provider = Data['providers'][number]
 type Connection = Data['connections'][number]
+type Shared = Data['shared'][number]
 type Mailbox = Data['mailboxes'][number]
 
 const marks = new Map([
@@ -42,11 +43,22 @@ function Tag({ children }: { children: ReactNode }) {
   )
 }
 
-/** A full navigation, not a fetch: the browser has to leave for the provider's consent screen. */
-function ConnectLink({ provider, children }: { provider: string; children: ReactNode }) {
+/**
+ * A full navigation, not a fetch: the browser has to leave for the provider's consent screen.
+ * `group` says which group a connection shared by group is for.
+ */
+function ConnectLink({
+  provider,
+  group,
+  children,
+}: {
+  provider: string
+  group?: string | null
+  children: ReactNode
+}) {
   return (
     <a
-      href={`/api/integrations/${provider}/connect`}
+      href={`/api/integrations/${provider}/connect${group ? `?${new URLSearchParams({ group })}` : ''}`}
       className="bg-c-accent hover:bg-c-accent-hov flex h-7 items-center rounded-lg px-2.5 font-medium text-white"
     >
       {children}
@@ -199,6 +211,139 @@ function ConnectionCard({
   )
 }
 
+/** A connection that belongs to the team or to one group of it: everyone sees it, and those who manage it can replace or remove it. */
+function SharedCard({ connection, reconnect }: { connection: Shared; reconnect: boolean }) {
+  const when = relativeTime(connection.connectedAt)
+  return (
+    <li className="border-c-line bg-c-raised rounded-xl border p-4">
+      <div className="flex items-start gap-3">
+        <Mark id={connection.provider} label={connection.label} />
+        <div className="min-w-0 flex-1">
+          <h3 className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="truncate font-medium">{connection.account}</span>
+            <Tag>{connection.label}</Tag>
+            <Tag>{connection.groupLabel ?? 'Whole team'}</Tag>
+          </h3>
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+            {connection.status === 'connected' ? (
+              <span className="flex items-center gap-1 text-green-700 dark:text-green-400">
+                <Check className="size-3.5" /> Connected
+              </span>
+            ) : (
+              <span className="text-c-danger flex items-center gap-1">
+                <TriangleAlert className="size-3.5" /> Needs reconnecting
+              </span>
+            )}
+            <span className="text-c-fg3">
+              {connection.connectedBy
+                ? `Connected by ${connection.connectedBy} ${when}`
+                : `Connected ${when}`}
+            </span>
+          </p>
+          {connection.lastError && <p className="text-c-danger mt-1">{connection.lastError}</p>}
+          {!connection.canManage && (
+            <p className="text-c-fg3 mt-1">
+              {connection.status === 'error'
+                ? 'Someone who manages this connection has to reconnect it.'
+                : 'You can use it. Reconnecting and disconnecting are for the people who manage it.'}
+            </p>
+          )}
+        </div>
+        {connection.canManage && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {connection.status === 'error' && reconnect && (
+              <ConnectLink provider={connection.provider} group={connection.group}>
+                Reconnect
+              </ConnectLink>
+            )}
+            <Disconnect
+              id={connection.id}
+              account={connection.account}
+              what={`${connection.groupLabel ?? 'The whole team'} will lose it, and its stored tokens are deleted.`}
+            />
+          </div>
+        )}
+      </div>
+    </li>
+  )
+}
+
+/** Choosing the group, then connecting for it. Only groups this person may connect for are offered. */
+function ConnectForGroup({ provider }: { provider: Provider }) {
+  const groups = provider.groups.filter((g) => g.canManage)
+  const [group, setGroup] = useState(groups[0]?.key ?? '')
+
+  if (groups.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <select
+        aria-label={`Connect ${provider.label} for`}
+        className={cx(inputClass, 'h-7 w-auto py-0')}
+        value={group}
+        onChange={(e) => setGroup(e.target.value)}
+      >
+        {groups.map((g) => (
+          <option key={g.key} value={g.key}>
+            {g.label}
+          </option>
+        ))}
+      </select>
+      <ConnectLink provider={provider.id} group={group}>
+        Connect
+      </ConnectLink>
+    </div>
+  )
+}
+
+/** What can be connected for the team: for each shared provider, a way to connect it, or a word about who can. */
+function SharedConnectRow({ providers, ready }: { providers: Provider[]; ready: boolean }) {
+  const pending = providers.filter((p) => !p.available)
+  return (
+    <div className="border-c-line2 rounded-xl border border-dashed p-4">
+      <ul className="space-y-3">
+        {providers.map((p) => {
+          const mayConnect = p.shared === 'group' ? p.groups.some((g) => g.canManage) : p.canManage
+
+          return (
+            <li key={p.id} className="flex items-center gap-3">
+              <Mark id={p.id} label={p.label} />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">{p.label}</div>
+                <div className="text-c-fg2">{p.description}</div>
+                {!mayConnect && (
+                  <div className="text-c-fg3">
+                    {p.shared === 'group' && p.groups.length === 0
+                      ? 'There is nothing to connect it for yet.'
+                      : 'Connecting it is for the people who manage it.'}
+                  </div>
+                )}
+              </div>
+              {ready &&
+                p.available &&
+                mayConnect &&
+                (p.shared === 'group' ? (
+                  <ConnectForGroup provider={p} />
+                ) : (
+                  <ConnectLink provider={p.id}>Connect {p.label}</ConnectLink>
+                ))}
+            </li>
+          )
+        })}
+      </ul>
+      {ready && pending.length > 0 && (
+        <p className="text-c-fg3 mt-3">
+          {pending.map((p) => p.label).join(' and ')} {pending.length === 1 ? "hasn't" : "haven't"}{' '}
+          been set up for this CRM yet. Whoever runs the CRM adds the client ID and secret to its
+          environment settings.
+        </p>
+      )}
+    </div>
+  )
+}
+
 /** What can be connected: a button per provider that is set up, and a word about the ones that aren't. */
 function ConnectRow({
   providers,
@@ -243,16 +388,18 @@ function ConnectRow({
 
 export function Integrations(): ReactNode {
   const router = useRouter()
-  const { providers, connections, mailboxes, problems } = route.useLoaderData()
+  const { providers, connections, shared, mailboxes, problems } = route.useLoaderData()
   const { connected, error } = route.useSearch()
   const ready = problems.length === 0
-  const justConnected = connections.find((c) => c.id === connected)
+  const justConnected = [...connections, ...shared].find((c) => c.id === connected)
   const [reading, setReading] = useState(false)
   const [note, setNote] = useState<string>()
 
   const mailboxProviders = providers.filter((p) => p.mailbox)
-  const otherProviders = providers.filter((p) => !p.mailbox)
+  const sharedProviders = providers.filter((p) => p.shared !== null)
+  const otherProviders = providers.filter((p) => !p.mailbox && p.shared === null)
   const canConnect = (id: string) => ready && providers.some((p) => p.id === id && p.available)
+  const isShared = (id: string) => sharedProviders.some((p) => p.id === id)
 
   // A connected mailbox the CRM reaches through the sign-in instead (same address, same access).
   const covered = connections.filter(
@@ -290,8 +437,9 @@ export function Integrations(): ReactNode {
         <div className="mx-auto max-w-3xl space-y-3">
           <p className="text-c-fg2 px-1">
             The accounts the CRM works with on your behalf. Each person connects their own; nobody
-            else can see or use your connections. An account connected for marketing is the
-            exception: it says so, and the team publishes through it.
+            else can see or use your connections. An account under "Shared with the team" is the
+            exception: it is connected once for everyone, or for one group, and everyone can see it
+            there.
           </p>
 
           {justConnected && (
@@ -359,15 +507,46 @@ export function Integrations(): ReactNode {
             <ConnectRow providers={mailboxProviders} ready={ready} verb="Connect" />
           </section>
 
-          {otherProviders.length > 0 && (
+          {(sharedProviders.length > 0 || shared.length > 0) && (
+            <section className="space-y-3" aria-labelledby="shared-connections">
+              <h2 id="shared-connections" className="px-1 pt-2 font-medium">
+                Shared with the team
+              </h2>
+              <p className="text-c-fg2 px-1">
+                Connected once and used by everyone, or by one group. They keep working when whoever
+                connected them leaves.
+              </p>
+              <ul className="space-y-3">
+                {shared.map((c) => (
+                  <SharedCard key={c.id} connection={c} reconnect={canConnect(c.provider)} />
+                ))}
+              </ul>
+              {sharedProviders.length > 0 && (
+                <SharedConnectRow providers={sharedProviders} ready={ready} />
+              )}
+            </section>
+          )}
+
+          {(otherProviders.length > 0 || others.length > 0) && (
             <section className="space-y-3">
               <h2 className="px-1 pt-2 font-medium">Other services</h2>
               <ul className="space-y-3">
                 {others.map((c) => (
-                  <ConnectionCard key={c.id} connection={c} reconnect={canConnect(c.provider)} />
+                  <ConnectionCard
+                    key={c.id}
+                    connection={c}
+                    reconnect={canConnect(c.provider) && !isShared(c.provider)}
+                    note={
+                      isShared(c.provider)
+                        ? `Yours alone: it was connected before ${c.label} was shared with the team. Connect the account again under "Shared with the team" to hand it over, then disconnect this one.`
+                        : undefined
+                    }
+                  />
                 ))}
               </ul>
-              <ConnectRow providers={otherProviders} ready={ready} verb="Connect" />
+              {otherProviders.length > 0 && (
+                <ConnectRow providers={otherProviders} ready={ready} verb="Connect" />
+              )}
             </section>
           )}
 
@@ -376,8 +555,9 @@ export function Integrations(): ReactNode {
             <span>
               Only email and meetings with people who are already in the CRM are kept, as a subject
               line and a short preview; the rest of a mailbox is never stored. For the account you
-              sign in with, the CRM stores no tokens. For an account you connect here, the tokens
-              are encrypted before they are stored, and disconnecting deletes them.
+              sign in with, the CRM stores no tokens. For an account connected here, yours or the
+              team's, the tokens are encrypted before they are stored, and disconnecting deletes
+              them.
             </span>
           </p>
         </div>
