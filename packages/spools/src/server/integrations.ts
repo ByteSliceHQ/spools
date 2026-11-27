@@ -10,11 +10,12 @@ import * as config from './runtime/config'
 import { type ExtensionError, fromHook, IntegrationError, type StaffError } from './runtime/errors'
 import { type Json, parseJson } from './runtime/json'
 import { policies, withPolicy } from './runtime/policies'
-import { Vault } from './runtime/vault'
+import { Vault, VaultError } from './runtime/vault'
 import { spool } from './spool'
-import { asc } from './store/query'
+import { asc, neq, oneOf, or } from './store/query'
 import { Store } from './store/store'
 import { Integration } from './store/tables'
+import { type CrmUser, Users } from './users'
 
 /**
  * Integrations: accounts a teammate connects on the Integrations page, on top of
@@ -32,6 +33,18 @@ import { Integration } from './store/tables'
  * keep. They are sealed by the vault before they are stored (runtime/vault.ts)
  * and never leave this module except as a current access token.
  *
+ * Whose a connection is:
+ * - The teammate's who connected it, unless its provider says otherwise. Nobody
+ *   else sees it, uses it or removes it.
+ * - The team's (`shared: 'team'`) or one group's (`shared: 'group'`), when the
+ *   provider says so: one accounting system for the company, or one per branch.
+ *   Everyone on the access list may use it, the provider's `canManage` says who
+ *   may connect, replace and disconnect it, and none of that depends on whoever
+ *   connected it still being here. The accounts marketing posts through are
+ *   shared this way (marketing-providers.ts).
+ * The row says which (`shared`, `groupKey`), the tokens are sealed for it, and
+ * the signed `state` of a connection in progress carries it.
+ *
  * Env (a provider is offered once its client id and secret are set; all need
  * APP_URL, APP_SECRET and a vault):
  *   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
@@ -41,6 +54,16 @@ import { Integration } from './store/tables'
 export { IntegrationError }
 
 type Env = Record<string, string | undefined>
+
+/** A group of the business a connection can be made for: a branch, a region. */
+export type ConnectionGroup = {
+  /** What is stored and asked for. A plain string of your choosing: a slug, a record's id. */
+  key: string
+  /** What people read. */
+  label: string
+}
+
+type GroupList = readonly (string | { key: string; label?: string })[]
 
 /** A service teammates can connect with OAuth 2 (authorization code with PKCE). */
 export type IntegrationProvider = {
@@ -79,7 +102,39 @@ export type IntegrationProvider = {
   revokeUrl?: string
   /** Set on the built-in mailboxes: read and send through this mailbox API. */
   mailbox?: MailboxProviderId
+  /**
+   * Whose a connection to this provider is. Left out, it is the teammate's who
+   * connected it, and nobody else's. `team`: everyone's on the access list,
+   * whoever connected it (there can be more than one, for different accounts).
+   * `group`: one group's, chosen when connecting from `groups`.
+   */
+  shared?: 'team' | 'group'
+  /**
+   * For `shared: 'group'`: the groups a connection can be made for, or a function
+   * that lists them (your branches, read from wherever you keep them). A key
+   * alone is its own label.
+   */
+  groups?: GroupList | (() => GroupList | Promise<GroupList>)
+  /**
+   * Who may connect, replace and disconnect a shared connection: their email
+   * addresses, or a function asked about one person (and, for a group's
+   * connection, the group). Left out, anyone on the access list may. A function
+   * that throws lets nobody in. Using a shared connection is never limited by this.
+   */
+  canManage?:
+    | readonly string[]
+    | ((user: CrmUser, on: { group: string | null }) => boolean | Promise<boolean>)
+  /**
+   * For `shared: 'team'`, when connections to this provider were already used by
+   * everyone before it said so (as the accounts marketing posts through were):
+   * the ones made before are the team's too. Without it they stay with whoever
+   * connected them, and connecting the account again is what shares it.
+   */
+  adoptExisting?: boolean
 }
+
+/** Whose a connection is, when it is not one person's. */
+type Sharing = 'team' | 'group'
 
 const microsoftBase = (env: Env) =>
   `https://login.microsoftonline.com/${encodeURIComponent(env['MICROSOFT_TENANT_ID'] || 'common')}/oauth2/v2.0`
@@ -137,6 +192,36 @@ const builtIn: Record<MailboxProviderId, IntegrationProvider> = {
 /** A provider id is a path segment and a database value: keep it plain. */
 const PROVIDER_ID = /^[a-z][a-z0-9_-]{0,39}$/
 
+/** A group key is stored, signed into a `state` and shown in an address: no control characters, nothing to trim, not long. */
+const GROUP_KEY = /^[^\s\p{Cc}](?:[^\p{Cc}]{0,98}[^\s\p{Cc}])?$/u
+
+/** What is wrong with what a provider says about whose its connections are, or null. */
+function sharingProblem(id: string, p: IntegrationProvider): string | null {
+  const shared: string | undefined = p.shared
+
+  if (shared !== undefined && shared !== 'team' && shared !== 'group') {
+    return `integration "${id}" has \`shared: "${shared}"\`; use "team" or "group", or leave it out`
+  }
+
+  if (shared === 'group' && p.groups === undefined) {
+    return `integration "${id}" is shared by group and needs \`groups\``
+  }
+
+  if (shared !== 'group' && p.groups !== undefined) {
+    return `integration "${id}" lists \`groups\` but is not \`shared: "group"\``
+  }
+
+  if (shared === undefined && p.canManage !== undefined) {
+    return `integration "${id}" has \`canManage\` but is not shared: each person manages their own connection`
+  }
+
+  if (shared !== 'team' && p.adoptExisting !== undefined) {
+    return `integration "${id}" has \`adoptExisting\`, which is only for \`shared: "team"\``
+  }
+
+  return null
+}
+
 /**
  * Every provider this app offers: the built-in mailboxes, the accounts its
  * marketing channels post through (marketing-providers.ts), then the app's
@@ -144,7 +229,8 @@ const PROVIDER_ID = /^[a-z][a-z0-9_-]{0,39}$/
  */
 export function providers() {
   const own = Object.entries(spool().extensions.integrations ?? {}).filter(
-    ([id]) => PROVIDER_ID.test(id) && !Object.hasOwn(builtIn, id),
+    ([id, p]) =>
+      PROVIDER_ID.test(id) && !Object.hasOwn(builtIn, id) && sharingProblem(id, p) === null,
   )
 
   return Object.fromEntries([
@@ -159,13 +245,17 @@ export const isProvider = (id: string): boolean => Object.hasOwn(providers(), id
 
 /** Problems with the app's own providers, for start-up. Empty when there are none. */
 export function validateIntegrations(): string[] {
-  return Object.keys(spool().extensions.integrations ?? {}).flatMap((id) =>
-    Object.hasOwn(builtIn, id)
-      ? [`integration "${id}" is built in and can't be replaced`]
-      : PROVIDER_ID.test(id)
-        ? []
-        : [`integration "${id}" needs an id of lower-case letters, digits, "-" or "_"`],
-  )
+  return Object.entries(spool().extensions.integrations ?? {}).flatMap(([id, p]) => {
+    if (Object.hasOwn(builtIn, id)) {
+      return [`integration "${id}" is built in and can't be replaced`]
+    }
+
+    if (!PROVIDER_ID.test(id)) {
+      return [`integration "${id}" needs an id of lower-case letters, digits, "-" or "_"`]
+    }
+
+    return sharingProblem(id, p) ?? []
+  })
 }
 
 const refuse = (message: string, reconnect = false) =>
@@ -178,6 +268,93 @@ const provider = (id: string) => {
 
 const urlOf = (value: string | ((env: Env) => string), env: Env) =>
   Predicate.isFunction(value) ? value(env) : value
+
+// ── Whose a connection is ───────────────────────────────────────────────────
+
+/**
+ * Someone a connection is made, replaced or removed by: the CRM user the
+ * boundary checked, or their id alone from a caller that has nothing more. An
+ * id alone can't pass a provider's `canManage`, which is a rule about people.
+ */
+export type Who = string | CrmUser
+
+const idOf = (who: Who) => (Predicate.isString(who) ? who : who.id)
+const personOf = (who: Who) => (Predicate.isString(who) ? null : who)
+
+/** The groups a provider's connections can be made for. One whose key can't be stored is left out, as is everything when the app's function fails. */
+const groupsOf = Effect.fn('integrations.groupsOf')(function* (id: string, p: IntegrationProvider) {
+  const { groups } = p
+
+  if (p.shared !== 'group' || groups === undefined) {
+    return []
+  }
+
+  const listed = Predicate.isFunction(groups)
+    ? yield* fromHook(`integrations.${id}.groups`, () => groups()).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(`[integrations] ${id}: its groups could not be listed`, error).pipe(
+            Effect.as<GroupList>([]),
+          ),
+        ),
+      )
+    : groups
+
+  const found = new Map<string, ConnectionGroup>()
+
+  for (const entry of listed) {
+    const group = Predicate.isString(entry)
+      ? { key: entry, label: entry }
+      : { key: entry.key, label: entry.label || entry.key }
+
+    if (GROUP_KEY.test(group.key) && !found.has(group.key)) {
+      found.set(group.key, group)
+    }
+  }
+
+  return [...found.values()]
+})
+
+/**
+ * Whether someone may connect, replace or disconnect a provider's shared
+ * connection (for a group's, that group's). Everyone the boundary let in may,
+ * unless the provider has a rule: then only who it names, and nobody when it
+ * can't be asked.
+ */
+const mayManage = Effect.fn('integrations.mayManage')(function* (
+  id: string,
+  p: IntegrationProvider | undefined,
+  who: Who,
+  group: string | null,
+) {
+  const rule = p?.canManage
+
+  if (rule === undefined) {
+    return true
+  }
+
+  const person = personOf(who)
+
+  if (!person) {
+    return false
+  }
+
+  if (!Predicate.isFunction(rule)) {
+    const email = person.email.toLowerCase()
+    return rule.some((listed) => listed.trim().toLowerCase() === email)
+  }
+
+  return yield* fromHook(`integrations.${id}.canManage`, () => rule(person, { group })).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning(`[integrations] ${id}: canManage failed, so nobody may`, error).pipe(
+        Effect.as(false),
+      ),
+    ),
+  )
+})
+
+/** The CRM user behind an id, or null: not on the access list, unknown, or the directory can't say. */
+const memberOf = (userId: string) =>
+  Users.use((users) => users.crmUser(userId)).pipe(Effect.orElseSucceed(() => null))
 
 /** Whether a provider's client id and secret are set in `env`. Unknown providers are not. */
 export const providerConfigured = (id: string, env: Env): boolean => {
@@ -383,9 +560,24 @@ const Credentials = z.object({
 
 type Credentials = z.infer<typeof Credentials>
 
-/** Who a connection's tokens are sealed for: the row they are stored on, and no other. Exported for tests. */
-export const ownerOf = (row: { userId: string; provider: string; account: string }) =>
-  JSON.stringify(['integration', row.userId, row.provider, row.account])
+/**
+ * Who a connection's tokens are sealed for: the row they are stored on, and no
+ * other. A shared row's name also says whose it is, so a row that is turned
+ * into a shared one in the database, or moved to another group, no longer
+ * opens. One person's row is named as it always was. Exported for tests.
+ */
+export const ownerOf = (row: {
+  userId: string
+  provider: string
+  account: string
+  shared?: string | null
+  groupKey?: string
+}) =>
+  JSON.stringify(
+    row.shared
+      ? ['integration', row.userId, row.provider, row.account, row.shared, row.groupKey ?? '']
+      : ['integration', row.userId, row.provider, row.account],
+  )
 
 /**
  * A token endpoint's answer. A field that isn't what it should be is left out
@@ -457,6 +649,7 @@ const toCredentials = (
 
 export type Connection = {
   id: string
+  /** Who connected it. For a connection that isn't shared, also whose it is. */
   userId: string
   provider: string
   /** Which account at the provider: an email address for a mailbox. */
@@ -465,6 +658,12 @@ export type Connection = {
   status: 'connected' | 'error'
   lastError: string | null
   connectedAt: Date
+  /** Whose it is, when not `userId`'s alone: everyone's, or one group's. */
+  shared: Sharing | null
+  /** The group a `group` connection is for. */
+  group: string | null
+  /** For a shared connection, the name of whoever connected it, when that is known. */
+  connectedBy: string | null
 }
 
 type Row = {
@@ -476,9 +675,43 @@ type Row = {
   status: string
   lastError: string | null
   createdAt: Date
+  shared: string
+  groupKey: string
+  connectedByName: string | null
+  connectedAt: Date | null
 }
 
-const toConnection = (row: Row): Connection => ({
+type Owner = { shared: Sharing | null; group: string | null }
+
+const PERSONAL: Owner = { shared: null, group: null }
+
+/**
+ * Whose a stored connection is, or null for a row that says something this
+ * code doesn't know (it is then nobody's: not listed, not used).
+ *
+ * The row says. One that says nothing is its connector's, except at a provider
+ * whose connections were everyone's before rows said so (`adoptExisting`).
+ */
+function sharingOf(row: Pick<Row, 'provider' | 'shared' | 'groupKey'>): Owner | null {
+  if (row.shared === 'team') {
+    return { shared: 'team', group: null }
+  }
+
+  if (row.shared === 'group') {
+    return { shared: 'group', group: row.groupKey }
+  }
+
+  if (row.shared !== '') {
+    return null
+  }
+
+  const p = Object.hasOwn(providers(), row.provider) ? providers()[row.provider] : undefined
+  return p?.shared === 'team' && p.adoptExisting === true
+    ? { shared: 'team', group: null }
+    : PERSONAL
+}
+
+const toConnection = (row: Row, owner: Owner, names?: ReadonlyMap<string, string>): Connection => ({
   id: row.id,
   userId: row.userId,
   provider: row.provider,
@@ -486,7 +719,36 @@ const toConnection = (row: Row): Connection => ({
   scopes: row.scopes.split(/\s+/).filter(Boolean),
   status: row.status === 'error' ? 'error' : 'connected',
   lastError: row.lastError,
-  connectedAt: row.createdAt,
+  connectedAt: (owner.shared && row.connectedAt) || row.createdAt,
+  shared: owner.shared,
+  group: owner.group,
+  connectedBy: owner.shared ? (row.connectedByName ?? names?.get(row.userId) ?? null) : null,
+})
+
+/** Rows as connections: those of a provider this CRM still offers, each with whose it is. */
+const owned = (rows: readonly Row[]) =>
+  rows.flatMap((row) => {
+    const owner = isProvider(row.provider) ? sharingOf(row) : null
+    return owner ? [{ row, owner }] : []
+  })
+
+/**
+ * Names for shared connections that don't carry their connector's (ones made
+ * before rows did): whoever is on the team now. The directory is only asked
+ * when such a row is there, and a connection is shown without a name when it can't say.
+ */
+const namesFor = Effect.fn('integrations.namesFor')(function* (
+  connections: readonly { row: Row; owner: Owner }[],
+) {
+  if (!connections.some(({ row, owner }) => owner.shared && row.connectedByName === null)) {
+    return new Map<string, string>()
+  }
+
+  const team = yield* Users.use((users) => users.team).pipe(
+    Effect.orElseSucceed((): CrmUser[] => []),
+  )
+
+  return new Map(team.map((u) => [u.id, u.name]))
 })
 
 /** Which account a new access token belongs to, asked of the provider through its own `account` function. */
@@ -602,7 +864,7 @@ export const completeAuth = Effect.fn('integrations.completeAuth')(function* (
     return yield* refuse('The connection could not be saved')
   }
 
-  return toConnection(saved)
+  return toConnection(saved, PERSONAL)
 })
 
 /** A teammate's own connections. Tokens never leave this module. */
@@ -611,26 +873,80 @@ export const listConnections = Effect.fn('integrations.listConnections')(functio
 ) {
   const store = yield* Store
   const rows = yield* store.find(Integration, { where: { userId }, order: [asc('createdAt')] })
-  return rows.filter((r) => isProvider(r.provider)).map(toConnection)
+
+  // What they connected for the team is the team's, and listed with it.
+  return owned(rows)
+    .filter(({ owner }) => owner.shared === null)
+    .map(({ row, owner }) => toConnection(row, owner))
 })
 
 /**
+ * Whether a person may use each of these connections: their own, or a shared
+ * one when they are on the access list. This is the one place that decides it.
+ *
+ * A group's connection is anyone's on the access list. When people come to
+ * hold groups, whether this person holds `owner.group` is asked here.
+ */
+const usableBy = Effect.fn('integrations.usableBy')(function* <
+  T extends { row: Row; owner: Owner },
+>(userId: string, connections: readonly T[]) {
+  // The directory is only asked when the answer depends on it.
+  const member = connections.some(({ owner }) => owner.shared !== null)
+    ? yield* memberOf(userId)
+    : null
+
+  return connections.filter(({ row, owner }) =>
+    owner.shared === null ? row.userId === userId : member !== null,
+  )
+})
+
+export type ConnectionFilter = {
+  provider?: string
+  /** One teammate's own connections. Never a shared one, whoever connected it. */
+  userId?: string
+  /** The team's connections, or every group's. */
+  shared?: Sharing
+  /** One group's connections. */
+  group?: string
+  /** Only what this person may use: their own, and shared ones if they are on the access list. */
+  usableBy?: string
+}
+
+/**
  * Connections across the team, for server code that acts on someone's behalf:
- * the mailbox sync, or an extension that uses whichever teammate connected the
- * accounting system. Never return these to a browser.
+ * the mailbox sync, or an extension that creates an invoice with the company's
+ * accounting connection. With no filter, every connection there is, as it
+ * always was. Never return these to a browser.
  */
 export const findConnections = Effect.fn('integrations.findConnections')(function* (
-  filter: { provider?: string; userId?: string } = {},
+  filter: ConnectionFilter = {},
 ) {
   const store = yield* Store
 
-  const rows = yield* store.find(Integration, {
-    where: filter,
-    order: [asc('createdAt')],
-    limit: 1000,
-  })
+  // Whose a connection is can depend on its provider, so that is decided on the rows, not by the database.
+  const where: Pick<ConnectionFilter, 'provider' | 'userId'> = {}
 
-  return rows.filter((r) => isProvider(r.provider)).map(toConnection)
+  if (filter.provider !== undefined) {
+    where.provider = filter.provider
+  }
+
+  if (filter.userId !== undefined) {
+    where.userId = filter.userId
+  }
+
+  const rows = yield* store.find(Integration, { where, order: [asc('createdAt')], limit: 1000 })
+
+  const wanted = owned(rows).filter(
+    ({ owner }) =>
+      (filter.userId === undefined || owner.shared === null) &&
+      (filter.shared === undefined || owner.shared === filter.shared) &&
+      (filter.group === undefined || (owner.shared === 'group' && owner.group === filter.group)),
+  )
+
+  const allowed = filter.usableBy === undefined ? wanted : yield* usableBy(filter.usableBy, wanted)
+
+  const names = yield* namesFor(allowed)
+  return allowed.map(({ row, owner }) => toConnection(row, owner, names))
 })
 
 /** A connected mailbox: a connection to one of the built-in Google or Microsoft providers. */
@@ -654,22 +970,38 @@ const refreshing = new Map<string, Deferred.Deferred<string, StaffError>>()
  * A valid access token for a connection, refreshed when it is about to expire.
  * A refresh the provider turns down marks the connection as needing to be
  * connected again.
+ *
+ * With `as`, the token is only given if that person may use the connection:
+ * it is their own, or it is shared and they are on the access list.
  */
 export const getAccessToken = Effect.fn('integrations.getAccessToken')(function* (
   connectionId: string,
   now = Date.now(),
+  /** The person this is for. Left out by code with nobody behind it (a schedule, an automation), which is trusted. */
+  as?: string,
 ) {
   const store = yield* Store
   const vault = yield* Vault
   const row = yield* store.first(Integration, { where: { id: connectionId } })
+  const [connection] = row ? owned([row]) : []
 
-  if (!row || !isProvider(row.provider)) {
+  if (!row || !connection) {
     return yield* refuse('That account is no longer connected', true)
   }
 
   const { label } = yield* provider(row.provider)
+
+  if (as !== undefined && (yield* usableBy(as, [connection])).length === 0) {
+    return yield* refuse(`That ${label} account is not yours to use`)
+  }
+
   const owner = ownerOf(row)
   const { value: current, bound } = yield* vault.open(row.credentials, owner, Credentials)
+
+  // Only a personal row can be older than tokens being tied to their row. On any other, tokens that name no row were put there.
+  if (!bound && row.shared !== '') {
+    return yield* new VaultError({ message: 'Stored secret belongs to something else' })
+  }
 
   if (current.expiresAt - REFRESH_MARGIN_MS > now) {
     // Sealed before tokens were tied to their row: tie them now, unless a refresh just replaced them.
@@ -735,23 +1067,38 @@ export const getAccessToken = Effect.fn('integrations.getAccessToken')(function*
 })
 
 /**
- * Remove one of a teammate's connections and its stored tokens. The provider is
- * asked to revoke the token where it offers that, but the local copy is deleted
- * either way.
+ * Remove a connection and its stored tokens: one of a teammate's own, or a
+ * shared one they may manage. The provider is asked to revoke the token where
+ * it offers that, but the local copy is deleted either way.
+ *
+ * False when there is no such connection of theirs. A shared one they can see
+ * but may not manage is refused in words.
  */
 export const disconnect = Effect.fn('integrations.disconnect')(function* (
-  userId: string,
+  who: Who,
   connectionId: string,
 ) {
   const store = yield* Store
   const vault = yield* Vault
-  const row = yield* store.first(Integration, { where: { id: connectionId, userId } })
+  const row = yield* store.first(Integration, { where: { id: connectionId } })
 
   if (!row) {
     return false
   }
 
   const p = isProvider(row.provider) ? providers()[row.provider] : undefined
+  // A row whose provider is gone, or that says something unknown, is its connector's to clear away.
+  const owner = (p && sharingOf(row)) || PERSONAL
+
+  if (owner.shared === null) {
+    if (row.userId !== idOf(who)) {
+      return false
+    }
+  } else if (!(yield* mayManage(row.provider, p, who, owner.group))) {
+    return yield* refuse(
+      `Only the people who manage ${p?.label ?? row.provider} for this CRM can disconnect it`,
+    )
+  }
 
   if (p?.revokeUrl) {
     const revokeUrl = p.revokeUrl
@@ -772,4 +1119,105 @@ export const disconnect = Effect.fn('integrations.disconnect')(function* (
 
   yield* store.remove(Integration, { where: { id: row.id } })
   return true
+})
+
+// ── The Integrations page ───────────────────────────────────────────────────
+
+/**
+ * What the Integrations page shows one person, apart from their mailboxes:
+ * what can be connected, their own connections, and every shared one with
+ * whether they may manage it. It is sent to a browser, so it is built field by
+ * field here: no token, sealed or not, and nobody else's own connection.
+ */
+export const connectionsOverview = Effect.fn('integrations.connectionsOverview')(function* (
+  user: CrmUser,
+) {
+  const store = yield* Store
+  const env = yield* config.environment
+  const offered = providers()
+  const adopting = Object.keys(offered).filter((id) => offered[id]?.adoptExisting === true)
+
+  const [mine, others] = yield* Effect.all(
+    [
+      listConnections(user.id),
+      // Every row that says it is shared, and every row of a provider whose unmarked rows are.
+      store.find(Integration, {
+        filter: or(neq('shared', ''), oneOf('provider', adopting)),
+        order: [asc('createdAt')],
+        limit: 1000,
+      }),
+    ],
+    { concurrency: 2 },
+  )
+
+  // Seeing a shared connection is using it, as far as who may: the same check decides.
+  const shared = yield* usableBy(
+    user.id,
+    owned(others).filter(({ owner }) => owner.shared !== null),
+  )
+
+  const names = yield* namesFor(shared)
+  const groups = new Map<string, ConnectionGroup[]>()
+
+  for (const [id, p] of Object.entries(offered)) {
+    groups.set(id, yield* groupsOf(id, p))
+  }
+
+  return {
+    providers: yield* Effect.forEach(Object.entries(offered), ([id, p]) =>
+      Effect.gen(function* () {
+        return {
+          id,
+          label: p.label,
+          description: p.description,
+          /** Whoever runs the CRM has set this provider's client id and secret. */
+          available: providerConfigured(id, env),
+          mailbox: !!p.mailbox,
+          shared: p.shared ?? null,
+          /** Whether this person may connect it. Always true of a connection of one's own. */
+          canManage: p.shared === 'team' ? yield* mayManage(id, p, user, null) : true,
+          groups: yield* Effect.forEach(groups.get(id) ?? [], (group) =>
+            Effect.map(mayManage(id, p, user, group.key), (canManage) => ({
+              ...group,
+              canManage,
+            })),
+          ),
+        }
+      }),
+    ),
+    connections: mine.map((c) => ({
+      id: c.id,
+      provider: c.provider,
+      label: offered[c.provider]?.label ?? c.provider,
+      account: c.account,
+      status: c.status,
+      lastError: c.lastError,
+      connectedAt: c.connectedAt.toISOString(),
+      mailbox: !!offered[c.provider]?.mailbox,
+    })),
+    shared: yield* Effect.forEach(shared, ({ row, owner }) =>
+      Effect.gen(function* () {
+        const c = toConnection(row, owner, names)
+
+        return {
+          id: c.id,
+          provider: c.provider,
+          label: offered[c.provider]?.label ?? c.provider,
+          account: c.account,
+          shared: c.shared,
+          group: c.group,
+          /** The group as people know it, or its key once the provider no longer lists it. */
+          groupLabel:
+            c.group === null
+              ? null
+              : (groups.get(c.provider)?.find((g) => g.key === c.group)?.label ?? c.group),
+          connectedBy: c.connectedBy,
+          connectedAt: c.connectedAt.toISOString(),
+          status: c.status,
+          lastError: c.lastError,
+          canManage: yield* mayManage(c.provider, offered[c.provider], user, c.group),
+        }
+      }),
+    ),
+  }
 })

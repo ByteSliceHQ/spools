@@ -1,4 +1,4 @@
-import type { Effect } from 'effect'
+import { type Effect, Predicate } from 'effect'
 
 import type { RunContext, RunResult } from './actions'
 import * as actions from './actions'
@@ -21,6 +21,7 @@ import * as workspace from './workspace'
  */
 
 export type { RecordRef } from './files'
+export type { Connection, ConnectionGroup } from './integrations'
 export type { ActivityInput, CrmRecord, ListQuery } from './records'
 export { runServer } from './runtime/app'
 export type { CrmUser } from './users'
@@ -41,17 +42,46 @@ export const shareRecordFolder = (from: files.RecordRef, to: files.RecordRef): P
 /** Everyone who may use the CRM, by name. */
 export const listCrmUsers = () => runServer(Users.use((users) => users.team))
 
-/**
- * A current access token for an account a teammate connected on the
- * Integrations page (refreshed when it is about to expire). For an app's
- * handlers that call the provider's API.
- */
-export const getAccessToken = (connectionId: string): Promise<string> =>
-  runServer(integrations.getAccessToken(connectionId))
+/** A person some code is acting for: `ctx.actor` in a handler, or their id. `null` is nobody (a script, an import). */
+type For = string | { id: string } | null
 
-/** Connections across the team, to find whose account to act with. Never return these to a browser. */
-export const findConnections = (filter: { provider?: string; userId?: string } = {}) =>
-  runServer(integrations.findConnections(filter))
+const idOf = (person: For | undefined) =>
+  person === undefined || person === null
+    ? undefined
+    : Predicate.isString(person)
+      ? person
+      : person.id
+
+/**
+ * A current access token for an account connected on the Integrations page
+ * (refreshed when it is about to expire). For an app's handlers that call the
+ * provider's API.
+ *
+ * Say who it is for with `as` whenever a person caused the call (`as: ctx.actor`):
+ * the token is then only given if the connection is theirs, or is shared and
+ * they are on the access list. Without it the call is trusted, as a schedule's is.
+ */
+export const getAccessToken = (connectionId: string, options: { as?: For } = {}): Promise<string> =>
+  runServer(integrations.getAccessToken(connectionId, undefined, idOf(options.as)))
+
+/**
+ * Connections, to find which account to act with. Never return these to a browser.
+ *
+ *   findConnections({ provider: 'books', shared: 'team' })     the company's
+ *   findConnections({ provider: 'books', group: 'north' })     one branch's
+ *   findConnections({ provider: 'phone', userId })             a teammate's own
+ *
+ * `usableBy` keeps only what that person may use.
+ */
+export const findConnections = (
+  filter: Omit<integrations.ConnectionFilter, 'usableBy'> & { usableBy?: For } = {},
+) => {
+  const { usableBy, ...rest } = filter
+  const userId = idOf(usableBy)
+  return runServer(
+    integrations.findConnections(userId === undefined ? rest : { ...rest, usableBy: userId }),
+  )
+}
 
 /** Run a config target (`"swirls:<name>"`, `"campaign:<name>"`, `"local:<name>"`, or an app's own kind). */
 export const runTarget = (target: string, ctx: RunContext): Promise<RunResult> =>

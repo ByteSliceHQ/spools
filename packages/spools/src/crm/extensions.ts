@@ -127,8 +127,13 @@ export type Extensions = {
   email?: { send: EmailSender }
   /**
    * Services teammates can connect on the Integrations page, by id. The framework
-   * runs the OAuth flow and stores the tokens encrypted; your handlers get a
-   * current token from `getAccessToken` in src/server/integrations.ts.
+   * runs the OAuth flow and stores the tokens encrypted; your handlers find a
+   * connection with `findConnections` and get a current token from
+   * `getAccessToken` (both from `@swirls/spools/extensions`).
+   *
+   * A connection is its teammate's own unless the provider says `shared: 'team'`
+   * (one for everyone) or `shared: 'group'` with `groups` (one per branch or
+   * region); `canManage` then says who may connect and disconnect it.
    */
   integrations?: Record<string, IntegrationProvider>
   /**

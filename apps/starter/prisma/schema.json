@@ -1071,6 +1071,23 @@
                   "kind": "scalar"
                 }
               },
+              "connectedAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-date@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "connectedByName": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "createdAt": {
                 "nullable": false,
                 "type": {
@@ -1082,6 +1099,13 @@
                 }
               },
               "credentials": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "groupKey": {
                 "nullable": false,
                 "type": {
                   "codecId": "pg/text@1",
@@ -1110,6 +1134,13 @@
                 }
               },
               "scopes": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "shared": {
                 "nullable": false,
                 "type": {
                   "codecId": "pg/text@1",
@@ -1147,11 +1178,20 @@
                 "account": {
                   "column": "account"
                 },
+                "connectedAt": {
+                  "column": "connected_at"
+                },
+                "connectedByName": {
+                  "column": "connected_by_name"
+                },
                 "createdAt": {
                   "column": "created_at"
                 },
                 "credentials": {
                   "column": "credentials"
+                },
+                "groupKey": {
+                  "column": "group_key"
                 },
                 "id": {
                   "column": "id"
@@ -1164,6 +1204,9 @@
                 },
                 "scopes": {
                   "column": "scopes"
+                },
+                "shared": {
+                  "column": "shared"
                 },
                 "status": {
                   "column": "status"
@@ -3272,6 +3315,19 @@
                   "dataType": "pg/text",
                   "nullable": false
                 },
+                "connected_at": {
+                  "codecId": "pg/timestamptz-date@1",
+                  "dataType": "pg/timestamptz",
+                  "nullable": true,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "connected_by_name": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "created_at": {
                   "codecId": "pg/timestamptz-date@1",
                   "dataType": "pg/timestamptz",
@@ -3287,6 +3343,15 @@
                 "credentials": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
+                  "nullable": false
+                },
+                "group_key": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "default": {
+                    "kind": "literal",
+                    "value": ""
+                  },
                   "nullable": false
                 },
                 "id": {
@@ -3307,6 +3372,15 @@
                 "scopes": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
+                  "nullable": false
+                },
+                "shared": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "default": {
+                    "kind": "literal",
+                    "value": ""
+                  },
                   "nullable": false
                 },
                 "status": {
@@ -3340,7 +3414,9 @@
                   "columns": [
                     "user_id",
                     "provider",
-                    "account"
+                    "account",
+                    "shared",
+                    "group_key"
                   ]
                 }
               ]
@@ -4244,7 +4320,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "06db04fe9880d37e604c3b6e31f0af7bb5e15624b502993098310e85866d447b"
+    "storageHash": "df1afbeacc885b3f6d949a9b51d6c657235a75f325c407fe1dba5d305d14c4cc"
   },
   "execution": {
     "executionHash": "3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b",

@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'06db04fe9880d37e604c3b6e31f0af7bb5e15624b502993098310e85866d447b'>;
+  StorageHashBase<'df1afbeacc885b3f6d949a9b51d6c657235a75f325c407fe1dba5d305d14c4cc'>;
 export type ExecutionHash =
   ExecutionHashBase<'3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b'>;
 export type ProfileHash =
@@ -413,12 +413,16 @@ export namespace Models {
   };
   export type public_Integration = {
     account: FieldOutputTypes['public']['Integration']['account'];
+    connectedAt: FieldOutputTypes['public']['Integration']['connectedAt'];
+    connectedByName: FieldOutputTypes['public']['Integration']['connectedByName'];
     createdAt: FieldOutputTypes['public']['Integration']['createdAt'];
     credentials: FieldOutputTypes['public']['Integration']['credentials'];
+    groupKey: FieldOutputTypes['public']['Integration']['groupKey'];
     id: FieldOutputTypes['public']['Integration']['id'];
     lastError: FieldOutputTypes['public']['Integration']['lastError'];
     provider: FieldOutputTypes['public']['Integration']['provider'];
     scopes: FieldOutputTypes['public']['Integration']['scopes'];
+    shared: FieldOutputTypes['public']['Integration']['shared'];
     status: FieldOutputTypes['public']['Integration']['status'];
     updatedAt: FieldOutputTypes['public']['Integration']['updatedAt'];
     userId: FieldOutputTypes['public']['Integration']['userId'];
@@ -1269,6 +1273,19 @@ type ContractBase = Omit<
                   readonly nullable: false;
                   readonly many: false;
                 };
+                readonly connected_at: {
+                  readonly dataType: 'pg/timestamptz';
+                  readonly codecId: 'pg/timestamptz-date@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly precision: 3 };
+                  readonly many: false;
+                };
+                readonly connected_by_name: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                  readonly many: false;
+                };
                 readonly created_at: {
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-date@1';
@@ -1281,6 +1298,16 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly group_key: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/text@1', ''>;
+                  };
                   readonly many: false;
                 };
                 readonly id: {
@@ -1307,6 +1334,16 @@ type ContractBase = Omit<
                   readonly nullable: false;
                   readonly many: false;
                 };
+                readonly shared: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/text@1', ''>;
+                  };
+                  readonly many: false;
+                };
                 readonly status: {
                   readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
@@ -1328,7 +1365,17 @@ type ContractBase = Omit<
                 };
               };
               primaryKey: { readonly columns: readonly ['id'] };
-              uniques: readonly [{ readonly columns: readonly ['user_id', 'provider', 'account'] }];
+              uniques: readonly [
+                {
+                  readonly columns: readonly [
+                    'user_id',
+                    'provider',
+                    'account',
+                    'shared',
+                    'group_key',
+                  ];
+                },
+              ];
               indexes: readonly [];
               foreignKeys: readonly [];
             };
@@ -2813,6 +2860,18 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly connectedAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-date@1';
+                  readonly typeParams: { readonly precision: 3 };
+                };
+              };
+              readonly connectedByName: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly createdAt: {
                 readonly nullable: false;
                 readonly type: {
@@ -2822,6 +2881,10 @@ type ContractBase = Omit<
                 };
               };
               readonly credentials: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly groupKey: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
@@ -2838,6 +2901,10 @@ type ContractBase = Omit<
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
               readonly scopes: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly shared: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
@@ -2864,12 +2931,16 @@ type ContractBase = Omit<
               readonly namespaceId: 'public';
               readonly fields: {
                 readonly account: { readonly column: 'account' };
+                readonly connectedAt: { readonly column: 'connected_at' };
+                readonly connectedByName: { readonly column: 'connected_by_name' };
                 readonly createdAt: { readonly column: 'created_at' };
                 readonly credentials: { readonly column: 'credentials' };
+                readonly groupKey: { readonly column: 'group_key' };
                 readonly id: { readonly column: 'id' };
                 readonly lastError: { readonly column: 'last_error' };
                 readonly provider: { readonly column: 'provider' };
                 readonly scopes: { readonly column: 'scopes' };
+                readonly shared: { readonly column: 'shared' };
                 readonly status: { readonly column: 'status' };
                 readonly updatedAt: { readonly column: 'updated_at' };
                 readonly userId: { readonly column: 'user_id' };

@@ -31,7 +31,15 @@ export const NETWORK_PROVIDERS = {
 /** A marketing account is the team's to post through, whoever connected it. */
 const SHARED = 'Anyone on the team can publish through it from the Marketing page'
 
+/**
+ * Whose these connections are: the team's (integrations.ts). They were used by
+ * everyone before a connection said whose it was, so the ones made then are the
+ * team's as well, without their rows being touched.
+ */
+const team = { shared: 'team', adoptExisting: true } as const
+
 const linkedin = (pages: boolean): IntegrationProvider => ({
+  ...team,
   label: 'LinkedIn',
   // Said on the Integrations page, whose other accounts are only their owner's to use.
   description: `${pages ? 'Post to your company page' : 'Post to LinkedIn'}. ${SHARED}`,
@@ -50,6 +58,7 @@ const linkedin = (pages: boolean): IntegrationProvider => ({
 })
 
 const x: IntegrationProvider = {
+  ...team,
   label: 'X',
   description: `Post from your X account. ${SHARED}`,
   clientId: 'X_CLIENT_ID',
@@ -65,6 +74,7 @@ const x: IntegrationProvider = {
 }
 
 const googleAds: IntegrationProvider = {
+  ...team,
   label: 'Google Ads',
   description:
     'Read what your campaigns spent and brought in. Everyone on the team sees the results',
