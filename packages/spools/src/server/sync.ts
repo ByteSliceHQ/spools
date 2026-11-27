@@ -13,10 +13,11 @@ import {
 import { addActivityOnce, adoptSentEmail, emailSummary, listRecords } from './records'
 import { runtime } from './runtime/app'
 import * as config from './runtime/config'
+import { asUser, scopesOn } from './scopes'
 import { crmConfig } from './spool'
 import { Store } from './store/store'
 import { MailboxSync } from './store/tables'
-import type { CrmUser } from './users'
+import { type CrmUser, Users } from './users'
 
 declare global {
   /**
@@ -874,7 +875,20 @@ export const syncAll = Effect.fn('sync.syncAll')(function* (
 
   accounts.sort((a, b) => lastSynced(a) - lastSynced(b))
 
-  const index = yield* buildContactIndex()
+  // In a Spool with record scopes a mailbox is read as its owner: mail only lands on records
+  // the owner can reach, so one group's subject lines never turn up on another group's contact.
+  // Each owner then has their own index of addresses; without scopes one index serves everybody.
+  const scoped = scopesOn()
+  const index = scoped ? undefined : yield* buildContactIndex()
+  const users = yield* Users
+
+  const asOwner = (account: MailboxAccount) =>
+    Effect.flatMap(users.crmUser(account.userId), (owner) =>
+      owner
+        ? asUser(owner, null)(syncMailbox(account, { now: options.now }))
+        : // No longer allowed in: their mailbox is left alone.
+          Effect.succeed(null),
+    )
 
   for (const [i, account] of accounts.entries()) {
     if (options.budgetMs !== undefined && Date.now() - started > options.budgetMs) {
@@ -882,7 +896,9 @@ export const syncAll = Effect.fn('sync.syncAll')(function* (
       break
     }
 
-    const outcome = yield* Effect.result(syncMailbox(account, { index, now: options.now }))
+    const outcome = yield* Effect.result(
+      scoped ? asOwner(account) : syncMailbox(account, { index, now: options.now }),
+    )
 
     if (outcome._tag === 'Failure') {
       run.problem = outcome.failure.message

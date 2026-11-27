@@ -7,6 +7,7 @@ import { Count, IconButton, relativeTime } from '../crm/ui/kit'
 import { objectIndex, TopBar } from '../crm/ui/shell'
 import { useCrmConfig } from '../crm/ui/use-crm'
 import { TaskDialog, TaskRow } from '../crm/ui/workspace'
+import { useWriteReach } from '../crm/ui/write-reach'
 
 const route = getRouteApi('/_crm/')
 
@@ -17,6 +18,7 @@ export function Home(): ReactNode {
   const { user } = useRouteContext({ from: '/_crm' })
   const [prompt, setPrompt] = useState('')
   const [addingTask, setAddingTask] = useState(false)
+  const canAdd = useWriteReach().any
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
@@ -99,9 +101,11 @@ export function Home(): ReactNode {
               <Link to="/tasks" className="text-c-fg2 hover:text-c-fg ml-auto text-xs">
                 View all
               </Link>
-              <IconButton label="New task" className="size-6" onClick={() => setAddingTask(true)}>
-                <Plus className="size-3.5" />
-              </IconButton>
+              {canAdd && (
+                <IconButton label="New task" className="size-6" onClick={() => setAddingTask(true)}>
+                  <Plus className="size-3.5" />
+                </IconButton>
+              )}
             </header>
             {tasks.length === 0 ? (
               <p className="border-c-line text-c-fg3 rounded-xl border px-3 py-5 text-center">

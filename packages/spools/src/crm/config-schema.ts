@@ -35,6 +35,14 @@ const runTarget = z
 
 export { durationPattern } from './sequences'
 
+/** What a person may do with the records of a scope they hold, by the role they hold it with. */
+const scopeRoleSchema = z.object({
+  /** May create, change and delete records. Without it the role only reads. */
+  write: z.boolean().default(false),
+  /** Reaches every scope, whichever one it was granted in (head office). */
+  all: z.boolean().default(false),
+})
+
 /** A time of day on a 24-hour clock, "08:00". */
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'use a 24-hour time such as "08:00"')
 
@@ -353,6 +361,32 @@ export const crmConfigSchema = z
         message: 'access needs at least one allowed domain or email; the CRM is deny-by-default',
       }),
     objects: z.record(ident, objectSchema),
+    /**
+     * Record scopes: groups of the business (branches, regions, teams) whose
+     * people only see and change their own group's records. `objects` names,
+     * for each object that belongs to a group, the field that says which: a
+     * `select`, a `text` or a `relation` field. An object left out is shared by
+     * everyone. `roles` are what a person can hold a scope with; who holds what
+     * comes from the auth adapter or from `scopes` in src/app/extensions.ts.
+     * Without this key there are no scopes: every allowed user reads and
+     * writes every record. See docs/security.md.
+     */
+    scopes: z
+      .object({
+        /** What one scope is called, e.g. "Branch". */
+        label: z.string().trim().min(1).max(40).default('Scope'),
+        labelPlural: z.string().trim().min(1).max(40).default('Scopes'),
+        objects: z.record(ident, ident),
+        roles: z.record(ident, scopeRoleSchema),
+        /**
+         * How many minutes the signed grant a workflow is handed lasts: 15
+         * unless this says (docs/swirls.md). Longer only for workflows that
+         * wait before they write back: until it runs out, whoever holds a
+         * grant has its reach.
+         */
+        grantMinutes: z.number().int().min(1).max(10_080).optional(),
+      })
+      .optional(),
     automations: z.array(automationSchema).default([]),
     /** Email sequences: a few emails with waits between them, sent with Resend. */
     campaigns: z.record(ident, campaignSchema).default({}),
@@ -745,6 +779,61 @@ export const crmConfigSchema = z
 
     for (const issue of checkGuides(cfg)) {
       ctx.addIssue({ code: 'custom', ...issue })
+    }
+
+    if (cfg.scopes) {
+      const path = ['scopes']
+
+      if (Object.keys(cfg.scopes.objects).length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [...path, 'objects'],
+          message: 'name at least one object and the field that holds its scope',
+        })
+      }
+
+      if (Object.keys(cfg.scopes.roles).length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [...path, 'roles'],
+          message: 'name at least one role, e.g. { "member": { "write": true } }',
+        })
+      }
+
+      for (const [objKey, fieldKey] of Object.entries(cfg.scopes.objects)) {
+        const obj = Object.hasOwn(cfg.objects, objKey) ? cfg.objects[objKey] : undefined
+
+        if (!obj) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [...path, 'objects', objKey],
+            message: `unknown object "${objKey}"`,
+          })
+
+          continue
+        }
+
+        const field = Object.hasOwn(obj.fields, fieldKey) ? obj.fields[fieldKey] : undefined
+
+        // A new record takes the scope its maker is working in. A default would put every record
+        // that names none into one scope, and be refused for everyone who doesn't hold that one.
+        if (field && 'default' in field && field.default !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [...path, 'objects', objKey],
+            message: `"${fieldKey}" holds the scope of ${objKey}, so it can't have a default: a new record takes the scope its maker is working in`,
+          })
+        }
+
+        // The scope is compared as it is stored, so it must be a plain value or a key.
+        if (!field || !['select', 'text', 'relation'].includes(field.type) || field.encrypted) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [...path, 'objects', objKey],
+            message: `"${fieldKey}" must be a select, text or relation field on ${objKey}, and not encrypted`,
+          })
+        }
+      }
     }
   })
 

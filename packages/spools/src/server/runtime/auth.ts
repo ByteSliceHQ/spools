@@ -1,6 +1,7 @@
 import type { AnyRequestMiddleware } from '@tanstack/react-start'
 import { Context, Effect, Layer } from 'effect'
 
+import type { Scopes } from '../scopes'
 import type { Adapter } from './adapter'
 import { AuthError, type Timeout } from './errors'
 
@@ -50,6 +51,12 @@ export type Session = {
    * provider. Null when the provider can't make one.
    */
   readonly getToken: (options: { template: string }) => Promise<string | null>
+  /**
+   * The record scope this session is working in, when the provider keeps one
+   * (Clerk's active organization). Like the scope cookie it is a preference:
+   * it is checked against what the person holds. Undefined when it doesn't say.
+   */
+  readonly scope?: string | null | undefined
 }
 
 /** The auth provider's directory: its people, and tokens for the accounts they sign in with. */
@@ -103,4 +110,10 @@ export type AuthAdapter = Adapter<Auth> & {
    * from this server. It checks what it is sent itself: nobody is signed in yet.
    */
   readonly handle?: (request: Request) => Promise<Response>
+  /**
+   * Who holds which record scope, for a provider that keeps groups of people
+   * (Clerk organizations). Used in a Spool with `scopes` in its config, unless
+   * the app has a resolver of its own (`scopes` in src/app/extensions.ts).
+   */
+  readonly scopes?: Layer.Layer<Scopes>
 }

@@ -1,11 +1,12 @@
 import { getRouteApi, Outlet, redirect } from '@tanstack/react-router'
-import { type ReactNode, useEffect } from 'react'
+import { type ReactNode, useEffect, useMemo } from 'react'
 
 import type { PublicCrmConfig } from '../crm/config'
 import { useAuth } from '../crm/ui/auth'
 import { CrmUsersContext } from '../crm/ui/fields'
 import { crmSession, rememberCrmSession } from '../crm/ui/session'
 import { CrmShell } from '../crm/ui/shell'
+import { pageReach, WriteReachContext } from '../crm/ui/write-reach'
 
 const route = getRouteApi('/_crm')
 
@@ -26,6 +27,7 @@ export const crmLayout = {
       favorites: session.favorites,
       dueTasks: session.dueTasks,
       guides: session.guides,
+      scopes: session.scopes,
     }
   },
   head: ({ match }: { match: { context: { config: PublicCrmConfig | null } } }) => ({
@@ -35,15 +37,27 @@ export const crmLayout = {
 }
 
 function CrmLayout(): ReactNode {
-  const { user, config, users, favorites, dueTasks, guides } = route.useRouteContext()
+  const { user, config, users, favorites, dueTasks, guides, scopes } = route.useRouteContext()
   const { SignOut } = useAuth()
 
   // The server sent the session with the page: keep it, so the first click doesn't ask again.
   useEffect(() => {
     if (user && config) {
-      rememberCrmSession({ signedIn: true, user, config, users, favorites, dueTasks, guides })
+      rememberCrmSession({
+        signedIn: true,
+        user,
+        config,
+        users,
+        favorites,
+        dueTasks,
+        guides,
+        scopes,
+      })
     }
-  }, [user, config, users, favorites, dueTasks, guides])
+  }, [user, config, users, favorites, dueTasks, guides, scopes])
+
+  // Which edit controls this person is shown. The server decides what they can do.
+  const reach = useMemo(() => pageReach(scopes, config ?? { objects: {} }), [scopes, config])
 
   if (!user || !config) {
     return (
@@ -66,10 +80,20 @@ function CrmLayout(): ReactNode {
   }
 
   return (
-    <CrmShell config={config} user={user} favorites={favorites} dueTasks={dueTasks} guides={guides}>
-      <CrmUsersContext value={users}>
-        <Outlet />
-      </CrmUsersContext>
-    </CrmShell>
+    // Around the shell too: its search offers "New ..." only to whoever can add records.
+    <WriteReachContext value={reach}>
+      <CrmShell
+        config={config}
+        user={user}
+        favorites={favorites}
+        dueTasks={dueTasks}
+        guides={guides}
+        scopes={scopes}
+      >
+        <CrmUsersContext value={users}>
+          <Outlet />
+        </CrmUsersContext>
+      </CrmShell>
+    </WriteReachContext>
   )
 }

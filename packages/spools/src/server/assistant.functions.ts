@@ -3,7 +3,8 @@ import { Effect } from 'effect'
 import { z } from 'zod'
 
 import { TITLE_MAX } from '../crm/assistant'
-import { Agents, type AssistantChat, CHATS_LISTED } from './runtime/agents'
+import { assistantChat } from './assistant-chat'
+import { type AssistantChat, CHATS_LISTED } from './runtime/agents'
 import { crmHandler } from './runtime/boundary'
 import { AgentsError, Invalid, messageOf, NotConfigured } from './runtime/errors'
 import { policies, withPolicy } from './runtime/policies'
@@ -20,7 +21,7 @@ const notConfigured = new NotConfigured({
 })
 
 /** The assistant's chat for this person, or `NotConfigured`. */
-const chatOrRefuse = Agents.use((a) => a.chat).pipe(
+const chatOrRefuse = assistantChat.pipe(
   Effect.filterOrFail(
     (chat) => chat !== null,
     () => notConfigured,
@@ -48,7 +49,7 @@ export const assistantStateFn = createServerFn({ method: 'GET' })
   .handler(
     crmHandler('assistant.state', ({ data }) =>
       Effect.gen(function* () {
-        const chat: AssistantChat | null = yield* Agents.use((a) => a.chat)
+        const chat: AssistantChat | null = yield* assistantChat
 
         if (!chat) {
           const none: SessionSummary[] = []

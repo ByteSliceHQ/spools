@@ -5,7 +5,9 @@
     "tsconfig.base.json",
     "bunfig.toml",
     "apps/starter/crm.config.json",
-    "apps/starter/prisma/schema.json"
+    "apps/starter/prisma/schema.json",
+    "packages/spools/tests/fixtures/scoped.config.json",
+    "packages/spools/tests/fixtures/scoped/prisma/schema.json"
   ],
   "globalPassThroughEnv": [
     "PATH",
@@ -16,6 +18,7 @@
     "DATABASE_URL",
     "POSTGRES_URL",
     "TEST_STORE",
+    "TEST_SCOPES_DATABASE_URL",
     "EXAMPLES_DATABASE_URL",
     "SERVERLESS",
     "VERCEL",

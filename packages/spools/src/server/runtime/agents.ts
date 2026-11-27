@@ -37,6 +37,12 @@ export type AssistantChat = {
   deleteSession(sessionId: string): Promise<boolean>
   /** Whether a reply can be asked for again (the AI SDK's `regenerate()`). The page offers it only where this is true. */
   readonly regenerate: boolean
+  /**
+   * True when the chats belong to the whole deployment, not to the person
+   * asking: everyone sees, and can delete, everyone's. A Spool with record
+   * scopes refuses such a chat (src/server/assistant-chat.ts).
+   */
+  readonly shared?: boolean
 }
 
 /** How many past chats the Ask page lists. */

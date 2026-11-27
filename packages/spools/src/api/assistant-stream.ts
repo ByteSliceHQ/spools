@@ -1,13 +1,13 @@
 import { Effect } from 'effect'
 
-import { Agents } from '../server/runtime/agents'
+import { assistantChat } from '../server/assistant-chat'
 import { apiRoute, type RouteInput } from '../server/runtime/boundary'
 
 // useChat resume: GET {api}/{chatId}/stream
 export const assistantStreamHandlers = {
   GET: apiRoute('assistant.resume', ({ params }: RouteInput<{ sessionId: string }>) =>
     Effect.gen(function* () {
-      const chat = yield* Agents.use((a) => a.chat)
+      const chat = yield* assistantChat
 
       if (!chat) {
         return new Response(null, { status: 204 })

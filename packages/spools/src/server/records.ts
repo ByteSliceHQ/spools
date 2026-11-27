@@ -167,6 +167,12 @@ export const parseInput = (
     : Effect.fail(new Invalid({ message: issuesMessage(result.error.issues) }))
 }
 
+/** The column a scoped object's records hold their scope in, if the object is scoped. */
+const scopeColumn = (objectKey: string): string[] => {
+  const marker = crmConfig().scopes ? objectTable(objectKey).scope : undefined
+  return marker?.kind === 'own' ? [marker.column] : []
+}
+
 export type ListQuery = {
   objectKey: string
   q?: string
@@ -312,8 +318,11 @@ export const listRecords = Effect.fn('records.listRecords')(function* ({
   return yield* store.find(objectTable(objectKey), {
     where: columns,
     filter: matches(objectKey, { q, filters, viewerId }),
-    // Without a list of fields, every column comes back.
-    select: own && [...new Set(['id', 'createdAt', 'updatedAt', ...own])],
+    // Without a list of fields, every column comes back. A scoped object's records always say
+    // their scope: the page shows a record's edit controls by it (`writeReach`).
+    select: own && [
+      ...new Set(['id', 'createdAt', 'updatedAt', ...scopeColumn(objectKey), ...own]),
+    ],
     include: related(obj, relations, wanted),
     // The id settles ties, so paging never shows a record twice or skips one.
     order: [...order, asc('id')],
@@ -504,8 +513,13 @@ export const deleteRecord = Effect.fn('records.deleteRecord')(function* (
   yield* store.remove(objectTable(objectKey), { where: { id } })
   // Activities aren't foreign-keyed (they span every object), so clear them explicitly.
   yield* store.remove(Activity, { where: { objectKey, recordId: id } })
-  // Forget which folder was the record's. The folder and its files stay in the file store (see files.ts).
-  yield* store.remove(RecordFolder, { where: { objectKey, recordId: id } })
+
+  // Forget which folder was the record's. The folder and its files stay in the file store (see
+  // files.ts). In a Spool with record scopes the row is kept: it is what says whose the folder
+  // is, and without it the folder and its files would be everyone's.
+  if (!crmConfig().scopes) {
+    yield* store.remove(RecordFolder, { where: { objectKey, recordId: id } })
+  }
 })
 
 export type TitleOption = { id: string; title: string }

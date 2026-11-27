@@ -138,10 +138,13 @@ workflow new_contact {
     secrets: { crm_app: [CRM_APP_URL, CRM_APP_TOKEN] }
     url: @ts { return context.secrets.crm_app.CRM_APP_URL + "/api/swirls/tools/add_note" }
     headers: @ts {
-      return {
+      const headers = {
         "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN,
         "Content-Type": "application/json"
       }
+      // With record scopes the CRM hands this run a grant: it goes back in this header, and nowhere else.
+      const grant = context.nodes.root.input.grant
+      return grant ? { ...headers, "X-Spools-Grant": String(grant) } : headers
     }
     body: @ts {
       const q = context.nodes.qualify.output

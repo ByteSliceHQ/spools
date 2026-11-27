@@ -13,12 +13,13 @@ import {
   desc,
   oneOf,
   or,
+  type OrderBy,
   type Predicate,
   search,
   some,
 } from '../../src/server/store/query'
 import { allTables, schemaSql } from '../../src/server/store/schema-sql'
-import { placeholders, selectSql, updateSql } from '../../src/server/store/sql'
+import { placeholders, relatedOrderText, selectSql, updateSql } from '../../src/server/store/sql'
 import { Store, type StoreShape } from '../../src/server/store/store'
 import { GuideProgress, Note, SequenceRun, Task } from '../../src/server/store/tables'
 import { testRuntime } from '../../src/testing/run'
@@ -216,6 +217,42 @@ describe('a store', () => {
     // % and _ are themselves, not wildcards.
     expect(await use((s) => s.count(Note, { filter: contains('title', '%') }))).toBe(0)
   })
+
+  test('an order by a related record’s column can carry a condition: a record that fails it sorts as none', async () => {
+    const deals = object('deals')
+
+    const [zed, acme] = await Promise.all(
+      ['Zed order co', 'Acme order co'].map((name) =>
+        use((s) => s.insert(object('companies'), { name })),
+      ),
+    )
+
+    const made = await Promise.all(
+      [
+        ['Order 3', zed?.id],
+        ['Order 2', acme?.id],
+        ['Order 1', null],
+      ].map(([title, companyId]) => use((s) => s.insert(deals, { title, companyId }))),
+    )
+
+    const titles = (by: OrderBy) =>
+      use((s) =>
+        s.find(deals, {
+          filter: oneOf(
+            'id',
+            made.map((deal) => deal.id),
+          ),
+          order: [desc(by, 'last'), desc('title')],
+        }),
+      ).then((rows) => rows.map((row) => row['title']))
+
+    expect(await titles(['company', 'name'])).toEqual(['Order 3', 'Order 2', 'Order 1'])
+
+    // Zed fails the condition, so its deal sorts with the one that has no company.
+    expect(
+      await titles({ related: ['company', 'name'], where: oneOf('name', ['Acme order co']) }),
+    ).toEqual(['Order 2', 'Order 3', 'Order 1'])
+  })
 })
 
 describe('a transaction', () => {
@@ -362,6 +399,50 @@ describe('SQL', () => {
 
   test('an empty list of values matches nothing', () => {
     expect(query(oneOf('id', [])).parts.join('')).toContain('WHERE FALSE')
+  })
+
+  test('an order by a related record under a condition keeps the condition, with or without parameters', () => {
+    const by = { related: ['company', 'name'], where: oneOf('name', ["O'Hara", 'Acme']) } as const
+
+    const { text, params } = placeholders(
+      selectSql(object('deals'), {
+        predicate: undefined,
+        order: [desc(by)],
+        limit: undefined,
+        offset: undefined,
+        select: ['id'],
+        include: undefined,
+      }),
+    )
+
+    expect(text).toBe(
+      'SELECT t0."id" AS "id" FROM "public"."deals" t0 ORDER BY (SELECT t1."name" FROM "public"."companies" t1 WHERE t1."id" = t0."company_id" AND t1."name" IN ($1::text, $2::text)) DESC',
+    )
+
+    expect(params).toEqual(["O'Hara", 'Acme'])
+
+    // For a driver whose ordering takes no parameters: the same subselect, the values written out.
+    expect(relatedOrderText(object('deals'), by)).toEqual({
+      parts: [
+        '(SELECT spools_related."name" FROM "public"."companies" spools_related WHERE spools_related."id" = ',
+        ` AND spools_related."name" IN ('O''Hara', 'Acme'))`,
+      ],
+      key: 'companyId',
+      kind: 'text',
+    })
+
+    // A condition that can't be written out is refused, never dropped.
+    expect(() =>
+      relatedOrderText(object('deals'), { ...by, where: contains('name', 'a') }),
+    ).toThrow('cannot be written out')
+
+    expect(() =>
+      relatedOrderText(object('deals'), { ...by, where: oneOf('name', ['a\\b']) }),
+    ).toThrow('cannot be written out')
+
+    expect(relatedOrderText(object('deals'), { ...by, where: oneOf('name', []) }).parts[1]).toBe(
+      ' AND FALSE)',
+    )
   })
 })
 

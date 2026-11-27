@@ -29,6 +29,7 @@ const abort = z.object({ name: z.literal('AbortError') })
  */
 export function serveSpool(start: Handler): Handler {
   logEnvironment()
+
   // Fail loudly if the config references a workflow kind, campaign or handler that doesn't exist.
   const problems = validateRunTargets()
 

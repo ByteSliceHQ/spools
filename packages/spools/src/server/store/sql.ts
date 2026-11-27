@@ -310,15 +310,87 @@ function writeOrder(w: Writer, table: AnyTable, alias: string, by: OrderBy): voi
     return
   }
 
-  const [name, key] = by
+  const [name, key] = 'related' in by ? by.related : by
   const relation = relationOf(table, name)
   const target = relation.table()
   columnOf(target, key)
   const inner = w.alias()
 
   w.text(
-    `(SELECT ${ref(inner, key)} FROM ${from(target)} ${inner} WHERE ${ref(inner, target.primary)} = ${ref(alias, relation.column)})`,
+    `(SELECT ${ref(inner, key)} FROM ${from(target)} ${inner} WHERE ${ref(inner, target.primary)} = ${ref(alias, relation.column)}`,
   )
+
+  // Only of a record that meets the condition: any other sorts as an empty one.
+  if ('related' in by) {
+    w.text(' AND ')
+    writePredicate(w, target, inner, by.where)
+  }
+
+  w.text(')')
+}
+
+/** A text written into SQL as it is, for the one place that takes no parameter (`relatedOrderText`). */
+function literal(text: string): string {
+  // With a backslash or a NUL in it, what it means depends on the server's settings.
+  if (/[\\\0]/.test(text)) {
+    throw new Error('A value in an order by a related record cannot be written out')
+  }
+
+  return `'${text.replace(/'/g, "''")}'`
+}
+
+/** An order by a related record's column as text around one of the row's own columns (`relatedOrderText`). */
+export type RelatedOrderText = {
+  /** What goes before and after the row's column. */
+  readonly parts: readonly [string, string]
+  /** The row's column that holds the related record's key. */
+  readonly key: string
+  /** The kind of value the order compares. */
+  readonly kind: Kind
+}
+
+/**
+ * The order by a related record's column that `writeOrder` writes, for a driver
+ * whose ordering takes text and the row's own columns but no parameters
+ * (Prisma's `fns.raw`): the same subselect in two pieces, around the row's
+ * column that holds the related record's key. Only the condition the scope
+ * guard writes can be put this way (a text column of the related record being
+ * one of some texts): anything else throws, so no order is ever written
+ * without its condition.
+ */
+export function relatedOrderText(
+  table: AnyTable,
+  by: Extract<OrderBy, { readonly related: unknown }>,
+): RelatedOrderText {
+  const [name, column] = by.related
+  const relation = relationOf(table, name)
+  const target = relation.table()
+  const { kind } = columnOf(target, column)
+  const { where } = by
+
+  if (
+    relation.kind !== 'one' ||
+    where.op !== 'in' ||
+    columnOf(target, where.column).kind !== 'text'
+  ) {
+    throw new Error(`An order by ${name} with this condition cannot be written out`)
+  }
+
+  const inner = 'spools_related'
+  const texts = where.values.map((value) => literal(String(value)))
+
+  // An empty list matches nothing, as `writePredicate` has it.
+  const condition =
+    texts.length > 0 ? `${ref(inner, where.column)} IN (${texts.join(', ')})` : 'FALSE'
+
+  return {
+    parts: [
+      `(SELECT ${ref(inner, column)} FROM ${from(target)} ${inner} WHERE ${ref(inner, target.primary)} = `,
+      ` AND ${condition})`,
+    ],
+    key: relation.column,
+    kind,
+  }
 }
 
 function writeOrders(w: Writer, table: AnyTable, alias: string, orders: readonly Order[]): void {

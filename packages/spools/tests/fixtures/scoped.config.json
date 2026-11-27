@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "app": {
+    "name": "Acme"
+  },
+  "access": {
+    "allowedDomains": ["example.com"],
+    "allowedEmails": []
+  },
+  "scopes": {
+    "label": "Branch",
+    "labelPlural": "Branches",
+    "objects": {
+      "companies": "branch",
+      "contacts": "branch",
+      "deals": "branch",
+      "depots": "region"
+    },
+    "roles": {
+      "member": { "write": true },
+      "viewer": {},
+      "headOffice": { "write": true, "all": true }
+    }
+  },
+  "objects": {
+    "companies": {
+      "label": "Company",
+      "labelPlural": "Companies",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true, "searchable": true },
+        "city": { "type": "text", "searchable": true },
+        "founded": { "type": "date" },
+        "staff": { "type": "number" },
+        "revenue": { "type": "currency" },
+        "listed": { "type": "boolean" },
+        "branch": {
+          "type": "select",
+          "options": [
+            { "value": "north", "label": "North" },
+            { "value": "south", "label": "South" }
+          ]
+        }
+      },
+      "views": [
+        {
+          "id": "all",
+          "label": "All companies",
+          "type": "table",
+          "columns": ["name", "city", "branch"]
+        }
+      ],
+      "files": { "folders": ["Contracts"] }
+    },
+    "contacts": {
+      "label": "Contact",
+      "labelPlural": "Contacts",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true, "searchable": true },
+        "email": { "type": "email", "searchable": true },
+        "company": { "type": "relation", "to": "companies" },
+        "status": {
+          "type": "select",
+          "default": "lead",
+          "options": [{ "value": "lead" }, { "value": "customer" }]
+        },
+        "owner": { "type": "user" },
+        "branch": {
+          "type": "select",
+          "options": [
+            { "value": "north", "label": "North" },
+            { "value": "south", "label": "South" }
+          ]
+        }
+      },
+      "views": [
+        {
+          "id": "all",
+          "label": "All contacts",
+          "type": "table",
+          "columns": ["name", "email", "company", "status", "owner", "branch"]
+        }
+      ],
+      "actions": [
+        { "id": "probe", "label": "Probe", "run": "local:probe" },
+        { "id": "welcome", "label": "Send the welcome emails", "run": "campaign:welcome" }
+      ]
+    },
+    "deals": {
+      "label": "Deal",
+      "labelPlural": "Deals",
+      "titleField": "title",
+      "fields": {
+        "title": { "type": "text", "required": true, "searchable": true },
+        "value": { "type": "currency" },
+        "stage": {
+          "type": "select",
+          "default": "open",
+          "options": [{ "value": "open" }, { "value": "won" }, { "value": "lost" }]
+        },
+        "contact": { "type": "relation", "to": "contacts" },
+        "product": { "type": "relation", "to": "products" },
+        "branch": {
+          "type": "select",
+          "options": [
+            { "value": "north", "label": "North" },
+            { "value": "south", "label": "South" }
+          ]
+        }
+      },
+      "views": [
+        {
+          "id": "all",
+          "label": "All deals",
+          "type": "table",
+          "columns": ["title", "value", "stage", "contact", "product", "branch"]
+        },
+        {
+          "id": "board",
+          "label": "Pipeline",
+          "type": "board",
+          "groupBy": "stage",
+          "cardFields": ["value", "contact"]
+        }
+      ]
+    },
+    "products": {
+      "label": "Product",
+      "labelPlural": "Products",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true, "searchable": true },
+        "sku": { "type": "text", "searchable": true }
+      },
+      "views": [
+        { "id": "all", "label": "All products", "type": "table", "columns": ["name", "sku"] }
+      ]
+    },
+    "kits": {
+      "label": "Kit",
+      "labelPlural": "Kits",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true },
+        "maker": { "type": "relation", "to": "companies" }
+      },
+      "views": [{ "id": "all", "label": "All kits", "type": "table", "columns": ["name", "maker"] }]
+    },
+    "regions": {
+      "label": "Region",
+      "labelPlural": "Regions",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true }
+      },
+      "views": [{ "id": "all", "label": "All regions", "type": "table", "columns": ["name"] }]
+    },
+    "depots": {
+      "label": "Depot",
+      "labelPlural": "Depots",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true },
+        "region": { "type": "relation", "to": "regions" }
+      },
+      "views": [
+        { "id": "all", "label": "All depots", "type": "table", "columns": ["name", "region"] }
+      ]
+    }
+  },
+  "automations": [{ "on": "contacts.updated", "run": "local:probe" }],
+  "campaigns": {
+    "welcome": {
+      "label": "Welcome",
+      "object": "contacts",
+      "emailField": "email",
+      "stopWhen": { "status": ["customer"] },
+      "steps": [
+        { "id": "hello", "wait": "1d", "subject": "Welcome, {{name}}", "body": "Hello {{name}}." }
+      ]
+    }
+  }
+}

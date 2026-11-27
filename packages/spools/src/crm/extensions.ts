@@ -1,6 +1,8 @@
 import type { EmailSender } from '../server/email'
 import type { IntegrationProvider } from '../server/integrations'
 import type { CrmRecord } from '../server/records'
+import type { CrmUser } from '../server/users'
+import type { ScopeGrant, ScopeInfo } from './scopes'
 
 /**
  * The extension contract. Your app's extensions live in src/app/extensions.ts,
@@ -116,6 +118,18 @@ export type AdNetwork = {
   }) => Promise<AdCampaignResults[]>
 }
 
+/**
+ * Who holds which scope, for a Spool with `scopes` in crm.config.json whose
+ * auth adapter doesn't say (or whose groups are kept somewhere of your own: a
+ * table, a directory, a payroll system). Its answer for a person is kept for a minute.
+ */
+export type ScopeSource = {
+  /** The scopes this person holds, each with a role from `scopes.roles`. Nothing held means they see no scoped record. */
+  grants: (user: CrmUser) => Promise<ScopeGrant[]> | ScopeGrant[]
+  /** Every scope there is, for people whose role reaches all of them. */
+  list?: () => Promise<ScopeInfo[]> | ScopeInfo[]
+}
+
 export type Extensions = {
   /** Functions referenced from the config as `"run": "local:<name>"`. */
   handlers?: Record<string, (ctx: RunContext) => Promise<RunResult>>
@@ -139,6 +153,8 @@ export type Extensions = {
     posts?: Record<string, PostNetwork>
     ads?: Record<string, AdNetwork>
   }
+  /** Who holds which record scope. See `scopes` in docs/configuration.md. */
+  scopes?: ScopeSource
   /** How files attached to records are laid out in the file store. */
   files?: {
     /**

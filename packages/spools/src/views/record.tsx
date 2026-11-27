@@ -38,6 +38,7 @@ import {
   TaskDialog,
   TaskRow,
 } from '../crm/ui/workspace'
+import { useWriteReach } from '../crm/ui/write-reach'
 import { listSearch } from '../pages/list'
 import { deleteRecordFn, runActionFn } from '../server/crm.functions'
 import { recordFolderFn } from '../server/files.functions'
@@ -104,6 +105,9 @@ export function RecordPage(): ReactNode {
   const router = useRouter()
   const navigate = useNavigate()
   const list = useListContext(object, id)
+  // Whoever can't change this record is shown it without the controls that would.
+  const reach = useWriteReach()
+  const canChange = reach.record(object, record)
   // Search offers what was opened lately first.
   const opened = titleOf(record[obj.titleField], 'Untitled')
   useEffect(() => rememberOpened({ objectKey: object, id, title: opened }), [object, id, opened])
@@ -325,69 +329,75 @@ export function RecordPage(): ReactNode {
             </IconButton>
           </div>
 
-          <div
-            data-guide="record-actions"
-            className="flex flex-wrap items-center gap-1.5 px-3 pt-3 pb-3.5"
-          >
-            {email && (
-              <Button data-guide="compose-email" onClick={() => setDialog('email')}>
-                <Mail className="text-c-fg2 size-3.5" /> Compose email
-              </Button>
-            )}
-            <IconButton
-              label="Log a call"
-              className="border-c-line2 border"
-              data-guide="log-call"
-              onClick={() => setLogging('call')}
+          {canChange ? (
+            <div
+              data-guide="record-actions"
+              className="flex flex-wrap items-center gap-1.5 px-3 pt-3 pb-3.5"
             >
-              <Phone className="size-3.5" />
-            </IconButton>
-            <IconButton
-              label="Log a meeting"
-              className="border-c-line2 border"
-              data-guide="log-meeting"
-              onClick={() => setLogging('meeting')}
-            >
-              <CalendarCheck className="size-3.5" />
-            </IconButton>
-            <IconButton
-              label="Add note"
-              className="border-c-line2 border"
-              data-guide="add-note"
-              onClick={() => setDialog('note')}
-            >
-              <FileText className="size-3.5" />
-            </IconButton>
-            <IconButton
-              label="Add task"
-              className="border-c-line2 border"
-              data-guide="add-task"
-              onClick={() => setDialog('task')}
-            >
-              <CheckSquare className="size-3.5" />
-            </IconButton>
-            <div className="relative">
+              {email && (
+                <Button data-guide="compose-email" onClick={() => setDialog('email')}>
+                  <Mail className="text-c-fg2 size-3.5" /> Compose email
+                </Button>
+              )}
               <IconButton
-                label="More actions"
-                data-guide="more-actions"
+                label="Log a call"
                 className="border-c-line2 border"
-                onClick={() => setMenu(menu ? null : 'more')}
+                data-guide="log-call"
+                onClick={() => setLogging('call')}
               >
-                <MoreHorizontal className="size-3.5" />
+                <Phone className="size-3.5" />
               </IconButton>
-              <Popover open={menu === 'more'} onClose={() => setMenu(null)}>
-                {obj.actions.length > 0 && <MenuLabel>Actions</MenuLabel>}
-                {obj.actions.map((a) => (
-                  <MenuItem key={a.id} onSelect={() => runAction(a.id, a.confirm)}>
-                    <Zap className="text-c-fg2 size-3.5" /> {a.label}
+              <IconButton
+                label="Log a meeting"
+                className="border-c-line2 border"
+                data-guide="log-meeting"
+                onClick={() => setLogging('meeting')}
+              >
+                <CalendarCheck className="size-3.5" />
+              </IconButton>
+              <IconButton
+                label="Add note"
+                className="border-c-line2 border"
+                data-guide="add-note"
+                onClick={() => setDialog('note')}
+              >
+                <FileText className="size-3.5" />
+              </IconButton>
+              <IconButton
+                label="Add task"
+                className="border-c-line2 border"
+                data-guide="add-task"
+                onClick={() => setDialog('task')}
+              >
+                <CheckSquare className="size-3.5" />
+              </IconButton>
+              <div className="relative">
+                <IconButton
+                  label="More actions"
+                  data-guide="more-actions"
+                  className="border-c-line2 border"
+                  onClick={() => setMenu(menu ? null : 'more')}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </IconButton>
+                <Popover open={menu === 'more'} onClose={() => setMenu(null)}>
+                  {obj.actions.length > 0 && <MenuLabel>Actions</MenuLabel>}
+                  {obj.actions.map((a) => (
+                    <MenuItem key={a.id} onSelect={() => runAction(a.id, a.confirm)}>
+                      <Zap className="text-c-fg2 size-3.5" /> {a.label}
+                    </MenuItem>
+                  ))}
+                  <MenuItem danger onSelect={remove}>
+                    <Trash2 className="size-3.5" /> Delete {obj.label.toLowerCase()}
                   </MenuItem>
-                ))}
-                <MenuItem danger onSelect={remove}>
-                  <Trash2 className="size-3.5" /> Delete {obj.label.toLowerCase()}
-                </MenuItem>
-              </Popover>
+                </Popover>
+              </div>
             </div>
-          </div>
+          ) : (
+            <p className="text-c-fg3 px-3 pt-2 pb-3.5 text-xs" data-read-only="">
+              You can look at this {obj.label.toLowerCase()}, but not change it.
+            </p>
+          )}
 
           <div data-guide="record-details" className="border-c-line border-t px-1.5 py-2">
             <button
@@ -490,7 +500,11 @@ export function RecordPage(): ReactNode {
                     <ActivityList items={activities.slice(0, 5)} />
                   </Card>
                 </Block>
-                <Block title="Notes" count={notes.length} onAdd={() => setDialog('note')}>
+                <Block
+                  title="Notes"
+                  count={notes.length}
+                  onAdd={canChange ? () => setDialog('note') : undefined}
+                >
                   {notes.length > 0 && (
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {notes.slice(0, 2).map((n) => (
@@ -504,7 +518,11 @@ export function RecordPage(): ReactNode {
                     </div>
                   )}
                 </Block>
-                <Block title="Tasks" count={openTasks.length} onAdd={() => setDialog('task')}>
+                <Block
+                  title="Tasks"
+                  count={openTasks.length}
+                  onAdd={canChange ? () => setDialog('task') : undefined}
+                >
                   {openTasks.length > 0 && (
                     <Card>
                       {openTasks.slice(0, 5).map((t) => (
@@ -518,14 +536,16 @@ export function RecordPage(): ReactNode {
 
             {tab === 'activity' && (
               <div className="mx-auto max-w-4xl space-y-3">
-                <div className="flex gap-1.5">
-                  <Button onClick={() => setLogging('call')}>
-                    <Phone className="text-c-fg2 size-3.5" /> Log call
-                  </Button>
-                  <Button onClick={() => setLogging('meeting')}>
-                    <CalendarCheck className="text-c-fg2 size-3.5" /> Log meeting
-                  </Button>
-                </div>
+                {canChange && (
+                  <div className="flex gap-1.5">
+                    <Button onClick={() => setLogging('call')}>
+                      <Phone className="text-c-fg2 size-3.5" /> Log call
+                    </Button>
+                    <Button onClick={() => setLogging('meeting')}>
+                      <CalendarCheck className="text-c-fg2 size-3.5" /> Log meeting
+                    </Button>
+                  </div>
+                )}
                 <Card>
                   <ActivityList items={activities} />
                 </Card>
@@ -534,7 +554,7 @@ export function RecordPage(): ReactNode {
 
             {tab === 'emails' && (
               <div className="mx-auto max-w-4xl space-y-3">
-                {email && (
+                {email && canChange && (
                   <Button onClick={() => setDialog('email')}>
                     <Mail className="text-c-fg2 size-3.5" /> Compose email
                   </Button>
@@ -550,9 +570,11 @@ export function RecordPage(): ReactNode {
 
             {tab === 'notes' && (
               <div className="mx-auto max-w-4xl space-y-3">
-                <Button onClick={() => setDialog('note')}>
-                  <Plus className="size-3.5" /> New note
-                </Button>
+                {canChange && (
+                  <Button onClick={() => setDialog('note')}>
+                    <Plus className="size-3.5" /> New note
+                  </Button>
+                )}
                 {notes.length === 0 ? (
                   <p className="text-c-fg3 py-10 text-center">No notes yet.</p>
                 ) : (
@@ -572,9 +594,11 @@ export function RecordPage(): ReactNode {
 
             {tab === 'tasks' && (
               <div className="mx-auto max-w-4xl space-y-3">
-                <Button onClick={() => setDialog('task')}>
-                  <Plus className="size-3.5" /> New task
-                </Button>
+                {canChange && (
+                  <Button onClick={() => setDialog('task')}>
+                    <Plus className="size-3.5" /> New task
+                  </Button>
+                )}
                 {tasks.length === 0 ? (
                   <p className="text-c-fg3 py-10 text-center">No tasks yet.</p>
                 ) : (
@@ -611,8 +635,14 @@ export function RecordPage(): ReactNode {
                 <RelatedList
                   group={activeGroup}
                   titleFieldOf={titleFieldOf}
-                  onCreate={() =>
-                    setCreating({ objectKey: activeGroup.objectKey, field: activeGroup.field })
+                  onCreate={
+                    reach.any
+                      ? () =>
+                          setCreating({
+                            objectKey: activeGroup.objectKey,
+                            field: activeGroup.field,
+                          })
+                      : undefined
                   }
                 />
               </div>
@@ -709,7 +739,8 @@ function RelatedList({
 }: {
   group: RelatedGroup
   titleFieldOf: (objectKey: string) => string
-  onCreate: () => void
+  /** Left out for someone who can't add records. */
+  onCreate: (() => void) | undefined
 }) {
   const config = useCrmConfig()
   const obj = config.objects[group.objectKey]
@@ -725,9 +756,11 @@ function RelatedList({
 
   return (
     <div className="space-y-3">
-      <Button onClick={onCreate}>
-        <Plus className="size-3.5" /> New {obj.label.toLowerCase()}
-      </Button>
+      {onCreate && (
+        <Button onClick={onCreate}>
+          <Plus className="size-3.5" /> New {obj.label.toLowerCase()}
+        </Button>
+      )}
       {group.rows.length === 0 ? (
         <p className="text-c-fg3 py-10 text-center">No {obj.labelPlural.toLowerCase()} yet.</p>
       ) : (

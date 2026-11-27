@@ -119,6 +119,11 @@ export const Ignored = Schema.Unknown
 // The answers below may come with no body at all, which reads as none of their fields.
 
 /** A file's description, for the revision a change must name. */
+/** Where one file is: the folder it is in, `null` at the top level. */
+export const StorePlace = Schema.NullishOr(
+  Schema.Struct({ folder_id: Schema.optional(Schema.NullOr(Schema.String)) }),
+)
+
 export const StoreRevision = Schema.NullishOr(
   Schema.Struct({ latest_revision: Nullable(Schema.String) }),
 )

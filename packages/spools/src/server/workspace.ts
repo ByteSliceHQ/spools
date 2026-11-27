@@ -19,7 +19,7 @@ import {
   relatedRecord,
   valueText,
 } from './records'
-import type { DatabaseError, Timeout } from './runtime/errors'
+import type { DatabaseError, ScopeRefused, Timeout } from './runtime/errors'
 import { crmConfig, getObject } from './spool'
 import { and, asc, desc, gte, isNull, lt, oneOf, or } from './store/query'
 import { Store } from './store/store'
@@ -306,7 +306,10 @@ const ACTIVITY_REPORT_LIMIT = 20_000
 
 /** Every row of a query, a page at a time, up to the report limit. */
 const drain = <T>(
-  page: (paging: { limit: number; offset: number }) => Effect.Effect<T[], DatabaseError | Timeout>,
+  page: (paging: {
+    limit: number
+    offset: number
+  }) => Effect.Effect<T[], DatabaseError | Timeout | ScopeRefused>,
 ) =>
   Effect.gen(function* () {
     const rows: T[] = []

@@ -53,6 +53,13 @@ jobs:
           bun run crm:gen
           git diff --exit-code -- prisma crm.config.schema.json \
             || (echo "::error::Run 'bun run crm:gen' in apps/starter and commit the result" && exit 1)
+      # The scope tests run on a Spool of their own, whose Prisma schema is generated too.
+      - name: Check the scope tests' generated schema
+        working-directory: packages/spools
+        run: |
+          bun run test:scopes:gen
+          git diff --exit-code -- tests/fixtures/scoped/prisma \
+            || (echo "::error::Run 'bun run test:scopes:gen' in packages/spools and commit the result" && exit 1)
       - name: Check types
         run: bun run check-types
       - name: Lint
@@ -100,6 +107,7 @@ jobs:
         if: matrix.store != 'pglite'
         working-directory: apps/starter
         run: bun run db:push
+      # The scope tests make and fill a database of their own beside this one (spools_test_scopes).
       - name: Test
         run: bun run test:integration
       # The example adapter in examples/ is shown in the docs: prove it against a real Postgres.

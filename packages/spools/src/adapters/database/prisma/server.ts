@@ -12,6 +12,7 @@ import {
   lockSql,
   type Param,
   refreshDatesSql,
+  relatedOrderText,
   removeSql,
   type Sql,
   updateSql,
@@ -25,7 +26,7 @@ import {
   type StoreAdapter,
   storeLayer,
 } from '../../../server/store/store'
-import type { AnyTable } from '../../../server/store/table'
+import type { AnyTable, Kind } from '../../../server/store/table'
 import { DATABASE_URL, databaseUrl } from '../postgres/server'
 
 /**
@@ -226,7 +227,23 @@ function compile(table: AnyTable, m: DynModel, p: Predicate, extra: Extra): Pris
   }
 }
 
-function ordering({ by, dir, nulls }: Order) {
+/**
+ * What a raw expression gives back, by the kind of column it reads: the codec
+ * the contract gives a column of that kind (src/crm/codegen.ts). Every kind has
+ * one, since a record's title, which a list sorted by a relation sorts by, may
+ * be a field of any type.
+ */
+const RAW_CODEC: Record<Kind, string> = {
+  text: 'pg/text@1',
+  integer: 'pg/int4@1',
+  float: 'pg/float8@1',
+  decimal: 'pg/numeric@1',
+  boolean: 'pg/bool@1',
+  date: 'pg/date-string@1',
+  timestamp: 'pg/timestamptz@1',
+}
+
+function ordering(table: AnyTable, { by, dir, nulls }: Order) {
   const options = nulls ? ([{ nulls }] as const) : ([] as const)
 
   return (m: DynModel, { fns }: Extra) => {
@@ -239,6 +256,19 @@ function ordering({ by, dir, nulls }: Order) {
       const columns = by.firstOf.map((key) => columnOf(m, key))
       const first = fns.raw(template([...parts, ')']), ...columns).returns('pg/timestamptz@1')
       return first[dir](...options)
+    }
+
+    // A related record's column, but only of a record that meets a condition (the scope guard's:
+    // scope.ts). The ORM's own order by a relation takes no condition, so this is the subselect
+    // sql.ts writes, with nothing left out, whatever kind of column it sorts by.
+    if ('related' in by) {
+      const text = relatedOrderText(table, by)
+
+      const related = fns
+        .raw(template(text.parts), columnOf(m, text.key))
+        .returns(RAW_CODEC[text.kind])
+
+      return related[dir](...options)
     }
 
     const [relation, key] = by
@@ -300,7 +330,7 @@ function backend(client: () => Client): Backend {
         }
 
         if (query.order?.length) {
-          q = q.orderBy(query.order.map(ordering))
+          q = q.orderBy(query.order.map((order) => ordering(table, order)))
         }
 
         if (query.limit !== undefined) {

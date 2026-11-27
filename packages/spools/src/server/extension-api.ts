@@ -1,10 +1,12 @@
 import type { Effect } from 'effect'
 
+import { SYSTEM_ACCESS } from '../crm/scopes'
 import type { RunContext, RunResult } from './actions'
 import * as actions from './actions'
 import * as files from './files'
 import * as integrations from './integrations'
 import * as records from './records'
+import { carrying } from './runtime/access'
 import { type AppServices, filesProblems, runServer } from './runtime/app'
 import * as service from './service'
 import { Users } from './users'
@@ -24,6 +26,18 @@ export type { RecordRef } from './files'
 export type { ActivityInput, CrmRecord, ListQuery } from './records'
 export { runServer } from './runtime/app'
 export type { CrmUser } from './users'
+
+/**
+ * Runs your code as the server itself, in a Spool with record scopes: every
+ * scope, read and write. For a script (a seed, an import, a migration) and for
+ * the rare hook that must reach beyond whoever caused it. Inside a hook your
+ * code already works with the access of the person who caused it; anywhere
+ * else nothing is assumed, and a scoped record is refused until the code says
+ * whose work it is. Each use is a place where scopes don't apply: keep them few.
+ *
+ *   await asSystem(() => createRecord('contacts', { name: 'Ada', branch: 'north' }, null))
+ */
+export const asSystem = <A>(work: () => Promise<A>): Promise<A> => carrying(SYSTEM_ACCESS, work)
 
 /** Whether the Spool has a file store and it is set up. Answers at once. */
 export const filesConfigured = (): boolean => filesProblems().length === 0

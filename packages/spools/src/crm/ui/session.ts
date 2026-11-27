@@ -30,13 +30,26 @@ const memory = createMemory({
   title: async (objectKey: string, id: string) =>
     (await relationTitlesFn({ data: { objectKey, ids: [id] } }))[0]?.title ?? null,
   usable: (s: CrmSession) => s.signedIn && !!s.user,
+  scopeOf: (s: CrmSession) => s.scopes?.key,
+  // The person switched scope (here, or in another tab): nothing fetched under the old one is shown.
+  onScopeChange: () => searchIndex.clear(),
   remember: typeof window !== 'undefined',
 })
 
+let scopeNow: string | undefined
+
+/** The record scope this tab last knew it was working in (`scopes.key` of the session), if the Spool has scopes. */
+export const currentScope = (): string | undefined => scopeNow
+
 /** The CRM session for a navigation: from memory when the browser has it. */
 export const crmSession = () => memory.session()
+
 /** Keep the session the server sent with the page. */
-export const rememberCrmSession = (value: CrmSession) => memory.keep(value)
+export const rememberCrmSession = (value: CrmSession) => {
+  scopeNow = value.scopes?.key
+  memory.keep(value)
+}
+
 /** One page of an object's records for a relation picker, narrowed by what was typed. */
 export const searchRelation = (objectKey: string, q: string) => memory.search(objectKey, q)
 /** The title of a record the page holds only the id of. */
@@ -58,6 +71,7 @@ const quickIndexSchema = z.object({
     total: z.number(),
   }),
   views: z.array(z.object({ id: z.string(), label: z.string(), objectKey: z.string() })),
+  scope: z.string().optional(),
 }) satisfies z.ZodType<QuickIndex>
 
 /**
@@ -72,4 +86,21 @@ export const searchIndex = createIndexStore(async (since) =>
 export function forgetCrmSession(): void {
   memory.forget()
   searchIndex.stale()
+}
+
+/** The cookie the server reads the wanted scope from (`SCOPE_COOKIE` in src/server/scopes.ts). */
+const SCOPE_COOKIE = 'spools-scope'
+
+/**
+ * Work in another record scope: `null` for all of this person's. The cookie is
+ * only a preference, which the server checks against what the person holds on
+ * every request. Everything this tab remembered is dropped before anything is
+ * asked for again; the caller then reloads what is on screen
+ * (`router.invalidate()`).
+ */
+export function switchScope(scope: string | null): void {
+  const value = encodeURIComponent(scope ?? '*')
+  document.cookie = `${SCOPE_COOKIE}=${value}; path=/; max-age=31536000; samesite=lax`
+  memory.forget()
+  searchIndex.clear()
 }

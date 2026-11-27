@@ -2,7 +2,12 @@ import { createHash, randomUUID } from 'node:crypto'
 
 import { Clock, Effect, Layer, Predicate, Semaphore } from 'effect'
 
-import { type DatabaseError, FilesError, type Timeout } from '../../../server/runtime/errors'
+import {
+  type DatabaseError,
+  FilesError,
+  type ScopeRefused,
+  type Timeout,
+} from '../../../server/runtime/errors'
 import {
   FileStore,
   type FilesAdapter,
@@ -125,11 +130,16 @@ function hasInOrder(name: string, words: readonly string[]): boolean {
 }
 
 /** What the database refused, as the file store's own failure. */
-const settled = <A>(work: Effect.Effect<A, FilesError | DatabaseError | Timeout>): Call<A> =>
+const settled = <A>(
+  work: Effect.Effect<A, FilesError | DatabaseError | Timeout | ScopeRefused>,
+): Call<A> =>
   work.pipe(
     Effect.catchTags({
       Timeout: (timeout) =>
         Effect.fail(new FilesError({ message: timeout.message, code: 'timeout' })),
+      // The record-scope guard's words are written for staff: they are passed on as they are.
+      ScopeRefused: (refused) =>
+        Effect.fail(new FilesError({ message: refused.message, code: 'scope' })),
       DatabaseError: (error) =>
         Effect.logError(`[files] the database refused: ${error.message}`).pipe(
           Effect.andThen(
@@ -145,7 +155,7 @@ const settled = <A>(work: Effect.Effect<A, FilesError | DatabaseError | Timeout>
   )
 
 /** An abandoned upload that couldn't be removed is tried again at the next sweep. */
-const leftForNextTime = (error: FilesError | DatabaseError | Timeout) =>
+const leftForNextTime = (error: FilesError | DatabaseError | Timeout | ScopeRefused) =>
   Effect.logWarning('[files] an abandoned upload could not be removed', error)
 
 const make = (blobs: Blobs) =>
@@ -163,13 +173,13 @@ const make = (blobs: Blobs) =>
     /** One operation of the store: refused until it is set up, with the database's failures put as the store's. */
     const call = <A>(
       name: string,
-      work: Effect.Effect<A, FilesError | DatabaseError | Timeout>,
+      work: Effect.Effect<A, FilesError | DatabaseError | Timeout | ScopeRefused>,
     ): Call<A> => settled(Effect.andThen(ready, work)).pipe(Effect.withSpan(`Drive.${name}`))
 
     /** An operation that changes where things are or what they're called. */
     const change = <A>(
       name: string,
-      work: Effect.Effect<A, FilesError | DatabaseError | Timeout>,
+      work: Effect.Effect<A, FilesError | DatabaseError | Timeout | ScopeRefused>,
     ): Call<A> => call(name, tree.withPermit(work))
 
     /** A folder or file people can see. */
@@ -584,6 +594,12 @@ const make = (blobs: Blobs) =>
 
             return ids
           }),
+        ),
+
+      fileFolder: (id) =>
+        call(
+          'fileFolder',
+          Effect.map(node(id, 'file'), (row) => row.parentId),
         ),
 
       changeFile: (id, wanted) =>

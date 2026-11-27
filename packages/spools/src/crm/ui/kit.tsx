@@ -134,10 +134,13 @@ export function CheckCircle({
   checked,
   onChange,
   label,
+  disabled = false,
 }: {
   checked: boolean
   onChange: () => void
   label: string
+  /** Shows whether it is checked, and can't be changed. */
+  disabled?: boolean
 }) {
   return (
     // A native checkbox can't be styled as a round check.
@@ -146,10 +149,12 @@ export function CheckCircle({
       role="checkbox"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={onChange}
       className={cx(
         'flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors',
-        checked ? 'border-c-accent bg-c-accent text-white' : 'border-c-line2 hover:border-c-fg3',
+        checked ? 'border-c-accent bg-c-accent text-white' : 'border-c-line2',
+        disabled ? 'cursor-default opacity-60' : !checked && 'hover:border-c-fg3',
       )}
     >
       {checked && <Check className="size-2.5" strokeWidth={3.5} />}

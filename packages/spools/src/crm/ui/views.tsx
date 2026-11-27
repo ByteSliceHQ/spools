@@ -22,6 +22,7 @@ import { type FieldData, FieldValue, type RecordData, textOf } from './fields'
 import { fieldTypeIcons } from './icons'
 import { InlineField } from './inline-field'
 import { Avatar, Count, cx, MenuDivider, MenuItem, MenuLabel, Popover } from './kit'
+import { useWriteReach } from './write-reach'
 
 /**
  * How each view type renders a page of records. To add a view type, add its
@@ -113,7 +114,10 @@ function TableView(props: ViewProps) {
 
   const { columns, sort } = view.settings
   const [menu, setMenu] = useState<string | null>(null)
-  const allSelected = rows.length > 0 && rows.every((r) => selected.has(textOf(r.id)))
+  // Rows are selected to be deleted, so only the ones this person can change can be.
+  const reach = useWriteReach()
+  const writable = rows.filter((r) => reach.record(object, r))
+  const allSelected = writable.length > 0 && writable.every((r) => selected.has(textOf(r.id)))
 
   const hidden = [...Object.keys(obj.fields), ...Object.keys(SYSTEM_COLUMNS)].filter(
     (k) => !columns.includes(k),
@@ -164,19 +168,24 @@ function TableView(props: ViewProps) {
                 style={{ minWidth: first ? 280 : 168 }}
               >
                 <div className="relative flex h-8 items-center">
-                  {first && (
-                    <label className="flex h-8 w-9 shrink-0 items-center justify-center">
-                      <span className="sr-only">Select all</span>
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        onChange={() =>
-                          onSelect(allSelected ? new Set() : new Set(rows.map((r) => textOf(r.id))))
-                        }
-                        className="size-3.5 accent-(--c-accent)"
-                      />
-                    </label>
-                  )}
+                  {first &&
+                    (writable.length > 0 ? (
+                      <label className="flex h-8 w-9 shrink-0 items-center justify-center">
+                        <span className="sr-only">Select all</span>
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={() =>
+                            onSelect(
+                              allSelected ? new Set() : new Set(writable.map((r) => textOf(r.id))),
+                            )
+                          }
+                          className="size-3.5 accent-(--c-accent)"
+                        />
+                      </label>
+                    ) : (
+                      <span className="w-9 shrink-0" />
+                    ))}
                   <button
                     type="button"
                     onClick={() => setMenu(menu === c ? null : c)}
@@ -291,19 +300,23 @@ function TableView(props: ViewProps) {
                       className={cx(line, 'sticky left-0 z-10 h-[30px] border-r p-0', rowBg)}
                     >
                       <div className="flex h-[30px] items-center">
-                        <label className="flex h-full w-9 shrink-0 items-center justify-center">
-                          <span className="sr-only">Select row</span>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggle(id)}
-                            className={cx(
-                              'size-3.5 accent-(--c-accent)',
-                              !isSelected &&
-                                'opacity-0 group-hover/row:opacity-100 focus:opacity-100',
-                            )}
-                          />
-                        </label>
+                        {reach.record(object, r) ? (
+                          <label className="flex h-full w-9 shrink-0 items-center justify-center">
+                            <span className="sr-only">Select row</span>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggle(id)}
+                              className={cx(
+                                'size-3.5 accent-(--c-accent)',
+                                !isSelected &&
+                                  'opacity-0 group-hover/row:opacity-100 focus:opacity-100',
+                              )}
+                            />
+                          </label>
+                        ) : (
+                          <span className="w-9 shrink-0" />
+                        )}
                         <Link
                           to="/$object/$id"
                           params={{ object, id }}
@@ -361,18 +374,20 @@ function TableView(props: ViewProps) {
             </td>
           </tr>
         )}
-        <tr>
-          <td className={cx(line, 'sticky left-0 z-10 h-[30px] bg-c-bg p-0')}>
-            <button
-              type="button"
-              onClick={() => onCreate()}
-              className="text-c-fg3 hover:text-c-fg flex h-[30px] w-full items-center gap-2 px-2.5"
-            >
-              <Plus className="size-3.5" /> New {obj.label.toLowerCase()}
-            </button>
-          </td>
-          <td colSpan={columns.length} className={line} />
-        </tr>
+        {reach.any && (
+          <tr>
+            <td className={cx(line, 'sticky left-0 z-10 h-[30px] bg-c-bg p-0')}>
+              <button
+                type="button"
+                onClick={() => onCreate()}
+                className="text-c-fg3 hover:text-c-fg flex h-[30px] w-full items-center gap-2 px-2.5"
+              >
+                <Plus className="size-3.5" /> New {obj.label.toLowerCase()}
+              </button>
+            </td>
+            <td colSpan={columns.length} className={line} />
+          </tr>
+        )}
         {/* Takes up the leftover height, so the footer sits at the bottom of the window. */}
         <tr>
           <td colSpan={columns.length + 1} className="p-0" />
@@ -487,6 +502,7 @@ const isEmpty = (value: FieldData) => value === null || value === undefined || v
 
 function BoardView({ object, obj, view, rows, titleFieldOf, onCreate, onOpen }: ViewProps) {
   const router = useRouter()
+  const reach = useWriteReach()
   const groupBy = view.settings.groupBy ?? ''
   const group = obj.fields[groupBy]
 
@@ -530,7 +546,7 @@ function BoardView({ object, obj, view, rows, titleFieldOf, onCreate, onOpen }: 
     setDragging(null)
     const row = rows.find((r) => textOf(r.id) === id)
 
-    if (!id || !row || columnOf(row) === value) {
+    if (!id || !row || columnOf(row) === value || !reach.record(object, row)) {
       return
     }
 
@@ -597,29 +613,40 @@ function BoardView({ object, obj, view, rows, titleFieldOf, onCreate, onOpen }: 
                     {opt.probability}%
                   </span>
                 )}
-                <button
-                  type="button"
-                  aria-label={`New ${obj.label.toLowerCase()} in ${opt.label ?? opt.value}`}
-                  data-guide="board-add"
-                  onClick={() => onCreate({ [groupBy]: opt.value })}
-                  className="text-c-fg3 hover:bg-c-hov hover:text-c-fg ml-auto rounded-md p-1"
-                >
-                  <Plus className="size-3.5" />
-                </button>
-                <GripVertical className="text-c-fg3 size-3.5" aria-hidden="true" />
+                {reach.any && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label={`New ${obj.label.toLowerCase()} in ${opt.label ?? opt.value}`}
+                      data-guide="board-add"
+                      onClick={() => onCreate({ [groupBy]: opt.value })}
+                      className="text-c-fg3 hover:bg-c-hov hover:text-c-fg ml-auto rounded-md p-1"
+                    >
+                      <Plus className="size-3.5" />
+                    </button>
+                    <GripVertical className="text-c-fg3 size-3.5" aria-hidden="true" />
+                  </>
+                )}
               </header>
               <div className="flex min-h-10 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pb-1.5">
                 {items.map((r) => {
                   const id = textOf(r.id)
                   const shown = cardFields.filter((f) => !isEmpty(r[f]))
+                  // A card is dragged to change its record: one this person can't change stays put.
+                  const movable = reach.record(object, r)
                   return (
                     <Link
                       key={id}
                       to="/$object/$id"
                       params={{ object, id }}
                       onClick={onOpen}
-                      draggable
+                      draggable={movable}
                       onDragStart={(e) => {
+                        if (!movable) {
+                          e.preventDefault()
+                          return
+                        }
+
                         e.dataTransfer.effectAllowed = 'move'
                         e.dataTransfer.setData('text/plain', id)
                         setDragging(id)
@@ -629,7 +656,8 @@ function BoardView({ object, obj, view, rows, titleFieldOf, onCreate, onOpen }: 
                         setOver(null)
                       }}
                       className={cx(
-                        'block cursor-grab rounded-lg border border-c-line bg-c-raised p-2.5 hover:border-c-line2 active:cursor-grabbing',
+                        'block rounded-lg border border-c-line bg-c-raised p-2.5 hover:border-c-line2',
+                        movable && 'cursor-grab active:cursor-grabbing',
                         dragging === id && 'opacity-40',
                       )}
                     >

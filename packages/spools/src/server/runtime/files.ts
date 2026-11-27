@@ -85,6 +85,13 @@ export class FileStore extends Context.Service<
     ) => Call<{ folders: StoredFolder[]; files: StoredFile[]; truncated: boolean }>
     /** Files anywhere whose name contains these words, in order, any case. */
     readonly search: (words: string) => Call<{ files: StoredFile[]; truncated: boolean }>
+    /**
+     * The folder a file is in (`null` for the top level), asked of the file
+     * itself. A listing stops at a limit (`truncated`), so it can't say that a
+     * file is not in a folder: this can. Fails with `status` 404 when the file
+     * is gone.
+     */
+    readonly fileFolder: (id: string) => Call<string | null>
     readonly createFolder: (parentId: string | null, name: string) => Call<StoredFolder>
     /** Rename a folder, move it into another, or both. */
     readonly changeFolder: (id: string, change: FolderChange) => Call<void>
@@ -132,6 +139,7 @@ export class FileStore extends Context.Service<
       folder: refuse,
       list: refuse,
       search: refuse,
+      fileFolder: refuse,
       createFolder: refuse,
       changeFolder: refuse,
       deleteFolder: refuse,

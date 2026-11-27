@@ -2,6 +2,7 @@ import { Effect } from 'effect'
 
 import type { CrmObject } from '../crm/config-schema'
 import type { CrmField } from '../crm/field-types'
+import { scopeKey } from '../crm/scopes'
 import {
   type DeepHit,
   fold,
@@ -13,6 +14,8 @@ import {
   terms,
 } from '../crm/search'
 import { type CrmRecord, matchingText, relatedField, searchableFields, valueText } from './records'
+import { CurrentAccess } from './runtime/access'
+import { scopesOn } from './scopes'
 import { crmConfig, getObject, objectTable } from './spool'
 import { and, contains, desc, gt, oneOf, search as searchText } from './store/query'
 import { Store } from './store/store'
@@ -171,6 +174,13 @@ export const quickIndex = Effect.fn('search.quickIndex')(function* (since?: Date
       rows: notes.map((n): NoteRow => [n.id, n.title, n.objectKey, n.recordId]),
       total: noteCount,
     },
+  }
+
+  // Which scope it was read for, so the browser never shows it under another.
+  const access = yield* CurrentAccess
+
+  if (access && scopesOn()) {
+    index.scope = scopeKey(access)
   }
 
   return index

@@ -6,6 +6,7 @@
  *   spools init          first run: name, access list, secrets in .env
  *   spools stats         refill last activity / last contacted / next task due
  *   spools harden        lock the tables away from Supabase's Data API roles
+ *   spools scopes        `spools scopes backfill`: give rows on records their record's scope
  *   spools check-client  fail if server code reached the browser bundle
  */
 const commands = {
@@ -13,6 +14,7 @@ const commands = {
   init: () => import('./init'),
   stats: () => import('./stats'),
   harden: () => import('./harden'),
+  scopes: () => import('./scopes'),
   'check-client': () => import('./check-client'),
 }
 

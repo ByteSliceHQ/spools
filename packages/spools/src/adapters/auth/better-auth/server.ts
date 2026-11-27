@@ -9,6 +9,7 @@ import {
   AuthError,
   type DatabaseError,
   messageOf,
+  type ScopeRefused,
   type Timeout,
 } from '../../../server/runtime/errors'
 import { policies, withPolicy } from '../../../server/runtime/policies'
@@ -176,7 +177,7 @@ export function toPerson(
   }
 }
 
-const unavailable = (error: DatabaseError | Timeout): AuthError =>
+const unavailable = (error: DatabaseError | Timeout | ScopeRefused): AuthError =>
   new AuthError({ message: error.message, kind: 'unavailable' })
 
 const labelOf = (provider: string) => (isProvider(provider) ? PROVIDERS[provider].label : provider)

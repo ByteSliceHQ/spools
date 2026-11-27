@@ -1,7 +1,10 @@
 import { Clock, Context, Effect, Layer } from 'effect'
 
+import { accessFrom } from '../crm/scopes'
+import { CurrentAccess } from './runtime/access'
 import { Auth, type AuthUser, type SignInAccount } from './runtime/auth'
-import type { AuthError, Timeout } from './runtime/errors'
+import type { AuthError, ExtensionError, Timeout } from './runtime/errors'
+import { Scopes } from './scopes'
 import { crmConfig } from './spool'
 
 /**
@@ -19,6 +22,9 @@ export type CrmUser = { id: string; email: string; name: string }
 type Failure = AuthError | Timeout
 
 const TTL_MS = 60 * 1000
+
+/** How many people the resolver is asked about at a time when the team is worked out. */
+const ASKED_AT_ONCE = 8
 
 /**
  * Whether an address is on the config's access list. It says nothing about who
@@ -53,8 +59,13 @@ export class Users extends Context.Service<
   {
     /** The CRM user behind an auth provider's user id, or null when that account isn't allowed in. */
     readonly crmUser: (userId: string) => Effect.Effect<CrmUser | null, Failure>
-    /** Everyone who may use the CRM, by name, for owner and assignee pickers. */
-    readonly team: Effect.Effect<CrmUser[], Failure>
+    /**
+     * Everyone who may use the CRM, by name, for owner and assignee pickers. In a
+     * Spool with record scopes: the people who share a scope with whoever is
+     * asking, and those whose role reaches every scope. Nobody, when nobody said
+     * who is asking.
+     */
+    readonly team: Effect.Effect<CrmUser[], Failure | ExtensionError>
     /** One user's sign-in accounts. Read fresh, so a new grant shows at once. */
     readonly signInAccounts: (userId: string) => Effect.Effect<SignInAccount[], Failure>
     /** Every CRM user with the accounts they sign in with, for the mailbox sync. */
@@ -68,7 +79,25 @@ export class Users extends Context.Service<
     Users,
     Effect.gen(function* () {
       const auth = yield* Auth
+      const scopes = yield* Scopes
       const people = new Map<string, { user: CrmUser | null; expires: number }>()
+      /** The scopes each person holds ('all' for a role that reaches every one), kept as long as the team is. */
+      const holding = new Map<string, { held: 'all' | readonly string[]; expires: number }>()
+
+      const heldBy = Effect.fn('Users.heldBy')(function* (user: CrmUser) {
+        const now = yield* Clock.currentTimeMillis
+        const hit = holding.get(user.id)
+
+        if (hit && hit.expires > now) {
+          return hit.held
+        }
+
+        const grants = yield* scopes.grants(user)
+        const held = accessFrom(crmConfig().scopes?.roles ?? {}, grants, null).read
+        holding.set(user.id, { held, expires: now + TTL_MS })
+        return held
+      })
+
       let everyone: { users: CrmUser[]; expires: number } | null = null
 
       const crmUser = Effect.fn('Users.crmUser')(function* (userId: string) {
@@ -84,7 +113,7 @@ export class Users extends Context.Service<
         return user
       })
 
-      const team = Effect.gen(function* () {
+      const allowed = Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
 
         if (everyone && everyone.expires > now) {
@@ -97,6 +126,37 @@ export class Users extends Context.Service<
 
         everyone = { users, expires: now + TTL_MS }
         return users
+      })
+
+      const team = Effect.gen(function* () {
+        const users = yield* allowed
+
+        if (!crmConfig().scopes) {
+          return users
+        }
+
+        const access = yield* CurrentAccess
+
+        if (!access || access.read === 'all') {
+          return access ? users : []
+        }
+
+        const mine = access.read
+
+        // Whoever holds nothing shares a scope with nobody, and nobody need be asked about.
+        if (mine.length === 0) {
+          return []
+        }
+
+        // What each person holds is kept for a minute (`heldBy`), so the provider is asked once
+        // a minute per person at most; when it is asked, it is asked about several people at a
+        // time, not one after another: a team's first page doesn't wait for each in turn.
+        const held = yield* Effect.forEach(users, heldBy, { concurrency: ASKED_AT_ONCE })
+
+        return users.filter((_, i) => {
+          const theirs = held[i] ?? []
+          return theirs === 'all' || theirs.some((scope) => mine.includes(scope))
+        })
       }).pipe(Effect.withSpan('Users.team'))
 
       const signInAccounts = Effect.fn('Users.signInAccounts')(function* (userId: string) {

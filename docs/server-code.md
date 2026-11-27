@@ -30,7 +30,7 @@ folder (it is where the request and the environment are touched), `env.ts`,
 
 | File                                                                   | What it is                                                                                                                                                                                 |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/spools/src/server/runtime/errors.ts`                         | The errors staff can see (`Unauthorized`, `NotFound`, `Invalid`, `NotConfigured`, `DatabaseError`, `AuthError`, `Timeout`) and the `StaffError` union                                      |
+| `packages/spools/src/server/runtime/errors.ts`                         | The errors staff can see (`Unauthorized`, `NotFound`, `Invalid`, `NotConfigured`, `DatabaseError`, `ScopeRefused`, `AuthError`, `Timeout`) and the `StaffError` union                      |
 | `packages/spools/src/server/runtime/config.ts`                         | Every environment variable, as an Effect `Config`, and the feature list behind the boot report                                                                                             |
 | `packages/spools/src/server/runtime/policies.ts`                       | Time limits and retries for each outside service, and `withPolicy`                                                                                                                         |
 | `packages/spools/src/server/runtime/adapter.ts`                        | What an adapter is: its layer, what it requires of the environment, the tables it keeps                                                                                                    |
@@ -93,6 +93,10 @@ export const markGuide = Effect.fn('guides.markGuide')(function* (userId: string
         ),
       )
   ```
+
+  In a Spool with record scopes a store call can also fail with `ScopeRefused`: the guard
+  refusing it. It is not a `DatabaseError`, so the catch above never takes a refusal for the
+  failure it expects; let it go on to the boundary, which shows staff its words.
 
 - The app's config and extensions come from the Spool (`spool()` in `spool.ts`), read
   when they are used.

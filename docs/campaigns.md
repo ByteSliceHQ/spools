@@ -14,6 +14,28 @@ A record can be enrolled in a campaign only once; repeat clicks do nothing.
 
 Every enrollment, send and skip is written to the record's activity timeline.
 
+## With record scopes
+
+In a Spool with [record scopes](security.md#record-scopes), an enrolment (a row in
+`sequence_runs`) belongs to its record's scope.
+
+- **Enrolling is a change to the record.** Someone who only reads a record can't enroll it,
+  and isn't offered the action; nobody can enroll a record they can't reach.
+- **Counts and lists of runs** are of the scopes the reader holds.
+- **Sending.** The tick has nobody signed in. It finds what is due as the system, then sends
+  each email with the reach of that run's own scope and nothing more: it reads that record,
+  and writes on that record's timeline.
+- **Held runs.** A run with no scope is not sent. That is a run enrolled before scopes were
+  turned on: nothing says whose record it is for, and sending it as the system would be a
+  way round the scopes. Held runs are left out of what a tick takes, so however many there
+  are, and however long they have been due, they never stand in the way of a run that can be
+  sent. The log says how many were held, each tick (counted up to a thousand). Run
+  `bun run db:scopes` (`spools scopes backfill`) and they go out at the next tick; a run
+  whose record is gone, or has no scope itself, stays held.
+- **A record that moves scope** takes its runs with it.
+- Suppression (unsubscribes, bounces, complaints) is by address and is the whole
+  business's, whatever the scope: an address that unsubscribed is never emailed again.
+
 ## Sending
 
 Email goes through [Resend](https://resend.com). Set `RESEND_API_KEY` and

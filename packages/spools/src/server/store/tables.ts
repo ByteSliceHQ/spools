@@ -1,5 +1,6 @@
 import {
   type AnyTable,
+  type TableScope,
   createdAt,
   date,
   defineTable,
@@ -12,6 +13,24 @@ import {
   updatedAt,
   withDefault,
 } from './table'
+
+/**
+ * A row that hangs off a record keeps a copy of that record's scope, in a
+ * Spool with record scopes (src/crm/scopes.ts): the guard every store is
+ * behind fills it in and reads by it (scope.ts). "*" on a shared object's
+ * record; the scope the row was made in when it is on no record. Empty in a
+ * Spool without scopes, and on rows written before scopes were turned on
+ * until `spools scopes backfill` has run.
+ */
+const scope = () =>
+  optional(text({ doc: "The record scope this row belongs to: a copy of its record's." }))
+
+const onRecord: TableScope = {
+  kind: 'owner',
+  column: 'scope',
+  object: 'objectKey',
+  record: 'recordId',
+}
 
 /**
  * The system tables: what the CRM keeps besides the objects in the config.
@@ -55,9 +74,11 @@ export const Activity = defineTable({
         doc: 'Identifies the email or calendar event this came from, so syncing it twice logs it once.',
       }),
     ),
+    scope: scope(),
   },
+  scope: onRecord,
   unique: [['objectKey', 'recordId', 'externalId']],
-  indexes: [['objectKey', 'recordId'], ['createdAt']],
+  indexes: [['objectKey', 'recordId'], ['createdAt'], ['scope']],
   search: { name: 'activities_search', columns: ['summary', 'body'] },
 })
 
@@ -77,8 +98,10 @@ export const Task = defineTable({
     objectKey: optional(text()),
     recordId: optional(text()),
     createdBy: optional(text()),
+    scope: scope(),
   },
-  indexes: [['assigneeId'], ['objectKey', 'recordId']],
+  scope: onRecord,
+  indexes: [['assigneeId'], ['objectKey', 'recordId'], ['scope']],
 })
 
 export const Note = defineTable({
@@ -95,8 +118,10 @@ export const Note = defineTable({
     recordId: optional(text()),
     authorId: optional(text()),
     authorName: optional(text()),
+    scope: scope(),
   },
-  indexes: [['objectKey', 'recordId']],
+  scope: onRecord,
+  indexes: [['objectKey', 'recordId'], ['scope']],
   search: { name: 'notes_search', columns: ['title', 'body'] },
 })
 
@@ -128,8 +153,10 @@ export const Favorite = defineTable({
     userId: text(),
     objectKey: text(),
     recordId: text(),
+    scope: scope(),
   },
-  indexes: [['userId']],
+  scope: { ...onRecord, personal: true },
+  indexes: [['userId'], ['scope']],
 })
 
 export const Suppression = defineTable({
@@ -201,9 +228,11 @@ Two records may share one folder. See src/server/files.ts.`,
     path: text({
       doc: "Where the folder was created, from the drive's top level. It may have been moved since.",
     }),
+    scope: scope(),
   },
+  scope: onRecord,
   unique: [['objectKey', 'recordId']],
-  indexes: [['folderId']],
+  indexes: [['folderId'], ['scope']],
 })
 
 export const FileUpload = defineTable({
@@ -231,7 +260,9 @@ the store has the file, and forgotten if the upload is abandoned.`,
     recordId: optional(text()),
     uploadedBy: text(),
     uploadedByName: text(),
+    scope: scope(),
   },
+  scope: onRecord,
 })
 
 export const SequenceRun = defineTable({
@@ -264,9 +295,11 @@ minutes ahead, so a second sender leaves the run alone.`,
       text({ doc: 'What happened last: why the run stopped, or the error from a failed send.' }),
     ),
     enrolledBy: optional(text()),
+    scope: scope(),
   },
+  scope: onRecord,
   unique: [['campaignKey', 'objectKey', 'recordId']],
-  indexes: [['status', 'dueAt']],
+  indexes: [['status', 'dueAt'], ['scope']],
 })
 
 export const GuideProgress = defineTable({

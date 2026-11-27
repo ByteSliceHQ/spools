@@ -1,6 +1,17 @@
 import { getRequest, setResponseHeader, setResponseStatus } from '@tanstack/react-start/server'
 import { Cause, Duration, Effect, Exit, type ManagedRuntime, Option } from 'effect'
 
+import { grantNow } from '../../crm/scopes'
+import {
+  accessOf,
+  asUser,
+  type Grant,
+  GRANT_HEADER,
+  openGrant,
+  scopesOn,
+  wantedScope,
+  withGrant,
+} from '../scopes'
 import { spool } from '../spool'
 import { type CrmUser, Users } from '../users'
 import { type AppServices, CurrentRequest, runtime, type Services } from './app'
@@ -49,6 +60,10 @@ function currentRequest(session: Session | null): CurrentRequest['Service'] {
 
 /** The session of the request being served, from the Spool's auth adapter, read outside Effect. */
 const sessionOf = (request: Request): Promise<Session | null> => spool().auth.session(request)
+
+/** The scope a request asks to work in: the auth provider's own when its sessions carry one, else the cookie. */
+export const wanted = (session: Session | null, headers: Headers): string | null | undefined =>
+  session?.scope === undefined ? wantedScope(headers) : session.scope
 
 /** The signed-in person, if the config's access list lets them in. */
 export const signedIn = Effect.fn('signedIn')(function* (userId: string | null | undefined) {
@@ -163,7 +178,10 @@ export function crmHandler<I, A, E extends StaffError>(
       request,
       signedIn(session?.userId).pipe(
         Effect.tapError(refusedPage(asked)),
-        Effect.flatMap((user) => program({ data, user })),
+        // In a Spool with record scopes the program reaches what this person holds, in the scope they asked to work in.
+        Effect.flatMap((user) =>
+          asUser(user, wanted(session, asked.headers))(program({ data, user })),
+        ),
       ),
     )
   }
@@ -181,12 +199,13 @@ export const forStrangers = <A, E extends StaffError, R>(
 ): Effect.Effect<A, E | Invalid, R> =>
   program.pipe(
     Effect.tapError((error) =>
-      error._tag === 'DatabaseError'
-        ? Effect.logError(`[server] ${name} failed: DatabaseError: ${error.message}`)
+      error._tag === 'DatabaseError' || error._tag === 'ScopeRefused'
+        ? Effect.logError(`[server] ${name} failed: ${error._tag}: ${error.message}`)
         : Effect.void,
     ),
+    // A refusal by the record-scope guard names tables too, and a stranger is no more owed it.
     Effect.mapError((error) =>
-      error._tag === 'DatabaseError'
+      error._tag === 'DatabaseError' || error._tag === 'ScopeRefused'
         ? new Invalid({ message: 'Something went wrong on our side. Try again in a moment.' })
         : error,
     ),
@@ -249,7 +268,9 @@ export function apiRoute<P, E extends StaffError>(
       name,
       { headers: request.headers, signal: request.signal, session },
       signedIn(session?.userId).pipe(
-        Effect.flatMap((user) => program({ request, params, user })),
+        Effect.flatMap((user) =>
+          asUser(user, wanted(session, request.headers))(program({ request, params, user })),
+        ),
         Effect.catch((error: StaffError) =>
           Effect.succeed(
             error._tag === 'Unauthorized' && options.signedOut
@@ -290,6 +311,30 @@ export const toolAuthorized = (headers: Headers) =>
   })
 
 /**
+ * A grant as it stands when it is used, or null when it no longer does. A grant
+ * made for a person is theirs: once they are off the access list it is no
+ * grant, and it reaches no more than they hold at this moment (as `Scopes`
+ * says, which is kept for a minute). So a scope taken from someone is taken
+ * from the workflows they started too, and a grant whose scope is gone is
+ * refused. A grant made for nobody (the server's own work) stands as stated.
+ */
+const grantStanding = Effect.fn('boundary.grantStanding')(function* (grant: Grant) {
+  if (grant.userId === null) {
+    return grant
+  }
+
+  const user = yield* (yield* Users).crmUser(grant.userId)
+
+  if (!user) {
+    return null
+  }
+
+  // Every scope they hold, whichever one they are working in.
+  const access = grantNow(grant.access, yield* accessOf(user, null))
+  return access && { ...grant, access }
+})
+
+/**
  * The tool API Swirls calls back into (/api/swirls/tools/*): refuses anyone
  * without `Authorization: Bearer $SWIRLS_APP_TOKEN` (401), then runs the
  * program. Nobody is signed in: the tool acts as the assistant.
@@ -308,7 +353,16 @@ export function toolRoute<P, E extends StaffError>(
           return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
         }
 
-        return yield* program({ request, params })
+        // In a Spool with record scopes a call reaches what its grant says, and a grant is the
+        // only thing that says: nothing in the body, which a model writes, switches scope. A call
+        // with no grant this server signed is given no access, so every scoped table refuses it.
+        const grant = scopesOn() ? yield* openGrant(request.headers.get(GRANT_HEADER)) : null
+
+        const standing = grant === null ? null : yield* grantStanding(grant)
+
+        return yield* standing
+          ? withGrant(standing)(program({ request, params }))
+          : program({ request, params })
       }).pipe(Effect.catch((error: StaffError) => Effect.succeed(failureResponse(error)))),
     )
 }

@@ -153,6 +153,7 @@ test("a company gets its own folder the first time it is asked for, and a deal's
       name: `Roof ${tag}`,
       items: 2,
       record: { objectKey: 'deals', recordId: dealId },
+      canWrite: true,
     },
   ])
 

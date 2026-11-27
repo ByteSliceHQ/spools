@@ -53,6 +53,14 @@ import { Button, cx, IconButton, MenuDivider, MenuItem, relativeTime, useDismiss
 type Listing = NonNullable<Awaited<ReturnType<typeof listFolderFn>>['listing']>
 type FolderItem = Listing['folders'][number]
 type FileItem = Listing['files'][number]
+
+/**
+ * The address that opens a file. It names the folder the file is in: in a
+ * Spool with record scopes a file is only opened from a folder within reach.
+ */
+const fileHref = (id: string, folderId: string | null) =>
+  `/api/files/${id}?folder=${encodeURIComponent(folderId ?? '')}`
+
 type Item = { kind: 'folder'; item: FolderItem } | { kind: 'file'; item: FileItem }
 type Ref = { kind: 'folder' | 'file'; id: string }
 type RecordRef = { objectKey: string; recordId: string }
@@ -396,6 +404,10 @@ export function FileBrowser({
 
   const listing = data?.listing ?? null
   const ready = !!data && data.problems.length === 0
+  // Whoever can't change this folder is shown what is in it, with nothing that adds, renames,
+  // moves or deletes. The server says so with the listing, and refuses every change itself.
+  const readOnly = !!listing && !listing.canWrite
+  const changeable = (it: Item) => !readOnly && (it.kind === 'file' || it.item.canWrite)
   // The trail from this browser's root down: a record's tab doesn't show the folders above its own.
   const fullTrail = listing?.trail ?? []
   const cut = rootId ? fullTrail.findIndex((c) => c.id === rootId) + 1 : 0
@@ -422,7 +434,7 @@ export function FileBrowser({
     if (it.kind === 'folder') {
       onNavigate(it.item.id === rootId ? null : it.item.id)
     } else {
-      window.open(`/api/files/${it.item.id}`, '_blank', 'noopener')
+      window.open(fileHref(it.item.id, current), '_blank', 'noopener')
     }
   }
 
@@ -443,7 +455,7 @@ export function FileBrowser({
     }
 
     setSelected(null)
-    await run(deleteItemFn({ data: { kind: it.kind, id: it.item.id } }))
+    await run(deleteItemFn({ data: { kind: it.kind, id: it.item.id, from: current } }))
     onChange?.()
   }
 
@@ -455,7 +467,7 @@ export function FileBrowser({
       return
     }
 
-    await run(renameItemFn({ data: { ...ref, name: next } }))
+    await run(renameItemFn({ data: { ...ref, name: next, from: current } }))
   }
 
   const newFolder = async (name: string) => {
@@ -474,7 +486,7 @@ export function FileBrowser({
       return
     }
 
-    await run(moveItemFn({ data: { ...ref, to } }))
+    await run(moveItemFn({ data: { ...ref, to, from: current } }))
   }
 
   const pick = (to: string | null) => {
@@ -519,6 +531,10 @@ export function FileBrowser({
       open(selectedItem)
     }
 
+    if (!changeable(selectedItem)) {
+      return
+    }
+
     if (e.key === 'F2') {
       setRenaming({ kind: selectedItem.kind, id: selectedItem.item.id })
     }
@@ -529,7 +545,7 @@ export function FileBrowser({
   }
 
   const dropOn = (to: string | null) => (e: DragEvent) => {
-    if (!ready || !accepts(e)) {
+    if (!ready || readOnly || !accepts(e)) {
       return
     }
 
@@ -550,7 +566,7 @@ export function FileBrowser({
   }
 
   const dragOver = (target: string) => (e: DragEvent) => {
-    if (!ready || !accepts(e)) {
+    if (!ready || readOnly || !accepts(e)) {
       return
     }
 
@@ -560,7 +576,8 @@ export function FileBrowser({
   }
 
   const context = (target: Item | null) => (e: MouseEvent) => {
-    if (!ready) {
+    // The menu on the folder's own background only adds things.
+    if (!ready || (readOnly && !target)) {
       return
     }
 
@@ -578,7 +595,7 @@ export function FileBrowser({
     const ref: Ref = { kind: it.kind, id: it.item.id }
 
     const props = {
-      draggable: !renaming,
+      draggable: !renaming && changeable(it),
       onDragStart: (e: DragEvent) => {
         e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(ref))
         e.dataTransfer.effectAllowed = 'move'
@@ -591,8 +608,8 @@ export function FileBrowser({
       onContextMenu: context(it),
     }
 
-    // Only a folder takes things dropped on it.
-    if (it.kind !== 'folder') {
+    // Only a folder takes things dropped on it, and only one that can be added to.
+    if (it.kind !== 'folder' || !changeable(it)) {
       return props
     }
 
@@ -627,17 +644,19 @@ export function FileBrowser({
         >
           <MoreHorizontal className="size-3.5" />
         </IconButton>
-        <IconButton
-          label={`Delete ${it.item.name}`}
-          className={cx('size-6 hover:text-c-danger', shown)}
-          onClick={(e) => {
-            e.stopPropagation()
-            void remove(it)
-          }}
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          <Trash2 className="size-3.5" />
-        </IconButton>
+        {changeable(it) && (
+          <IconButton
+            label={`Delete ${it.item.name}`}
+            className={cx('size-6 hover:text-c-danger', shown)}
+            onClick={(e) => {
+              e.stopPropagation()
+              void remove(it)
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            <Trash2 className="size-3.5" />
+          </IconButton>
+        )}
       </span>
     )
   }
@@ -665,7 +684,7 @@ export function FileBrowser({
       </button>
     ) : (
       <a
-        href={`/api/files/${it.item.id}`}
+        href={fileHref(it.item.id, current)}
         target="_blank"
         rel="noreferrer"
         className="min-w-0 truncate hover:underline"
@@ -753,24 +772,29 @@ export function FileBrowser({
             <LayoutGrid className="size-3.5" />
           </IconButton>
         </div>
-        <Button
-          onClick={() => setRenaming('new')}
-          disabled={!ready || !!found}
-          aria-label="New folder"
-          title="New folder"
-        >
-          <FolderPlus className="size-3.5" /> <span className="hidden @lg:inline">New folder</span>
-        </Button>
-        <Button
-          variant="primary"
-          data-guide="files-add"
-          onClick={() => pick(current)}
-          disabled={!ready}
-          aria-label="Upload files"
-          title="Upload files"
-        >
-          <Upload className="size-3.5" /> <span className="hidden @lg:inline">Upload</span>
-        </Button>
+        {!readOnly && (
+          <>
+            <Button
+              onClick={() => setRenaming('new')}
+              disabled={!ready || !!found}
+              aria-label="New folder"
+              title="New folder"
+            >
+              <FolderPlus className="size-3.5" />{' '}
+              <span className="hidden @lg:inline">New folder</span>
+            </Button>
+            <Button
+              variant="primary"
+              data-guide="files-add"
+              onClick={() => pick(current)}
+              disabled={!ready}
+              aria-label="Upload files"
+              title="Upload files"
+            >
+              <Upload className="size-3.5" /> <span className="hidden @lg:inline">Upload</span>
+            </Button>
+          </>
+        )}
         <input
           ref={picker}
           type="file"
@@ -1032,9 +1056,10 @@ export function FileBrowser({
             <p className="text-c-fg3 px-1 text-xs">
               {listing.folders.length} {listing.folders.length === 1 ? 'folder' : 'folders'},{' '}
               {listing.files.length} {listing.files.length === 1 ? 'file' : 'files'}
-              {listing.truncated ? ' shown; this folder holds more' : ''}. Right-click, or use the
-              buttons on a row, to rename, move or delete. Drop files to upload them, up to{' '}
-              {formatBytes(MAX_UPLOAD_BYTES)} each.
+              {listing.truncated ? ' shown; this folder holds more' : ''}.{' '}
+              {readOnly
+                ? 'You can open these files, but not change them.'
+                : `Right-click, or use the buttons on a row, to rename, move or delete. Drop files to upload them, up to ${formatBytes(MAX_UPLOAD_BYTES)} each.`}
             </p>
           )}
         </div>
@@ -1046,6 +1071,7 @@ export function FileBrowser({
             <ItemMenu
               it={menuTarget}
               canMoveUp={!atRoot}
+              canChange={changeable(menuTarget)}
               onOpen={() => open(menuTarget)}
               onRename={() => setRenaming({ kind: menuTarget.kind, id: menuTarget.item.id })}
               onUploadInto={() => pick(menuTarget.item.id)}
@@ -1054,7 +1080,7 @@ export function FileBrowser({
               }
               onCopyLink={() =>
                 navigator.clipboard?.writeText(
-                  `${window.location.origin}/api/files/${menuTarget.item.id}`,
+                  `${window.location.origin}${fileHref(menuTarget.item.id, current)}`,
                 )
               }
               onDelete={() => remove(menuTarget)}
@@ -1089,6 +1115,7 @@ export function FileBrowser({
 function ItemMenu({
   it,
   canMoveUp,
+  canChange,
   onOpen,
   onRename,
   onUploadInto,
@@ -1099,6 +1126,8 @@ function ItemMenu({
 }: {
   it: Item
   canMoveUp: boolean
+  /** Whether it can be added to, renamed, moved or deleted by whoever is looking. */
+  canChange: boolean
   onOpen: () => void
   onRename: () => void
   onUploadInto: () => void
@@ -1129,28 +1158,33 @@ function ItemMenu({
           <ChevronRight className="text-c-fg2 size-3.5" /> Go to the record
         </Link>
       )}
-      {it.kind === 'folder' ? (
-        <MenuItem onSelect={then(onUploadInto)}>
-          <Upload className="text-c-fg2 size-3.5" /> Upload into this folder
-        </MenuItem>
-      ) : (
+      {it.kind === 'file' && (
         <MenuItem onSelect={then(onCopyLink)}>
           <Link2 className="text-c-fg2 size-3.5" /> Copy link
         </MenuItem>
       )}
-      <MenuDivider />
-      <MenuItem onSelect={then(onRename)}>
-        <Pencil className="text-c-fg2 size-3.5" /> Rename
-      </MenuItem>
-      {canMoveUp && (
-        <MenuItem onSelect={then(onMoveUp)}>
-          <CornerLeftUp className="text-c-fg2 size-3.5" /> Move up one folder
-        </MenuItem>
+      {canChange && (
+        <>
+          {it.kind === 'folder' && (
+            <MenuItem onSelect={then(onUploadInto)}>
+              <Upload className="text-c-fg2 size-3.5" /> Upload into this folder
+            </MenuItem>
+          )}
+          <MenuDivider />
+          <MenuItem onSelect={then(onRename)}>
+            <Pencil className="text-c-fg2 size-3.5" /> Rename
+          </MenuItem>
+          {canMoveUp && (
+            <MenuItem onSelect={then(onMoveUp)}>
+              <CornerLeftUp className="text-c-fg2 size-3.5" /> Move up one folder
+            </MenuItem>
+          )}
+          <MenuDivider />
+          <MenuItem danger onSelect={then(onDelete)}>
+            <Trash2 className="size-3.5" /> Delete
+          </MenuItem>
+        </>
       )}
-      <MenuDivider />
-      <MenuItem danger onSelect={then(onDelete)}>
-        <Trash2 className="size-3.5" /> Delete
-      </MenuItem>
     </>
   )
 }
@@ -1360,7 +1394,7 @@ function SearchResults({
             >
               <Icon className="text-c-fg3 size-4 shrink-0" />
               <a
-                href={`/api/files/${file.id}`}
+                href={fileHref(file.id, file.folderId)}
                 target="_blank"
                 rel="noreferrer"
                 className="min-w-0 flex-1 truncate hover:underline"

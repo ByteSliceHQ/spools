@@ -7,8 +7,9 @@ import { runTarget } from './actions'
 import * as guides from './guides'
 import * as records from './records'
 import { CurrentRequest } from './runtime/app'
-import { crmHandler, publicHandler, signedInUser } from './runtime/boundary'
+import { crmHandler, publicHandler, signedInUser, wanted as wantedIn } from './runtime/boundary'
 import { Invalid, NotFound } from './runtime/errors'
+import { asUser, scopeSession } from './scopes'
 import * as search from './search'
 import * as service from './service'
 import { crmConfig, getObject, spool } from './spool'
@@ -33,30 +34,54 @@ export const getCrmSession = createServerFn({ method: 'GET' }).handler(
         Object.values(o.fields).some((f) => f.type === 'user'),
       )
 
-      const users = user && hasUserFields ? yield* (yield* Users).team : []
-
       // What this person has seen of the guides rides along, so no page asks for it separately.
       const nothingSeen: string[] = []
+      const signedInAs = (yield* signedInSession) || user !== null
+      const offers = yield* guides.guidesOffered
 
-      const [favorites, dueTasks, seen] = user
-        ? yield* Effect.all(
-            [
-              workspace.listFavorites(user.id),
-              workspace.dueTaskCount(user.id),
-              guides.seenGuides(user.id),
-            ],
-            { concurrency: 'unbounded' },
-          )
-        : [[], 0, nothingSeen]
+      if (!user) {
+        return {
+          signedIn: signedInAs,
+          user,
+          config: null,
+          users: [],
+          favorites: [],
+          dueTasks: 0,
+          guides: { seen: nothingSeen, offers },
+          scopes: null,
+        }
+      }
+
+      // A session answers signed-out pages too, so the boundary gave it no scope: it takes its own.
+      const request = yield* CurrentRequest
+      const wanted = wantedIn(request.session, request.headers)
+
+      const [users, favorites, dueTasks, seen] = yield* asUser(
+        user,
+        wanted,
+      )(
+        Effect.all(
+          [
+            // The team list feeds owner/assignee pickers; skip asking for it when no object has a `user` field.
+            hasUserFields ? Effect.flatMap(Users, (all) => all.team) : Effect.succeed([]),
+            workspace.listFavorites(user.id),
+            workspace.dueTaskCount(user.id),
+            guides.seenGuides(user.id),
+          ],
+          { concurrency: 'unbounded' },
+        ),
+      )
 
       return {
-        signedIn: user !== null || (yield* signedInSession),
+        signedIn: signedInAs,
         user,
-        config: user ? toPublicConfig(crmConfig()) : null,
+        config: toPublicConfig(crmConfig()),
         users,
         favorites,
         dueTasks,
-        guides: { seen, offers: yield* guides.guidesOffered },
+        guides: { seen, offers },
+        // The scopes this person may switch between, in a Spool that has them.
+        scopes: yield* scopeSession(user, wanted),
       }
     }),
   ),

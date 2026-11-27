@@ -1,5 +1,7 @@
 import { Effect, Predicate, Schema } from 'effect'
 
+import { carrying, CurrentAccess, CurrentPerson } from './access'
+
 /**
  * The failures staff can see. Each one's `message` is written for the person
  * using the CRM and is exactly what the browser shows (`err.message`), so the
@@ -50,6 +52,17 @@ export class DatabaseError extends Schema.TaggedError<DatabaseError>()('Database
     return messageOf(this.cause)
   }
 }
+
+/**
+ * The record-scope guard refused a call (src/server/store/scope.ts): a record out
+ * of reach, a change someone may only look at, work with nobody said. The message
+ * says which, in words for staff. It is its own failure, never a `DatabaseError`,
+ * so code that catches a database failure it expects (a unique index keeping one
+ * row) doesn't take a refusal for one.
+ */
+export class ScopeRefused extends Schema.TaggedError<ScopeRefused>()('ScopeRefused', {
+  message: Schema.String,
+}) {}
 
 /**
  * The auth provider (Clerk, the app's own sign-in) refused or failed. Staff see
@@ -133,10 +146,14 @@ export const fromHook = <A>(
   hook: string,
   call: () => A | PromiseLike<A>,
 ): Effect.Effect<Awaited<A>, ExtensionError> =>
-  Effect.tryPromise({
-    try: async (): Promise<Awaited<A>> => await call(),
-    catch: (cause) => new ExtensionError({ hook, cause }),
-  })
+  // The app's code calls back in through `@swirls/spools/extensions`: what it does there is
+  // done with the access of whoever called it, and nothing more (access.ts).
+  Effect.flatMap(Effect.all([CurrentAccess, CurrentPerson]), ([access, person]) =>
+    Effect.tryPromise({
+      try: async (): Promise<Awaited<A>> => await carrying(access, call, person),
+      catch: (cause) => new ExtensionError({ hook, cause }),
+    }),
+  )
 
 /**
  * Fails with `error` when `refused` holds, and otherwise does nothing: a check
@@ -152,6 +169,7 @@ export type StaffError =
   | Invalid
   | NotConfigured
   | DatabaseError
+  | ScopeRefused
   | AuthError
   | Timeout
   | ExtensionError

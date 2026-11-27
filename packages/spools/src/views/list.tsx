@@ -37,6 +37,7 @@ import { NewRecordDialog } from '../crm/ui/new-record-dialog'
 import { objectIndex, TopBar } from '../crm/ui/shell'
 import { useCrmObject } from '../crm/ui/use-crm'
 import { columnLabel, RecordView } from '../crm/ui/views'
+import { useWriteReach } from '../crm/ui/write-reach'
 import { deleteRecordsFn } from '../server/crm.functions'
 import type { ResolvedView, ViewSettings } from '../server/views'
 import { createViewFn, deleteViewFn, exportCsvFn, saveViewFn } from '../server/workspace.functions'
@@ -59,6 +60,8 @@ export function ObjectList(): ReactNode {
   const [creating, setCreating] = useState<{ preset?: Preset } | null>(null)
   const [importing, setImporting] = useState(false)
   const [menu, setMenu] = useState<'io' | 'save' | null>(null)
+  // Which controls that add or delete records this person is shown.
+  const reach = useWriteReach()
 
   // What is on screen differs from the saved view until someone saves it.
   const filters = active.filters
@@ -251,29 +254,34 @@ export function ObjectList(): ReactNode {
           </div>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          <div className="relative" data-guide="import-export">
+          {/* The guide's step here is about importing: it is left out for someone who only exports. */}
+          <div className="relative" data-guide={reach.any ? 'import-export' : undefined}>
             <Button onClick={() => setMenu(menu === 'io' ? null : 'io')}>
               <ArrowUpDown className="text-c-fg2 size-3.5" />{' '}
-              <span className="hidden sm:inline">Import / Export</span>{' '}
+              <span className="hidden sm:inline">{reach.any ? 'Import / Export' : 'Export'}</span>{' '}
               <ChevronDown className="text-c-fg3 size-3" />
             </Button>
             <Popover open={menu === 'io'} onClose={() => setMenu(null)} align="right">
-              <MenuItem
-                onSelect={() => {
-                  setMenu(null)
-                  setImporting(true)
-                }}
-              >
-                <Upload className="text-c-fg2 size-3.5" /> Import CSV
-              </MenuItem>
+              {reach.any && (
+                <MenuItem
+                  onSelect={() => {
+                    setMenu(null)
+                    setImporting(true)
+                  }}
+                >
+                  <Upload className="text-c-fg2 size-3.5" /> Import CSV
+                </MenuItem>
+              )}
               <MenuItem onSelect={exportCsv}>
                 <Download className="text-c-fg2 size-3.5" /> Export what is shown as CSV
               </MenuItem>
             </Popover>
           </div>
-          <Button variant="primary" data-guide="new-record" onClick={() => setCreating({})}>
-            <Plus className="size-3.5" /> New {obj.label}
-          </Button>
+          {reach.any && (
+            <Button variant="primary" data-guide="new-record" onClick={() => setCreating({})}>
+              <Plus className="size-3.5" /> New {obj.label}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -321,7 +329,7 @@ export function ObjectList(): ReactNode {
         />
       </div>
 
-      {selected.size > 0 && (
+      {selected.size > 0 && reach.any && (
         <div className="pointer-events-none absolute inset-x-0 bottom-12 z-30 flex justify-center">
           <div className="border-c-line2 bg-c-raised pointer-events-auto flex items-center gap-1 rounded-xl border p-1 shadow-xl shadow-black/15">
             <span className="px-2 font-medium tabular-nums">{selected.size} selected</span>
@@ -366,7 +374,8 @@ export function ObjectList(): ReactNode {
       )}
 
       <NewRecordDialog
-        open={creating !== null || openNew === true}
+        // A link that asks for a new record opens nothing for someone who can't add one.
+        open={reach.any && (creating !== null || openNew === true)}
         onClose={() => {
           setCreating(null)
 

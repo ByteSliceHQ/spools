@@ -141,7 +141,11 @@ describe('spools', () => {
     for (const args of [['frobnicate'], [], ['constructor']]) {
       const result = await spools(folder, args)
       expect(result.exitCode).toBe(1)
-      expect(result.stderr).toContain('Usage: spools <gen | init | stats | harden | check-client>')
+
+      expect(result.stderr).toContain(
+        'Usage: spools <gen | init | stats | harden | scopes | check-client>',
+      )
+
       expect(result.stdout).toBe('')
     }
   })

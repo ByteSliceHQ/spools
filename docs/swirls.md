@@ -98,6 +98,61 @@ and set `crm_app::CRM_APP_URL` to the tunnel URL. Add the tunnel's hostname to
 The app resolves workflow names to ids from the active deployment and caches them
 for a minute.
 
+## Record scopes
+
+In a Spool with [record scopes](security.md#record-scopes) the tool API reaches only what a
+**grant** says. A grant is a short-lived token the CRM signs; nothing else carries a scope,
+and nothing in a tool call's body (which a model writes) can switch one.
+
+- A workflow started for a record gets `grant` in its input, beside `objectKey`, `record`,
+  `actor` and `trigger`. Send it back with every call to the tool API:
+
+  ```
+  headers: @ts {
+    return {
+      "Authorization": "Bearer " + context.secrets.crm_app.CRM_APP_TOKEN,
+      "X-Spools-Grant": context.nodes.root.input.grant,
+      "Content-Type": "application/json"
+    }
+  }
+  ```
+
+  The two record workflows a new Spool comes with (`new_contact`, `enrich_contact`) send
+  it, and leave the header out when there is no grant (a Spool without scopes). A Spool
+  made before they did has to add it to each `http` node that calls
+  `/api/swirls/tools/*`, and deploy the workflows, before turning scopes on, or their
+  write-backs are refused. `crm_event` in `swirls/schemas.swirls` lists `grant` too.
+
+- **What a grant is good for.** The scope of the record the workflow was started for, to
+  read, and to write only if whoever started the workflow could. It is made for that one
+  record: `get`, `update` and `add_note` answer about it and no other record of the scope,
+  and `search` and `create`, which reach the rest of the scope, are refused. `describe` and
+  the marketing tools reach no scoped record and work as before.
+- **Whose it is.** A grant is made for the person whose work started the workflow, and is
+  refused once that person is off the access list. Each call is given no more than that
+  person holds when it is made: if they have lost the record's scope since, the grant is
+  refused, and if they may now only read it, the workflow's writes are. A change a tool makes
+  under a grant that starts another workflow hands on a grant for the same person.
+- **Who can start one.** Whoever may change the record. An action, an automation or a
+  sequence started for someone who only reads the record is refused before it starts.
+- **How long it lasts.** Fifteen minutes, or [`scopes.grantMinutes`](configuration.md#scopes).
+  A workflow that waits (on a person, on a timer) before it writes back needs that set
+  longer than its longest wait. Until a grant runs out, whoever holds it has its reach, so
+  keep it as short as your workflows allow.
+- **Treat the grant as a secret of the run.** Put it in the header and nowhere else: never
+  into a prompt, a message or anything a model reads or writes, or text the model was fed
+  could send it somewhere else.
+- A grant is signed with `APP_SECRET`. Changing that secret ends every grant in flight.
+
+- **The assistant's record tools are refused in chat.** A chat's tool workflows are started
+  by the engine, not the CRM, so there is no input to put a grant in, and a value the model
+  could relay would be a scope switch. With scopes on, `crm_search`, `crm_get`, `crm_create`,
+  `crm_update` and `crm_add_note` answer that the call reached no record; `crm_describe` and
+  the marketing tools still work.
+- **Chats must be each person's own.** With `SWIRLS_API_KEY` set, chats belong to the
+  project and everyone reads everyone's, so the Ask page is refused and says so. Use
+  federation.
+
 ## The assistant
 
 `/assistant` (the **Ask** button in the top bar, or the box on Home) streams chat

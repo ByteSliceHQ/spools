@@ -5,6 +5,7 @@ import type { CrmField } from '../crm/field-types'
 import { cleanFilters } from '../crm/filters'
 import * as marketing from './marketing'
 import * as records from './records'
+import { type BoundRecord, CurrentRecord } from './runtime/access'
 import { Invalid, messageOf, NotFound } from './runtime/errors'
 import type { Json } from './runtime/json'
 import * as service from './service'
@@ -288,6 +289,50 @@ const tools = {
 
 export type ToolName = keyof typeof tools
 
+/**
+ * What each tool does for a call whose grant was made for one record (a
+ * workflow started for that record: `grantFor` in scopes.ts). Every tool has
+ * to say, so a new one doesn't build until it does.
+ *
+ * - `record`: answers only about that record. The call's `objectKey` and `id` must name it.
+ * - `refused`: reaches other records of the scope, so it isn't run at all.
+ * - `free`: reaches no record of a scoped object.
+ */
+export const BOUND_DECISIONS = {
+  describe: 'free',
+  search: 'refused',
+  get: 'record',
+  create: 'refused',
+  update: 'record',
+  add_note: 'record',
+  save_site_profile: 'free',
+  post_result: 'free',
+  save_ads: 'free',
+  marketing_context: 'free',
+  draft_post: 'free',
+} as const satisfies { readonly [Tool in ToolName]: 'record' | 'refused' | 'free' }
+
+const calledAbout = z.object({ objectKey: z.string(), id: z.string() })
+
+/** Why a call is refused under a grant made for one record, or null when it may run. */
+function refusedByGrant(name: ToolName, body: Json, bound: BoundRecord | null): string | null {
+  const decision = BOUND_DECISIONS[name]
+
+  if (!bound || decision === 'free') {
+    return null
+  }
+
+  if (decision === 'refused') {
+    return `This call's grant is for one record, and ${name} reaches others. It was not run.`
+  }
+
+  const about = calledAbout.safeParse(body).data
+
+  return about?.objectKey === bound.objectKey && about.id === bound.recordId
+    ? null
+    : "This call's grant is for one record, and the call is about another. It was not run."
+}
+
 /** Own names only: "constructor" and the like are not tools. */
 const isToolName = (name: string): name is ToolName => Object.hasOwn(tools, name)
 
@@ -298,6 +343,13 @@ const isToolName = (name: string): name is ToolName => Object.hasOwn(tools, name
 export const runTool = Effect.fn('tools.runTool')(function* (name: string, body: Json) {
   if (!isToolName(name)) {
     return { ok: false, error: `Unknown tool "${name}"` } satisfies ToolResult
+  }
+
+  // A grant made for one record answers about that record and no other, whatever the model asks.
+  const refused = refusedByGrant(name, body, yield* CurrentRecord)
+
+  if (refused !== null) {
+    return { ok: false, error: refused } satisfies ToolResult
   }
 
   return yield* tools[name](body ?? {})

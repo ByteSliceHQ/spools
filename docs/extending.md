@@ -107,6 +107,49 @@ hooks: {
   Decide what a hand-off should do with no actor; bulk imports that call `records.createRecord` directly skip hooks.
 - To give the new record the old one's folder, see `shareRecordFolder` in [Files](files.md).
 
+### Hooks and record scopes
+
+In a Spool with [record scopes](security.md#record-scopes), what a hook, a handler or a run
+target does through `@swirls/spools/extensions` is done with the access of whoever caused
+it: `listRecords` in a hook lists what that person could, and `createRecord` makes a record
+in the scope they are working in. A script has nobody behind it, so a scoped record is
+refused until it says it is the system:
+
+```ts
+import { asSystem, createRecord } from '@swirls/spools/extensions'
+
+await asSystem(() => createRecord('contacts', { name: 'Ada', branch: 'north' }, null))
+```
+
+`asSystem` reaches every scope. Use it in scripts, and in a hook only where the work really
+is the business's and not the person's.
+
+## Scopes: who holds what
+
+When your sign-in provider doesn't say which scopes a person holds, say it yourself:
+
+```ts
+scopes: {
+  // Each scope this person holds, with a role from `scopes.roles` in crm.config.json.
+  async grants(user) {
+    const rows = await myDirectory.branchesOf(user.email)
+    return rows.map((row) => ({ scope: row.branch, role: row.manager ? 'member' : 'viewer' }))
+  },
+  // Every scope there is, for the switcher of someone whose role reaches them all.
+  async list() {
+    return [{ key: 'north', label: 'North' }, { key: 'south', label: 'South' }]
+  },
+},
+```
+
+Its answer for a person is kept for a minute, so a change takes that long to show. Returning
+nothing for a person shows them no scoped record. A resolver here wins over the sign-in
+provider's. `list` is also what a record's scope is checked against when it is saved: with
+one, a scope it doesn't name is refused; without one, any text is taken (never `*`).
+
+A run target, a handler or an automation runs for whoever may change the record it is run
+for. Someone who only reads the record starts none of them.
+
 ## Run targets: add a new kind
 
 A run target kind handles every `"<kind>:<name>"` in the config.

@@ -35,6 +35,29 @@ export type Relation = {
   readonly onDelete?: 'restrict' | 'set null'
 }
 
+/**
+ * How a table's rows belong to a record scope (src/crm/scopes.ts), for the
+ * guard every store is behind (scope.ts). A table without one is shared.
+ *
+ * - `own`: the row says itself, in `column` (an object named in `scopes.objects`).
+ * - `owner`: the row hangs off a record, named by the `object` and `record`
+ *   columns, and `column` holds a copy of that record's scope. A row on no
+ *   record holds the scope it was made in. `personal` rows are a person's own
+ *   (a favourite): whoever can read the record may make and remove them.
+ *
+ * A table reached only through its relations (a join table for a many-to-many
+ * relation) would be a third kind, scoped by both records it joins.
+ */
+export type TableScope =
+  | { readonly kind: 'own'; readonly column: string }
+  | {
+      readonly kind: 'owner'
+      readonly column: string
+      readonly object: string
+      readonly record: string
+      readonly personal?: boolean
+    }
+
 export type Table<Row = unknown, Insert = unknown> = {
   /** The name of one row, e.g. "Task". Also its Prisma model. */
   readonly model: string
@@ -50,6 +73,8 @@ export type Table<Row = unknown, Insert = unknown> = {
   readonly indexes: readonly (readonly string[])[]
   /** Columns searched as text, most important first. */
   readonly search?: { readonly name: string; readonly columns: readonly string[] }
+  /** Which record scope a row belongs to. Only looked at in a Spool whose config has `scopes`. */
+  readonly scope?: TableScope | undefined
   /** Types only: what a row looks like, and what inserting one takes. */
   readonly row?: Row
   readonly insert?: Insert
@@ -143,6 +168,7 @@ export function defineTable<const C extends Record<string, Column>>(spec: {
   unique?: readonly (readonly (keyof C & string)[])[]
   indexes?: readonly (readonly (keyof C & string)[])[]
   search?: { name: string; columns: readonly (keyof C & string)[] }
+  scope?: TableScope
 }): Table<RowOf<C>, InsertOf<C>> {
   return { primary: 'id', unique: [], indexes: [], ...spec, relations: {} }
 }

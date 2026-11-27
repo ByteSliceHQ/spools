@@ -166,6 +166,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "summary": {
                 "nullable": false,
                 "type": {
@@ -209,6 +216,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "summary": {
                   "column": "summary"
@@ -820,6 +830,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "userId": {
                 "nullable": false,
                 "type": {
@@ -842,6 +859,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "userId": {
                   "column": "user_id"
@@ -899,6 +919,13 @@
                 }
               },
               "recordId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "scope": {
                 "nullable": true,
                 "type": {
                   "codecId": "pg/text@1",
@@ -974,6 +1001,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "sizeBytes": {
                   "column": "size_bytes"
@@ -1855,6 +1885,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "title": {
                 "nullable": false,
                 "type": {
@@ -1896,6 +1933,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "title": {
                   "column": "title"
@@ -1962,6 +2002,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "updatedAt": {
                 "nullable": false,
                 "type": {
@@ -1996,6 +2043,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "updatedAt": {
                   "column": "updated_at"
@@ -2190,6 +2240,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "status": {
                 "nullable": false,
                 "type": {
@@ -2240,6 +2297,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "status": {
                   "column": "status"
@@ -2367,6 +2427,13 @@
                   "kind": "scalar"
                 }
               },
+              "scope": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "title": {
                 "nullable": false,
                 "type": {
@@ -2414,6 +2481,9 @@
                 },
                 "recordId": {
                   "column": "record_id"
+                },
+                "scope": {
+                  "column": "scope"
                 },
                 "title": {
                   "column": "title"
@@ -2594,6 +2664,11 @@
                   "dataType": "pg/text",
                   "nullable": false
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "summary": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -2617,6 +2692,14 @@
                   ],
                   "name": "activities_object_key_record_id_idx_521c2544",
                   "prefix": "activities_object_key_record_id_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "activities_scope_idx_5e57bd12",
+                  "prefix": "activities_scope_idx",
                   "unique": false
                 },
                 {
@@ -3103,6 +3186,11 @@
                   "dataType": "pg/text",
                   "nullable": false
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "user_id": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -3111,6 +3199,14 @@
               },
               "foreignKeys": [],
               "indexes": [
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "favorites_scope_idx_5e57bd12",
+                  "prefix": "favorites_scope_idx",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "user_id"
@@ -3167,6 +3263,11 @@
                   "nullable": true
                 },
                 "record_id": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
+                "scope": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
                   "nullable": true
@@ -3825,6 +3926,11 @@
                   "dataType": "pg/text",
                   "nullable": true
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "title": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -3848,6 +3954,14 @@
                   ],
                   "name": "notes_object_key_record_id_idx_521c2544",
                   "prefix": "notes_object_key_record_id_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "notes_scope_idx_5e57bd12",
+                  "prefix": "notes_scope_idx",
                   "unique": false
                 },
                 {
@@ -3923,6 +4037,11 @@
                   "dataType": "pg/text",
                   "nullable": false
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "updated_at": {
                   "codecId": "pg/timestamptz-date@1",
                   "dataType": "pg/timestamptz",
@@ -3940,6 +4059,14 @@
                   ],
                   "name": "record_folders_folder_id_idx_61252c35",
                   "prefix": "record_folders_folder_id_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "record_folders_scope_idx_5e57bd12",
+                  "prefix": "record_folders_scope_idx",
                   "unique": false
                 }
               ],
@@ -4099,6 +4226,11 @@
                   "dataType": "pg/text",
                   "nullable": false
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "status": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -4115,6 +4247,14 @@
               },
               "foreignKeys": [],
               "indexes": [
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "sequence_runs_scope_idx_5e57bd12",
+                  "prefix": "sequence_runs_scope_idx",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "status",
@@ -4197,6 +4337,11 @@
                   "dataType": "pg/text",
                   "nullable": true
                 },
+                "scope": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                },
                 "title": {
                   "codecId": "pg/text@1",
                   "dataType": "pg/text",
@@ -4229,6 +4374,14 @@
                   "name": "tasks_object_key_record_id_idx_521c2544",
                   "prefix": "tasks_object_key_record_id_idx",
                   "unique": false
+                },
+                {
+                  "columns": [
+                    "scope"
+                  ],
+                  "name": "tasks_scope_idx_5e57bd12",
+                  "prefix": "tasks_scope_idx",
+                  "unique": false
                 }
               ],
               "primaryKey": {
@@ -4244,7 +4397,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "06db04fe9880d37e604c3b6e31f0af7bb5e15624b502993098310e85866d447b"
+    "storageHash": "a272677f655e29f885f0875bbb9ed94eb804cf674dd0935be07bdf70f414ada4"
   },
   "execution": {
     "executionHash": "3b87d8e540c19faef4ea6cbb1777f24061daf40cbffccf7b67703dcac01ddd4b",
