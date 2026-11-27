@@ -1,5 +1,8 @@
 // Payload the CRM app sends when it runs a workflow from a config action or automation
 // (see src/server/actions.ts). `record` is the record as stored, relations included.
+// `grant` is there in a Spool with record scopes: a signed token good for this record, which
+// each call to /api/swirls/tools/* sends back as the X-Spools-Grant header (docs/swirls.md).
+// Keep it out of prompts and messages.
 
 schema crm_event {
   label: "CRM record event"
@@ -11,6 +14,7 @@ schema crm_event {
         "objectKey": { "type": "string" },
         "trigger": { "type": "string" },
         "record": { "type": "object" },
+        "grant": { "type": "string" },
         "actor": {
           "type": ["object", "null"],
           "properties": {
