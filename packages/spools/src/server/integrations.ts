@@ -651,9 +651,14 @@ type Credentials = z.infer<typeof Credentials>
 
 /**
  * Who a connection's tokens are sealed for: the row they are stored on, and no
- * other. A shared row's name also says whose it is, so a row that is turned
- * into a shared one in the database, or moved to another group, no longer
- * opens. One person's row is named as it always was. Exported for tests.
+ * other. Exported for tests.
+ *
+ * One person's row is named as it always was: its teammate, provider and
+ * account. A shared row is named for what it is: the provider and account, and
+ * the team or which group. So a row that is turned into a shared one in the
+ * database, or moved to another group, no longer opens. Who connected a shared
+ * row is not in its name: it is history, and may change while a token is
+ * being renewed.
  */
 export const ownerOf = (row: {
   userId: string
@@ -664,7 +669,7 @@ export const ownerOf = (row: {
 }) =>
   JSON.stringify(
     row.shared
-      ? ['integration', row.userId, row.provider, row.account, row.shared, row.groupKey ?? '']
+      ? ['shared integration', row.provider, row.account, row.shared, row.groupKey ?? '']
       : ['integration', row.userId, row.provider, row.account],
   )
 
@@ -751,7 +756,10 @@ export type Connection = {
   shared: Sharing | null
   /** The group a `group` connection is for. */
   group: string | null
-  /** For a shared connection, the name of whoever connected it, when that is known. */
+  /**
+   * For a shared connection, the name of whoever connected it, as it was then.
+   * Null for one made before names were kept (the Integrations page looks those up).
+   */
   connectedBy: string | null
 }
 
@@ -1087,8 +1095,8 @@ export const findConnections = Effect.fn('integrations.findConnections')(functio
 
   const allowed = filter.usableBy === undefined ? wanted : yield* usableBy(filter.usableBy, wanted)
 
-  const names = yield* namesFor(allowed)
-  return allowed.map(({ row, owner }) => toConnection(row, owner, names))
+  // No names are looked up here: this runs on every post, sync and schedule, and must not ask the directory.
+  return allowed.map(({ row, owner }) => toConnection(row, owner))
 })
 
 /** A connected mailbox: a connection to one of the built-in Google or Microsoft providers. */

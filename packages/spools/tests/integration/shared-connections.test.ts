@@ -593,6 +593,11 @@ describe('sealed tokens', () => {
     expect(ownerOf({ ...row, shared: '', groupKey: '' })).toBe(ownerOf(row))
     expect(ownerOf({ ...row, shared: 'team', groupKey: '' })).not.toBe(ownerOf(row))
 
+    // Who connected a shared connection is not part of what its tokens are sealed for.
+    expect(ownerOf({ ...row, userId: 'someone else', shared: 'team', groupKey: '' })).toBe(
+      ownerOf({ ...row, shared: 'team', groupKey: '' }),
+    )
+
     expect(ownerOf({ ...row, shared: 'group', groupKey: 'north' })).not.toBe(
       ownerOf({ ...row, shared: 'group', groupKey: 'south' }),
     )
@@ -745,7 +750,8 @@ describe('connections made before a provider was shared', () => {
       findConnections({ provider: always, shared: 'team', usableBy: bob.id }),
     )
 
-    expect(found).toMatchObject({ id: old.id, shared: 'team', connectedBy: 'Ada', userId: ada.id })
+    // Its connector's name was never stored. Server code is not told it: only the page looks it up.
+    expect(found).toMatchObject({ id: old.id, shared: 'team', connectedBy: null, userId: ada.id })
     expect(await run(getAccessToken(old.id, undefined, bob.id))).toBe('old-legacy-co')
 
     expect(await run(listConnections(ada.id))).not.toContainEqual(

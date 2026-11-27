@@ -101,10 +101,11 @@ There is no plaintext fallback. Without its keys the vault refuses
 to store anything and the page says more accounts can't be connected yet. The
 code is in [`packages/spools/src/server/runtime/vault.ts`](../packages/spools/src/server/runtime/vault.ts).
 
-Each connection's tokens are sealed for the row they are stored on: who connected it,
-the provider and the account, and for a shared connection also that it is the team's or
-which group's. Tokens copied onto another row, or a row edited in the database to turn
-a personal connection into a shared one or to move it to another group, are refused.
+Each connection's tokens are sealed for the row they are stored on. For a connection of
+one's own that is its teammate, the provider and the account. For a shared connection it
+is the provider, the account, and that it is the team's or which group's. Tokens copied
+onto another row, or a row edited in the database to turn a personal connection into a
+shared one or to move it to another group, are refused.
 
 Disconnecting asks the provider to revoke the token where it offers that, and
 deletes the stored copy either way.
@@ -330,7 +331,8 @@ What your code can ask for:
 | `getAccessToken(connection.id, { as: ctx.actor })` | A token, or a refusal when that person may not use it         |
 
 A connection says whose it is: `shared` (`'team'`, `'group'` or `null`), `group`, and
-`connectedBy`, the name of whoever connected a shared one. `userId` is who connected it.
+`connectedBy`, the name of whoever connected a shared one (`null` for one made before
+names were kept). `userId` is who connected it.
 
 - Pass `usableBy` and `as` whenever a person caused the call. `ctx.actor` is `null` when
   nobody did (a script, an import), and the call is then trusted, as a schedule's is.
