@@ -48,6 +48,10 @@ export type Op =
   // records of another object that point at this one
   | 'has'
   | 'hasNone'
+  // many related records (a `relations` field)
+  | 'anyOf'
+  | 'allOf'
+  | 'noneOf'
 
 export type Scalar = string | number
 
@@ -374,6 +378,9 @@ const OP_LABELS: Record<Op, string> = {
   notEmpty: 'is not empty',
   has: 'has any',
   hasNone: 'has none',
+  anyOf: 'has any of',
+  allOf: 'has all of',
+  noneOf: 'has none of',
 }
 
 /** How an operator reads between the field's name and its value. */

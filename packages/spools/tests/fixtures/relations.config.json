@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "app": { "name": "Relations Test" },
+  "access": { "allowedDomains": ["example.com"] },
+  "objects": {
+    "companies": {
+      "label": "Company",
+      "labelPlural": "Companies",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true, "searchable": true },
+        "tags": { "type": "relations", "to": "tags" }
+      },
+      "views": [
+        { "id": "all", "label": "All companies", "type": "table", "columns": ["name", "tags"] }
+      ]
+    },
+    "people": {
+      "label": "Person",
+      "labelPlural": "People",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true, "searchable": true },
+        "status": {
+          "type": "select",
+          "default": "new",
+          "options": [{ "value": "new" }, { "value": "active" }]
+        },
+        "company": { "type": "relation", "to": "companies" },
+        "tags": { "type": "relations", "to": "tags", "label": "Tags" },
+        "teams": { "type": "relations", "to": "teams" },
+        "mentors": { "type": "relations", "to": "people" }
+      },
+      "views": [
+        {
+          "id": "all",
+          "label": "All people",
+          "type": "table",
+          "columns": ["name", "company", "tags", "teams"],
+          "sort": { "field": "name", "dir": "asc" }
+        },
+        {
+          "id": "tagged",
+          "label": "Tagged",
+          "type": "table",
+          "columns": ["name", "tags"],
+          "filters": [{ "field": "tags", "op": "notEmpty" }]
+        },
+        {
+          "id": "board",
+          "label": "By status",
+          "type": "board",
+          "groupBy": "status",
+          "cardFields": ["tags", "teams"]
+        }
+      ]
+    },
+    "tags": {
+      "label": "Tag",
+      "labelPlural": "Tags",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true, "searchable": true },
+        "people": { "type": "relations", "to": "people", "inverse": "tags" }
+      },
+      "views": [
+        { "id": "all", "label": "All tags", "type": "table", "columns": ["name", "people"] }
+      ]
+    },
+    "teams": {
+      "label": "Team",
+      "labelPlural": "Teams",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true, "searchable": true }
+      },
+      "views": [{ "id": "all", "label": "All teams", "type": "table", "columns": ["name"] }]
+    }
+  }
+}
