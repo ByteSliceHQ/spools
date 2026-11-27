@@ -3,6 +3,7 @@ import { createContext, type ReactNode, useContext } from 'react'
 import { z } from 'zod'
 
 import type { CrmField, FieldType } from '../field-types'
+import { countKey, idsKey } from '../links'
 import { allowedOptions } from '../options'
 import { inputClass } from './kit'
 import { RelationInput, type RelationTitles } from './relation-picker'
@@ -41,6 +42,8 @@ type Scalar = z.output<typeof scalarSchema>
 /** A related record, nested under its relation field: its id and whatever fields came with it. */
 export const relatedSchema = z.looseObject({ id: scalarSchema })
 type Related = z.output<typeof relatedSchema>
+/** The related records nested under a `relations` field. */
+const relatedListSchema = z.array(relatedSchema)
 
 /** What `new Date()` can read: a Date as sent, the ISO text it was written as, or a timestamp. */
 const momentSchema = z.union([z.string(), z.number(), z.date()])
@@ -92,7 +95,9 @@ export const CrmUsersContext = createContext<CrmUserOption[]>([])
 type DisplayProps<T extends FieldType> = {
   field: FieldOf<T>
   /** Never null, undefined or "": empty values are rendered by FieldValue. */
-  value: T extends 'relation' ? Related : Scalar
+  value: T extends 'relation' ? Related : T extends 'relations' ? Related[] : Scalar
+  /** For `relations`: how many related records there are beyond the ones in `value`. */
+  more?: number
   titleFieldOf: (objectKey: string) => string
   users: CrmUserOption[]
   /** Render text only: no links. Set when the value sits inside another link (cards, rows). */
@@ -193,6 +198,36 @@ const fieldDisplay = {
       </Link>
     )
   },
+  relations: ({ field, value: list, titleFieldOf, plain, more = 0 }) => {
+    const chip =
+      'bg-c-hov text-c-fg inline-flex h-5 max-w-40 items-center rounded-md px-1.5 text-xs font-medium'
+
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1 align-middle">
+        {list.map((rel) => {
+          const named = scalarSchema.safeParse(rel[titleFieldOf(field.to)])
+          const title = String(named.success ? named.data : rel.id)
+
+          return plain ? (
+            <span key={String(rel.id)} className={chip}>
+              <span className="truncate">{title}</span>
+            </span>
+          ) : (
+            <Link
+              key={String(rel.id)}
+              to="/$object/$id"
+              params={{ object: field.to, id: String(rel.id) }}
+              className={`${chip} hover:text-c-accent`}
+              onClick={stop}
+            >
+              <span className="truncate">{title}</span>
+            </Link>
+          )
+        })}
+        {more > 0 && <span className="text-c-fg3 text-xs whitespace-nowrap">+{more} more</span>}
+      </span>
+    )
+  },
 } satisfies FieldDisplays
 
 const empty = <span className="text-c-fg3">—</span>
@@ -234,6 +269,28 @@ export function FieldValue({
       </>
     ) : (
       empty
+    )
+  }
+
+  if (field?.type === 'relations') {
+    const related = relatedListSchema.safeParse(value)
+
+    if (!related.success || related.data.length === 0) {
+      return empty
+    }
+
+    const total = z.number().safeParse(record[countKey(fieldKey)])
+    return (
+      <>
+        {showValue(fieldDisplay, 'relations', {
+          field,
+          value: related.data,
+          titleFieldOf,
+          users,
+          plain,
+          more: Math.max(0, (total.success ? total.data : 0) - related.data.length),
+        })}
+      </>
     )
   }
 
@@ -408,6 +465,8 @@ const fieldInput = {
       titles={titles}
     />
   ),
+  // The picker for many records comes with the rest of the interface.
+  relations: () => null,
   user: ({ field, name, value, users }) => {
     const current = asString(value)
     const known = users.some((u) => u.id === current)
@@ -438,7 +497,11 @@ function inputMoment(value: FieldData): string {
 
 /** The form control name for a field. */
 export const inputName = (fieldKey: string, field: CrmField) =>
-  field.type === 'relation' ? `${fieldKey}Id` : fieldKey
+  field.type === 'relation'
+    ? `${fieldKey}Id`
+    : field.type === 'relations'
+      ? idsKey(fieldKey)
+      : fieldKey
 
 /** Uncontrolled form control for a field; the form reads values via FormData. */
 export function FieldInput({

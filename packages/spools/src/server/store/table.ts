@@ -31,8 +31,8 @@ export type Relation = {
   readonly kind: 'one' | 'many'
   readonly table: () => AnyTable
   readonly column: string
-  /** For `one`: what happens to this row when the one it points to is deleted. */
-  readonly onDelete?: 'restrict' | 'set null'
+  /** For `one`: what happens to this row when the one it points to is deleted. `cascade` deletes it too. */
+  readonly onDelete?: 'restrict' | 'set null' | 'cascade'
 }
 
 export type Table<Row = unknown, Insert = unknown> = {

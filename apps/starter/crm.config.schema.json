@@ -671,6 +671,50 @@
                     },
                     "type": {
                       "type": "string",
+                      "const": "relations"
+                    },
+                    "to": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-zA-Z0-9]*$"
+                    },
+                    "inverse": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-zA-Z0-9]*$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "to"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "required": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "searchable": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "encrypted": {
+                      "type": "string",
+                      "enum": [
+                        "storage",
+                        "eq",
+                        "match",
+                        "search"
+                      ]
+                    },
+                    "type": {
+                      "type": "string",
                       "const": "user"
                     }
                   },

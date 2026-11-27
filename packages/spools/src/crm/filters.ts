@@ -86,6 +86,8 @@ export const MAX_CONDITIONS = 10
 export const MAX_INNER = 5
 export const MAX_TOTAL = 40
 const MAX_VALUES = 100
+/** "Has all of" is one test per record named, so it takes fewer. */
+export const MAX_ALL = 10
 /** No field path is longer than this; anything longer isn't one. */
 const MAX_PATH = 120
 
@@ -278,7 +280,7 @@ export function backRelations(objects: Objects, objectKey: string): string[] {
 
 // ── Operators ───────────────────────────────────────────────────────────────
 
-export type Family = 'text' | 'number' | 'date' | 'choice' | 'boolean'
+export type Family = 'text' | 'number' | 'date' | 'choice' | 'boolean' | 'links'
 
 export function familyOf(field: CrmField): Family {
   switch (field.type) {
@@ -294,6 +296,8 @@ export function familyOf(field: CrmField): Family {
       return 'choice'
     case 'boolean':
       return 'boolean'
+    case 'relations':
+      return 'links'
     default:
       return 'text'
   }
@@ -305,6 +309,7 @@ const FAMILY_OPS: Record<Family, Op[]> = {
   date: ['on', 'before', 'after', 'between', 'inLast', 'inNext', 'olderThan', 'empty', 'notEmpty'],
   choice: ['in', 'notIn', 'empty', 'notEmpty'],
   boolean: ['yes', 'no'],
+  links: ['anyOf', 'allOf', 'noneOf', 'empty', 'notEmpty'],
 }
 
 /**
@@ -347,7 +352,9 @@ export function arityOf(op: Op): Arity {
     return 'two'
   }
 
-  return op === 'in' || op === 'notIn' ? 'many' : 'one'
+  return op === 'in' || op === 'notIn' || op === 'anyOf' || op === 'allOf' || op === 'noneOf'
+    ? 'many'
+    : 'one'
 }
 
 const OP_LABELS: Record<Op, string> = {
@@ -729,7 +736,7 @@ function cleanValue(
       .filter((v) => v !== undefined)
       .map((v) => String(v).slice(0, 500))
 
-    const unique = [...new Set(list)]
+    const unique = [...new Set(list)].slice(0, op === 'allOf' ? MAX_ALL : MAX_VALUES)
     return unique.length > 0 ? unique : null
   }
 
@@ -895,7 +902,8 @@ export function cleanSort(objects: Objects, objectKey: string, raw: unknown): So
 
     const { field, dir } = parsed.data
 
-    if (seen.has(field) || !fieldOf(obj, field)) {
+    // A relations field holds many records: there is no one value to order by.
+    if (seen.has(field) || !fieldOf(obj, field) || fieldOf(obj, field)?.type === 'relations') {
       continue
     }
 
@@ -968,7 +976,10 @@ export function relationIds(
       return
     }
 
-    if (target.field.type !== 'relation' || !Array.isArray(cond.value)) {
+    if (
+      (target.field.type !== 'relation' && target.field.type !== 'relations') ||
+      !Array.isArray(cond.value)
+    ) {
       return
     }
 
@@ -1010,7 +1021,7 @@ function valueText(field: CrmField, v: Scalar, ctx: Describe): string {
     return v === ME ? 'Me' : (ctx.users.find((u) => u.id === v)?.name ?? 'Someone')
   }
 
-  if (field.type === 'relation') {
+  if (field.type === 'relation' || field.type === 'relations') {
     return ctx.title(field.to, String(v)) ?? '…'
   }
 
@@ -1081,9 +1092,11 @@ export function describe(
     value = `${texts[0]} day${values[0] === 1 ? '' : 's'}`
   } else if (cond.op === 'olderThan') {
     value = `${texts[0]} day${values[0] === 1 ? '' : 's'} ago`
-  } else if (cond.op === 'in') {
+  } else if (cond.op === 'allOf') {
+    value = texts.join(' and ')
+  } else if (cond.op === 'in' || cond.op === 'anyOf') {
     value = texts.join(' or ')
-  } else if (cond.op === 'notIn') {
+  } else if (cond.op === 'notIn' || cond.op === 'noneOf') {
     value = texts.join(' or ')
   } else if (familyOf(field) === 'text' && texts[0] !== undefined) {
     value = `“${texts[0]}”`

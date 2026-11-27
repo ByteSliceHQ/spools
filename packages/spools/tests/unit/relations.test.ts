@@ -1,5 +1,9 @@
-import { describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, test } from 'bun:test'
 
+import { PGlite } from '@electric-sql/pglite'
+import { Effect, Exit, Layer } from 'effect'
+
+import { pglite } from '../../src/adapters/database/pglite/server'
 import { generatePrisma } from '../../src/crm/codegen'
 import { toPublicConfig } from '../../src/crm/config'
 import { crmConfigSchema } from '../../src/crm/config-schema'
@@ -14,8 +18,12 @@ import {
   relationIds,
 } from '../../src/crm/filters'
 import { compileFilters } from '../../src/server/filter-query'
-import { and, eq, none, oneOf, or, some } from '../../src/server/store/query'
+import { httpLayer } from '../../src/server/runtime/http'
+import { linkSide, linkTables, objectTables } from '../../src/server/store/objects'
+import { and, asc, eq, none, oneOf, or, some } from '../../src/server/store/query'
 import { allTables, schemaSql } from '../../src/server/store/schema-sql'
+import { Store, type StoreShape } from '../../src/server/store/store'
+import { testRuntime } from '../../src/testing/run'
 import example from '../fixtures/example.config.json' with { type: 'json' }
 import { relationsConfig, useRelationsSpool } from '../support/relations-spool'
 
@@ -227,6 +235,123 @@ describe('what is generated', () => {
 
     // The other end is looked up too ("which people have this tag").
     expect(sql).toContain('"people_tags_target_id_idx"')
+  })
+})
+
+describe('the links table, in a store', async () => {
+  const config = crmConfigSchema.parse(relationsConfig)
+  const { people, tags } = objectTables(config)
+  const side = linkSide(config, 'people', 'tags')
+  const inverse = linkSide(config, 'tags', 'people')
+
+  if (!people || !tags || !side || !inverse) {
+    throw new Error('The fixture has no people.tags')
+  }
+
+  const client = await PGlite.create()
+
+  for (const statement of schemaSql(allTables(config))) {
+    await client.exec(statement)
+  }
+
+  const rt = testRuntime(pglite({ client }).layer.pipe(Layer.provide(httpLayer())))
+
+  const use = <A, E>(work: (store: StoreShape) => Effect.Effect<A, E>) =>
+    rt.runPromise(Store.use(work))
+
+  const names = async (table: typeof people, filter: ReturnType<typeof some>) =>
+    (await use((s) => s.find(table, { filter, order: [asc('name')] }))).map((r) => r['name'])
+
+  afterAll(async () => {
+    await rt.dispose()
+    await client.close()
+  })
+
+  test('is described once, from either side', () => {
+    expect(linkTables(config).map((l) => [l.table.name, l.source, l.target])).toEqual([
+      [
+        'companies_tags',
+        { objectKey: 'companies', field: 'tags' },
+        { objectKey: 'tags', field: undefined },
+      ],
+      [
+        'people_tags',
+        { objectKey: 'people', field: 'tags' },
+        { objectKey: 'tags', field: 'people' },
+      ],
+      [
+        'people_teams',
+        { objectKey: 'people', field: 'teams' },
+        { objectKey: 'teams', field: undefined },
+      ],
+      [
+        'people_mentors',
+        { objectKey: 'people', field: 'mentors' },
+        { objectKey: 'people', field: undefined },
+      ],
+    ])
+
+    expect(inverse.link).toBe(side.link)
+    expect([side.relation, side.near, side.far, side.to]).toEqual([
+      'tagsLinks',
+      'sourceId',
+      'targetId',
+      'tags',
+    ])
+
+    expect([inverse.relation, inverse.near, inverse.far, inverse.to]).toEqual([
+      'peopleLinks',
+      'targetId',
+      'sourceId',
+      'people',
+    ])
+
+    expect(linkSide(config, 'people', 'company')).toBeUndefined()
+  })
+
+  test('holds each pair once, answers conditions through its relations, and loses its rows with either record', async () => {
+    const links = side.link.table
+    const ada = await use((s) => s.insert(people, { name: 'Ada' }))
+    const alan = await use((s) => s.insert(people, { name: 'Alan' }))
+    const vip = await use((s) => s.insert(tags, { name: 'VIP' }))
+    const partner = await use((s) => s.insert(tags, { name: 'Partner' }))
+
+    await use((s) => s.insert(links, { sourceId: ada.id, targetId: vip.id }))
+    await use((s) => s.insert(links, { sourceId: ada.id, targetId: partner.id }))
+    await use((s) => s.insert(links, { sourceId: alan.id, targetId: vip.id }))
+
+    const twice = await rt.runPromiseExit(
+      Store.use((s) => s.insert(links, { sourceId: ada.id, targetId: vip.id })),
+    )
+
+    expect(Exit.isFailure(twice)).toBe(true)
+
+    const dangling = await rt.runPromiseExit(
+      Store.use((s) => s.insert(links, { sourceId: ada.id, targetId: crypto.randomUUID() })),
+    )
+
+    expect(Exit.isFailure(dangling)).toBe(true)
+
+    expect(await names(people, some('tagsLinks', oneOf('targetId', [partner.id])))).toEqual(['Ada'])
+    expect(await names(people, none('tagsLinks', oneOf('targetId', [partner.id])))).toEqual([
+      'Alan',
+    ])
+
+    expect(await names(tags, some('peopleLinks', eq('sourceId', alan.id)))).toEqual(['VIP'])
+
+    // A link's own relations lead to the records at its ends.
+    const found = await use((s) =>
+      s.find(links, { where: { sourceId: ada.id }, include: { target: ['name'] } }),
+    )
+
+    expect(
+      found.map((row) => (row as unknown as { target: { name: string } }).target.name).sort(),
+    ).toEqual(['Partner', 'VIP'])
+
+    await use((s) => s.remove(tags, { where: { id: vip.id } }))
+    expect(await use((s) => s.count(links))).toBe(1)
+    await use((s) => s.remove(people, { where: { id: ada.id } }))
+    expect(await use((s) => s.count(links))).toBe(0)
   })
 })
 

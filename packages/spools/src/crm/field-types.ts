@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { Kind } from '../server/store/table'
+import { LINKS_WRITE } from './links'
 
 /**
  * Field types: the single server-side definition of every `type` a field in
@@ -93,6 +94,22 @@ export const fieldSchema = z.discriminatedUnion('type', [
     /** Key of the target object in `objects`. Stored as `<field>Id`. */
     to: ident,
   }),
+  z.object({
+    ...fieldBase,
+    type: z.literal('relations'),
+    /**
+     * Key of the target object in `objects`: this field holds any number of
+     * its records ("a contact has many tags"). Kept as rows of a links table,
+     * read as `<field>` and written as `<field>Ids`.
+     */
+    to: ident,
+    /**
+     * A `relations` field on the target object that this field is the other
+     * side of: both show and change the same links. Set it on one side only;
+     * the side without it owns the links table.
+     */
+    inverse: ident.optional(),
+  }),
   /** A teammate, by the auth provider's user id (record owner, assignee, ...). */
   z.object({ ...fieldBase, type: z.literal('user') }),
 ])
@@ -102,8 +119,12 @@ export type FieldType = CrmField['type']
 type FieldOf<T extends FieldType> = Extract<CrmField, { type: T }>
 
 export type FieldTypeDef<T extends FieldType> = {
-  /** What the column holds (src/server/store/table.ts). A relation's is its record's id. */
-  column: Kind
+  /**
+   * What the column holds (src/server/store/table.ts). A relation's is its
+   * record's id. `null` for a type with no column: its values are rows of
+   * another table (`relations`).
+   */
+  column: Kind | null
   /** Text stored as a string: may be `searchable` and `encrypted`. */
   textLike?: boolean
   /** Parses one submitted value (forms send strings) into what Prisma stores, or null. */
@@ -119,6 +140,49 @@ const plainText = {
   textLike: true,
   input: () => nullable(z.string().trim().max(20_000)),
 } as const
+
+const recordId = z.string().uuid()
+const recordIds = z.array(recordId).max(LINKS_WRITE, `at most ${LINKS_WRITE} at a time`)
+const unique = (ids: string[]) => [...new Set(ids)]
+
+/**
+ * A change to the records a `relations` field holds: `set` replaces them all,
+ * `add` and `remove` change some and leave the rest.
+ */
+export type LinksChange = { set: string[] } | { add: string[]; remove: string[] }
+
+/**
+ * What a `relations` field is written with, under `<field>Ids`: a list of ids
+ * or the ids in one string (a form, a CSV row), which replace the set, or
+ * `{ add, remove }`. Nothing at all (`null`, `""`) is an empty set.
+ */
+const linksInput = z.preprocess(
+  (value) => {
+    if (value === null || value === undefined) {
+      return { set: [] }
+    }
+
+    const text = z.string().safeParse(value)
+
+    if (text.success) {
+      return {
+        set: text.data
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id !== ''),
+      }
+    }
+
+    return Array.isArray(value) ? { set: value } : value
+  },
+  z.union([
+    z.strictObject({ set: recordIds.transform(unique) }),
+    z.strictObject({
+      add: recordIds.default([]).transform(unique),
+      remove: recordIds.default([]).transform(unique),
+    }),
+  ]),
+)
 
 /** Every field type's definition, each typed by its own field's shape. */
 type FieldTypes = { [T in FieldType]: FieldTypeDef<T> }
@@ -159,7 +223,8 @@ export const fieldTypes: FieldTypes = {
     column: 'text',
     input: (field) => nullable(z.enum(field.options.map((o) => o.value))),
   },
-  relation: { column: 'text', input: () => nullable(z.string().uuid()) },
+  relation: { column: 'text', input: () => nullable(recordId) },
+  relations: { column: null, input: () => linksInput },
   user: { column: 'text', input: () => nullable(z.string().trim().max(200)) },
 }
 
@@ -176,7 +241,7 @@ const inputOf = <T extends FieldType>(type: T, field: FieldOf<T>): z.ZodType =>
 /** Zod schema for one field's submitted value, honouring `required`. */
 export function fieldInputSchema(field: CrmField): z.ZodType {
   const schema = inputOf(field.type, field)
-  return field.required && field.type !== 'boolean'
+  return field.required && field.type !== 'boolean' && field.type !== 'relations'
     ? schema.refine((v) => v !== null, 'Required')
     : schema
 }

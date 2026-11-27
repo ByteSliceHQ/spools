@@ -2,7 +2,8 @@
 import { $ } from 'bun'
 /**
  * spools gen: compile crm.config.json into:
- *   - prisma/schema.prisma        (Prisma 8 data contract)
+ *   - prisma/schema.prisma        (Prisma 8 data contract: system tables, one table
+ *                                  per object, one per many-to-many relation)
  *   - crm.config.schema.json      (JSON Schema for editor autocomplete)
  * then run `prisma contract emit`.
  *
@@ -13,6 +14,7 @@ import { z } from 'zod'
 import { generatePrisma } from '../crm/codegen'
 import { crmConfigSchema } from '../crm/config-schema'
 import { adaptersOf, spool } from '../server/spool'
+import { linkTables } from '../server/store/objects'
 import { allTables } from '../server/store/schema-sql'
 
 const root = `${process.cwd()}/`
@@ -37,7 +39,7 @@ for (const what of ['model', 'name'] as const) {
 
   if (clash) {
     console.error(
-      `crm.config.json has an object whose table would be another table's: "${clash[what]}". Rename its key.`,
+      `crm.config.json has an object or a relations field whose table would be another table's: "${clash[what]}". Rename its key.`,
     )
 
     process.exit(1)
@@ -51,9 +53,10 @@ const jsonSchema = z.toJSONSchema(crmConfigSchema, { io: 'input', unrepresentabl
 await Bun.write(`${root}crm.config.schema.json`, `${JSON.stringify(jsonSchema, null, 2)}\n`)
 
 const objects = Object.keys(config.objects).length
+const links = linkTables(config).length
 
 console.log(
-  `✓ prisma/schema.prisma (${objects} objects + ${tables.length - objects} system tables)`,
+  `✓ prisma/schema.prisma (${objects} objects + ${links > 0 ? `${links} links tables + ` : ''}${tables.length - objects - links} system tables)`,
 )
 
 console.log('✓ crm.config.schema.json')

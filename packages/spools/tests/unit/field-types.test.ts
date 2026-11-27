@@ -14,9 +14,14 @@ const parse = (f: Record<string, unknown>, value: unknown) =>
   fieldInputSchema(field(f)).safeParse(value)
 
 describe('field types', () => {
-  test('every type has a column and an input parser', () => {
+  test('every type has a column, or none when its values are rows of a links table, and an input parser', () => {
     for (const [type, def] of Object.entries(fieldTypes)) {
-      expect(def.column.length, type).toBeGreaterThan(0)
+      if (type === 'relations') {
+        expect(def.column, type).toBeNull()
+      } else {
+        expect(def.column?.length ?? 0, type).toBeGreaterThan(0)
+      }
+
       expect(typeof def.input, type).toBe('function')
     }
   })
@@ -39,6 +44,27 @@ describe('field types', () => {
     expect(parse({ type: 'date' }, '11/11/2026').success).toBe(false)
     expect(parse({ type: 'relation', to: 'companies' }, 'not-a-uuid').success).toBe(false)
     expect(parse({ type: 'select', options: [{ value: 'a' }] }, 'b').success).toBe(false)
+  })
+
+  test('a relations field takes a set of ids, the ids in one string, or what to add and remove', () => {
+    const a = '11111111-1111-4111-8111-111111111111'
+    const b = '22222222-2222-4222-8222-222222222222'
+    const tags = { type: 'relations', to: 'tags' }
+
+    expect(parse(tags, [a, b, a]).data).toEqual({ set: [a, b] })
+    expect(parse(tags, `${a}, ${b}`).data).toEqual({ set: [a, b] })
+    expect(parse(tags, '').data).toEqual({ set: [] })
+    expect(parse(tags, null).data).toEqual({ set: [] })
+    expect(parse(tags, { add: [a] }).data).toEqual({ add: [a], remove: [] })
+    expect(parse(tags, { remove: [a, a] }).data).toEqual({ add: [], remove: [a] })
+    expect(parse(tags, ['nope']).success).toBe(false)
+    expect(parse(tags, { add: [a], set: [b] }).success).toBe(false)
+    expect(
+      parse(
+        tags,
+        Array.from({ length: 101 }, () => a),
+      ).success,
+    ).toBe(false)
   })
 
   test('url fields only accept http(s)', () => {

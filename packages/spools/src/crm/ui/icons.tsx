@@ -16,6 +16,7 @@ import {
   Link2,
   ListTodo,
   type LucideIcon,
+  Network,
   Phone,
   Tag,
   Ticket,
@@ -42,6 +43,7 @@ export const fieldTypeIcons = {
   datetime: CalendarClock,
   select: Tag,
   relation: Waypoints,
+  relations: Network,
   user: User,
 } satisfies { [T in FieldType]: LucideIcon }
 
