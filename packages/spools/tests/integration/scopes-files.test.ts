@@ -232,3 +232,71 @@ test('a listing says which folders its reader can change, for the file browser t
     await installWorld()
   }
 })
+
+test('a file past the end of a folder’s listing is still found in it, and still only through the folder it is in', async () => {
+  const north = await as('nora', files.recordFolder('companies', ids.north.company))
+  const south = await as('sam', files.recordFolder('companies', ids.south.company))
+
+  const add = async (who: 'nora' | 'sam', folderId: string, name: string) => {
+    const ticket = await as(
+      who,
+      files.startUpload({ folderId, name, sizeBytes: 5, sha256: 'a'.repeat(64) }, people[who]),
+    )
+
+    await drive.handle(ticket.url, {
+      method: 'PUT',
+      body: new TextEncoder().encode('hello').buffer,
+    })
+
+    return (await as(who, files.finishUpload(ticket.id, people[who])))?.id ?? ''
+  }
+
+  const hers = await add('nora', north.folderId, 'Alder thousandth.txt')
+  const his = await add('sam', south.folderId, 'Birch thousandth.txt')
+
+  // A file store whose listing of a folder stops short of these files, and says it did:
+  // what a folder of more than a thousand files answers about the ones after the thousandth.
+  const cutShort = Layer.effect(
+    FileStore,
+    Effect.gen(function* () {
+      const real = yield* FileStore
+
+      return FileStore.of({
+        ...real,
+        list: (folderId) =>
+          Effect.map(real.list(folderId), (inside) => ({
+            ...inside,
+            files: inside.files.filter((file) => file.id !== hers && file.id !== his),
+            truncated: true,
+          })),
+      })
+    }),
+  ).pipe(
+    Layer.provide(spool().files?.layer ?? FileStore.none),
+    Layer.provide(spool().database.layer),
+    Layer.provide(httpLayer((url, init) => drive.handle(url, init))),
+  )
+
+  try {
+    await installWorld({ files: cutShort })
+
+    // In her record's folder, though the listing never reached it.
+    expect((await as('nora', files.openFile(hers, north.folderId))).kind).toBe('link')
+    await as('nora', files.changeFile(hers, { name: 'Alder renamed.txt' }, north.folderId))
+
+    // His file is not in her folder, whatever the listing leaves out: asked for there, it isn't there.
+    await expect(as('nora', files.openFile(his, north.folderId))).rejects.toThrow('Not found')
+    await expect(as('nora', files.deleteFile(his, north.folderId))).rejects.toThrow('Not found')
+
+    // Nor is a file that doesn't exist.
+    await expect(as('nora', files.openFile(crypto.randomUUID(), north.folderId))).rejects.toThrow(
+      'Not found',
+    )
+
+    expect((await as('sam', files.openFile(his, south.folderId))).kind).toBe('link')
+  } finally {
+    await installWorld()
+    await as('nora', files.deleteFile(hers, north.folderId))
+    await as('sam', files.deleteFile(his, south.folderId))
+  }
+})

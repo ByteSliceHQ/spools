@@ -128,7 +128,10 @@ function build(cfg: CrmConfig): Record<string, ObjectTable> {
         table: () => target.table,
         column,
         // Optional relations are cleared when the target is deleted; required ones block the delete.
-        onDelete: field.required ? 'restrict' : 'set null',
+        // So does the relation a scoped object keeps its scope in, required or not: clearing it
+        // would leave every record of that scope with none (the guard says so first: scope.ts).
+        onDelete:
+          field.required || cfg.scopes?.objects[objectKey] === key ? 'restrict' : 'set null',
       }
 
       target.relations[backRelation(objectKey, key)] = {

@@ -6,7 +6,7 @@ import { fireAutomations } from './actions'
 import type { CrmRecord, CrmValue, RecordInput } from './records'
 import * as records from './records'
 import { fromHook } from './runtime/errors'
-import { mustWrite } from './scopes'
+import { mustBeScope, mustWrite } from './scopes'
 import { getObject, spool } from './spool'
 import { Store } from './store/store'
 
@@ -106,6 +106,8 @@ export const createRecord = Effect.fn('service.createRecord')(function* (
     (yield* fromHook('beforeCreate', () => hooks().beforeCreate?.({ objectKey, values, actor }))) ??
     values
 
+  // After the hook, which may have said the scope itself.
+  yield* mustBeScope(objectKey, next)
   const store = yield* Store
 
   // The record and the line that says who made it: both, or neither.
@@ -192,6 +194,7 @@ export const updateRecord = Effect.fn('service.updateRecord')(function* (
       hooks().beforeUpdate?.({ objectKey, id, values, previous: before, actor }),
     )) ?? values
 
+  yield* mustBeScope(objectKey, next, before)
   const store = yield* Store
 
   const changed = yield* store.transaction(

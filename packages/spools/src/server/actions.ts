@@ -6,7 +6,7 @@ import { addActivity } from './records'
 import { Agents } from './runtime/agents'
 import { runServer } from './runtime/app'
 import { fromHook, Invalid } from './runtime/errors'
-import { grantFor } from './scopes'
+import { grantFor, mustWrite } from './scopes'
 import { crmConfig, spool } from './spool'
 
 export type { RunContext, RunResult } from '../crm/extensions'
@@ -107,7 +107,11 @@ function resolve(
   return { handler, name: target.slice(sep + 1) }
 }
 
-/** Run a target. Its handler's failure is an `ExtensionError` with the handler's own words. */
+/**
+ * Run a target, for whoever may change the record it is run for (`mustWrite`): an action
+ * someone pressed, an automation their change set off, the app's own call. Its handler's
+ * failure is an `ExtensionError` with the handler's own words.
+ */
 export const runTarget = Effect.fn('actions.runTarget')(function* (
   target: string,
   ctx: RunContext,
@@ -117,6 +121,11 @@ export const runTarget = Effect.fn('actions.runTarget')(function* (
   if ('problem' in found) {
     return yield* new Invalid({ message: found.problem })
   }
+
+  // A target changes things: it starts a workflow, sends email, runs the app's own code. So it
+  // runs only for someone who may change the record, and is refused before anything is started,
+  // not when the first write comes back refused with the work already under way.
+  yield* mustWrite(ctx.objectKey, ctx.record)
 
   const { handler, name } = found
   return yield* fromHook(`run target ${target}`, () => handler.run(name, ctx))

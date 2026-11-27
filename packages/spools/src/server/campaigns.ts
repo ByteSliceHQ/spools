@@ -20,7 +20,7 @@ import { fromHook, Invalid, messageOf, type StaffError } from './runtime/errors'
 import { asSystem, scopeOnly, scopesOn, withAccess } from './scopes'
 import { Sequences } from './sequences'
 import { getObject, spool } from './spool'
-import { asc, lte } from './store/query'
+import { and, asc, lte, notNull } from './store/query'
 import { Store } from './store/store'
 import { SequenceRun } from './store/tables'
 
@@ -65,6 +65,9 @@ const HOLD_MS = 10 * 60_000
 const MAX_ATTEMPTS = 5
 /** Runs taken per query. A tick keeps going until nothing is due or its time is up. */
 const BATCH = 25
+
+/** How many held runs a tick counts before it stops counting: the warning needs "some", not a census. */
+const HELD_COUNTED = 1000
 
 /**
  * Send through the app's own transport (`email.send` in src/app/extensions.ts)
@@ -365,7 +368,10 @@ export type TickResult = {
   failed: number
   /** Time ran out with emails still due: the next tick carries on. */
   more: boolean
-  /** Runs left alone because they have no record scope yet (`spools scopes backfill`). */
+  /**
+   * Runs left alone because they have no record scope yet (`spools scopes backfill`).
+   * Counted up to a thousand: at that many it means "a thousand or more".
+   */
   held?: number
 }
 
@@ -385,16 +391,41 @@ export const tick = Effect.fn('campaigns.tick')(function* (
   }
 
   const store = yield* Store
+  const scoped = scopesOn()
+
+  // A run from before scopes were turned on has no scope until the backfill gives it one. It is
+  // held, not sent as the system: nothing says whose record it is for. Held runs are counted
+  // here, on their own and up to a limit, and are never part of a batch below: however many
+  // there are, and however old, they take no place from a run that can be sent.
+  if (scoped) {
+    const held = yield* asSystem(
+      store.find(SequenceRun, {
+        where: { status: 'active', scope: null },
+        filter: lte('dueAt', opts.now ?? new Date()),
+        select: ['id'],
+        limit: HELD_COUNTED,
+      }),
+    )
+
+    if (held.length > 0) {
+      result.held = held.length
+
+      yield* Effect.logWarning(
+        `[sequences] ${held.length === HELD_COUNTED ? `${HELD_COUNTED} or more` : held.length} run(s) have no record scope and were not sent. Run "spools scopes backfill".`,
+      )
+    }
+  }
 
   for (;;) {
     const now = opts.now ?? new Date()
+    const isDue = lte('dueAt', now)
 
     // Nobody is signed in. What is due is found as the system, across every scope;
     // each run is then dealt with in its own record's scope and no other.
     const due = yield* asSystem(
       store.find(SequenceRun, {
         where: { status: 'active' },
-        filter: lte('dueAt', now),
+        filter: scoped ? and(isDue, notNull('scope')) : isDue,
         order: [asc('dueAt')],
         limit: BATCH,
       }),
@@ -412,13 +443,6 @@ export const tick = Effect.fn('campaigns.tick')(function* (
         return result
       }
 
-      // A run from before scopes were turned on has no scope until the backfill gives it one.
-      // It is held, not sent as the system: nothing says whose record it is for.
-      if (scopesOn() && run.scope === null) {
-        result.held = (result.held ?? 0) + 1
-        continue
-      }
-
       const outcome = yield* withAccess(scopeOnly(run.scope))(take(run, now))
 
       if (!outcome) {
@@ -431,12 +455,6 @@ export const tick = Effect.fn('campaigns.tick')(function* (
 
     // Every run in the batch went to another tick: it is dealing with them.
     if (took === 0) {
-      if (result.held) {
-        yield* Effect.logWarning(
-          `[sequences] ${result.held} run(s) have no record scope and were not sent. Run "spools scopes backfill".`,
-        )
-      }
-
       return result
     }
   }

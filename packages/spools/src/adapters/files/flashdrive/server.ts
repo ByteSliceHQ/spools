@@ -20,6 +20,7 @@ import {
   StoreFile,
   StoreFolder,
   StoreLink,
+  StorePlace,
   StoreRevision,
   StoreTransfer,
   StoreUpload,
@@ -275,6 +276,15 @@ const layer = Layer.effect(
         }
 
         return ids
+      }),
+
+      fileFolder: Effect.fn('FlashDrive.fileFolder')(function* (id) {
+        const found = yield* api.request(`${yield* api.base}/documents/${id}`, StorePlace)
+
+        // A file at the top level has `folder_id: null`; an answer without the key says nothing.
+        return found && found.folder_id !== undefined
+          ? found.folder_id
+          : yield* fail('The file store did not describe that file.')
       }),
 
       changeFile: Effect.fn('FlashDrive.changeFile')(function* (id, change) {

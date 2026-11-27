@@ -76,12 +76,16 @@ they hold.
   from a resolver of your own ([Extending](extending.md#scopes-who-holds-what)). Someone on
   the access list who holds nothing sees no scoped record.
 - **The scope's value** is what the field holds: a select option's `value`, the text, or the
-  related record's id. With Clerk organizations it is the organization's slug.
+  related record's id. With Clerk organizations it is the organization's id (`org_...`). It
+  is never `*`, and for a select field it is one of the options. When the field is a
+  relation, the record it points at can't be deleted while any record takes its scope from
+  it.
 - **Working in a scope.** Someone who holds several works in one at a time, or in all of
   theirs at once, from the switcher at the top of the sidebar. A new record takes the scope
   being worked in; working in all of them, it has to say.
 - **A relation between two scoped objects stays inside one scope.** A record can't move to
-  another scope while scoped records point at it.
+  another scope while scoped records point at it. A shared record can't be deleted while
+  records of a scope its deleter can't change point at it.
 - **Turning it on for a database that has records:** give every record of a scoped object
   its scope, run `bun run crm:gen` and `bun run db:push`, then `bun run db:scopes` so the
   timeline, tasks, notes, favourites, folders and sequence runs take their record's scope.

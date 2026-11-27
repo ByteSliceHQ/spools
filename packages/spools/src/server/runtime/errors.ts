@@ -54,6 +54,17 @@ export class DatabaseError extends Schema.TaggedError<DatabaseError>()('Database
 }
 
 /**
+ * The record-scope guard refused a call (src/server/store/scope.ts): a record out
+ * of reach, a change someone may only look at, work with nobody said. The message
+ * says which, in words for staff. It is its own failure, never a `DatabaseError`,
+ * so code that catches a database failure it expects (a unique index keeping one
+ * row) doesn't take a refusal for one.
+ */
+export class ScopeRefused extends Schema.TaggedError<ScopeRefused>()('ScopeRefused', {
+  message: Schema.String,
+}) {}
+
+/**
  * The auth provider (Clerk, the app's own sign-in) refused or failed. Staff see
  * the provider's own words. `answer`: it said no, and would again. `setup`: it
  * isn't set up for what was asked. `account`: this person's account needs
@@ -158,6 +169,7 @@ export type StaffError =
   | Invalid
   | NotConfigured
   | DatabaseError
+  | ScopeRefused
   | AuthError
   | Timeout
   | ExtensionError

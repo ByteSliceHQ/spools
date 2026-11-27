@@ -60,6 +60,8 @@ TEST_STORE=postgres DATABASE_URL=postgresql://localhost/spools_test bun run test
 TEST_STORE=prisma DATABASE_URL=postgresql://localhost/spools_test bun run test:integration
 ```
 
+The record-scope tests use a second database beside that one (`spools_test_scopes`), which they make, push their own schema to and empty themselves. See [Database](docs/database.md#tests).
+
 ### Optional tools
 
 [Flox](https://flox.dev) provides the repository's configured development environment:

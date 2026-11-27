@@ -1,7 +1,7 @@
 import { Effect, Predicate } from 'effect'
 
 import { EVERY_SCOPE } from '../crm/scopes'
-import type { DatabaseError, Timeout } from './runtime/errors'
+import type { DatabaseError, ScopeRefused, Timeout } from './runtime/errors'
 import { crmConfig, objectTable } from './spool'
 import { and, asc, gt, isNull, oneOf } from './store/query'
 import { Store } from './store/store'
@@ -33,13 +33,13 @@ import {
 /** What a hanging row needs read of it. */
 type Hanging = { id: string; objectKey: string | null; recordId: string | null }
 
-type Reads<A> = Effect.Effect<A, DatabaseError | Timeout>
+type Reads<A> = Effect.Effect<A, DatabaseError | Timeout | ScopeRefused>
 
 /** One hanging table: a page of its rows that have no scope, and how to give rows one. */
 type Source = {
   name: string
   page: (after: string) => Reads<Hanging[]>
-  stamp: (ids: string[], scope: string) => Effect.Effect<number, DatabaseError>
+  stamp: (ids: string[], scope: string) => Effect.Effect<number, DatabaseError | ScopeRefused>
 }
 
 const PAGE = 500
@@ -51,7 +51,12 @@ const unscoped = (after: string) => ({
   limit: PAGE,
 })
 
-const ids = (rows: string[]) => ({ filter: oneOf('id', rows) })
+/**
+ * These rows, while they still have no scope. The check is part of the change
+ * (one `Store.update`): a row given a scope since its page was read, by a record
+ * that moved or by another run of this, keeps the scope it was given.
+ */
+const ids = (rows: string[]) => ({ filter: and(oneOf('id', rows), isNull('scope')) })
 
 export type Backfilled = { table: string; stamped: number; left: number }
 

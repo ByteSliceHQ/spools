@@ -15,6 +15,7 @@ import {
   type ScopeSession,
   SYSTEM_ACCESS,
 } from '../crm/scopes'
+import type { RecordInput } from './records'
 import { type BoundRecord, CurrentAccess, CurrentPerson, CurrentRecord } from './runtime/access'
 import * as config from './runtime/config'
 import {
@@ -164,6 +165,45 @@ export const mustWrite = Effect.fn('scopes.mustWrite')(function* (
   return writes
     ? undefined
     : yield* new Invalid({ message: 'You can look at these records, but not change them.' })
+})
+
+/**
+ * Refuses a scope for a record that the resolver doesn't list: a mistyped key
+ * would make a record that only a role reaching every scope ever sees. The
+ * store has already refused "*" and, for a select field, a value that isn't an
+ * option (store/scope.ts); this is for a scope kept as text or as a relation,
+ * which only the resolver can name. A resolver that lists no scopes (an app's
+ * own with no `list`) is not asked: there is nothing to check against. Nor is
+ * it asked about the scope a record already has (`record`): a record filed
+ * under a scope that has since gone can still be changed, and moved out of it.
+ */
+export const mustBeScope = Effect.fn('scopes.mustBeScope')(function* (
+  objectKey: string,
+  values: RecordInput,
+  record?: CrmRecord,
+) {
+  const marker =
+    scopesOn() && Object.hasOwn(crmConfig().objects, objectKey)
+      ? objectTable(objectKey).scope
+      : undefined
+
+  const scope = marker?.kind === 'own' ? values[marker.column] : undefined
+
+  if (
+    !Predicate.isString(scope) ||
+    scope === '' ||
+    (record && scope === recordScope(objectKey, record))
+  ) {
+    return undefined
+  }
+
+  const known = yield* (yield* Scopes).list
+
+  return known.length === 0 || known.some((each) => each.key === scope)
+    ? undefined
+    : yield* new Invalid({
+        message: `There is no ${(crmConfig().scopes?.label ?? 'scope').toLowerCase()} "${scope}".`,
+      })
 })
 
 /** Whether this Spool has scopes at all (`scopes` in crm.config.json). */

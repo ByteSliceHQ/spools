@@ -2,10 +2,10 @@ import { type Cause, Context, Effect, Exit, Layer } from 'effect'
 import type { HttpClient } from 'effect/http'
 
 import type { Adapter } from '../runtime/adapter'
-import { DatabaseError, type Timeout } from '../runtime/errors'
+import { DatabaseError, type ScopeRefused, type Timeout } from '../runtime/errors'
 import { policies, withPolicy } from '../runtime/policies'
 import type { Predicate, Query, Scalar, Which } from './query'
-import { type AnyQuery, type AnyWhich, guard, type RawStore } from './scope'
+import { type AnyQuery, type AnyWhich, type Guarded, guard, type RawStore } from './scope'
 import type { AnyTable, Table } from './table'
 
 /**
@@ -28,8 +28,17 @@ import type { AnyTable, Table } from './table'
 /** What a query brings back: the columns it selected. A table whose columns aren't known until run time keeps its whole row type. */
 type Found<Row, S extends keyof Row> = string extends keyof Row ? Row : Pick<Row, S>
 
-type Read<A> = Effect.Effect<A, DatabaseError | Timeout>
-type Write<A> = Effect.Effect<A, DatabaseError>
+/**
+ * What a call to the store can fail with: the database's own failure, a read's
+ * time limit, and the record-scope guard refusing it (scope.ts). A refusal is
+ * its own failure, so catching `DatabaseError` for a unique index never takes
+ * one for a row that was already there.
+ */
+type Read<A> = Effect.Effect<A, DatabaseError | Timeout | ScopeRefused>
+type Write<A> = Effect.Effect<A, DatabaseError | ScopeRefused>
+/** The same, underneath the guard, where nothing is refused. */
+type BackendRead<A> = Effect.Effect<A, DatabaseError | Timeout>
+type BackendWrite<A> = Effect.Effect<A, DatabaseError>
 
 /** A value of a column and how many rows hold it. */
 export type ValueCount = { value: string; count: number }
@@ -317,7 +326,7 @@ const asDatabaseError = (cause: unknown): DatabaseError =>
   cause instanceof DatabaseError ? cause : new DatabaseError({ cause })
 
 /** A read: the time limit from policies.ts, a typed failure and a span. */
-const read = <A, E>(name: string, work: Effect.Effect<A, E>): Read<A> =>
+const read = <A, E>(name: string, work: Effect.Effect<A, E>): BackendRead<A> =>
   work.pipe(
     Effect.mapError(asDatabaseError),
     withPolicy(policies.databaseRead),
@@ -325,7 +334,7 @@ const read = <A, E>(name: string, work: Effect.Effect<A, E>): Read<A> =>
   )
 
 /** A write: a typed failure and a span, and no time limit (giving up on a write leaves its outcome unknown). */
-const write = <A, E>(name: string, work: Effect.Effect<A, E>): Write<A> =>
+const write = <A, E>(name: string, work: Effect.Effect<A, E>): BackendWrite<A> =>
   work.pipe(Effect.mapError(asDatabaseError), Effect.withSpan(`Store.${name}`))
 
 // A write with no condition would reach every row. Nothing in the CRM means that.
@@ -338,7 +347,7 @@ const required = (which: AnyWhich, verb: string): Effect.Effect<Predicate> => {
 
 /** A store over a backend: time limits, typed failures and spans, the same for every database. */
 export function makeStore<BackendError>(backend: Backend<BackendError>): StoreShape {
-  const find = (table: AnyTable, query: AnyQuery = {}): Read<RawRow[]> =>
+  const find = (table: AnyTable, query: AnyQuery = {}): BackendRead<RawRow[]> =>
     read(
       'find',
       Effect.suspend(() =>
@@ -355,7 +364,7 @@ export function makeStore<BackendError>(backend: Backend<BackendError>): StoreSh
 
   const shape: RawStore = {
     find,
-    first: (table: AnyTable, query: AnyQuery): Read<RawRow | null> =>
+    first: (table: AnyTable, query: AnyQuery): BackendRead<RawRow | null> =>
       Effect.map(find(table, { ...query, limit: 1 }), (rows) => rows[0] ?? null),
     count: (table: AnyTable, which: AnyWhich = {}) =>
       read(
@@ -416,7 +425,7 @@ export function makeStore<BackendError>(backend: Backend<BackendError>): StoreSh
   // The guard gives a narrowed person's write a condition of its own (their scopes), which
   // would satisfy `required` underneath. So the caller's own condition is asked for here, above
   // the guard: a write that names no rows is refused whoever makes it.
-  const safe: RawStore = {
+  const safe: Guarded = {
     ...kept,
     update: (table, which, changes) =>
       Effect.flatMap(required(which, 'change'), () => kept.update(table, which, changes)),

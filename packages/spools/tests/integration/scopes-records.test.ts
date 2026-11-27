@@ -67,8 +67,10 @@ test('the world holds both branches, as the server itself sees it', async () => 
     companies: 4,
     contacts: 3,
     deals: 3,
+    depots: 0,
     kits: 0,
     products: 1,
+    regions: 0,
   })
 })
 
@@ -116,16 +118,20 @@ test('count: totals are of the scope, on every path that counts', async () => {
     companies: 2,
     contacts: 2,
     deals: 1,
+    depots: 0,
     kits: 0,
     products: 1,
+    regions: 0,
   })
 
   expect(await as('otto', records.countRecords())).toEqual({
     companies: 0,
     contacts: 0,
     deals: 0,
+    depots: 0,
     kits: 0,
     products: 1,
+    regions: 0,
   })
 })
 

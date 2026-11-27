@@ -2,11 +2,12 @@ import { describe, expect, test } from 'bun:test'
 
 import { Effect, Layer } from 'effect'
 
-import { toGrants } from '../../src/adapters/auth/clerk/server'
+import { everyScopeUnnamed, toGrants } from '../../src/adapters/auth/clerk/server'
 import { crmConfigSchema } from '../../src/crm/config-schema'
 import { createMemory } from '../../src/crm/memory'
 import {
   accessFrom,
+  grantNow,
   NO_ACCESS,
   type ScopeAccess,
   scopeColumnOf,
@@ -40,7 +41,7 @@ describe('scopes in crm.config.json', () => {
     expect(crmConfigSchema.parse(scoped).scopes).toEqual({
       label: 'Branch',
       labelPlural: 'Branches',
-      objects: { companies: 'branch', contacts: 'branch', deals: 'branch' },
+      objects: { companies: 'branch', contacts: 'branch', deals: 'branch', depots: 'region' },
       roles: {
         member: { write: true, all: false },
         viewer: { write: false, all: false },
@@ -373,18 +374,30 @@ describe('what the browser keeps when the scope changes', () => {
 })
 
 describe('Clerk organizations as record scopes', () => {
-  test('a membership is the organization’s slug and the role without Clerk’s prefix', () => {
+  test('a membership is the organization’s id and the role without Clerk’s prefix', () => {
     expect(
-      toGrants([
-        { role: 'org:member', organization: { id: 'org_1', slug: 'north', name: 'North' } },
-        { role: 'org:admin', organization: { id: 'org_2', slug: null, name: 'Head office' } },
-        { role: 'viewer', organization: { id: 'org_3', slug: 'south', name: 'South' } },
-      ]),
+      toGrants(
+        [
+          { role: 'org:member', organization: { id: 'org_1', slug: 'north', name: 'North' } },
+          { role: 'org:admin', organization: { id: 'org_2', slug: null, name: 'Head office' } },
+          { role: 'viewer', organization: { id: 'org_3', slug: 'south', name: 'South' } },
+        ],
+        { roles: [], from: [] },
+      ),
     ).toEqual([
-      { scope: 'north', role: 'member' },
+      { scope: 'org_1', role: 'member' },
       { scope: 'org_2', role: 'admin' },
-      { scope: 'south', role: 'viewer' },
+      { scope: 'org_3', role: 'viewer' },
     ])
+  })
+
+  test('a slug is never the scope: renaming an organization to another’s slug takes nothing over', () => {
+    // Whoever administers org_9 has renamed its slug to the one North's records were known by.
+    const renamed = [
+      { role: 'org:member', organization: { id: 'org_9', slug: 'north', name: 'North' } },
+    ]
+
+    expect(toGrants(renamed, { roles: [], from: [] })).toEqual([{ scope: 'org_9', role: 'member' }])
   })
 })
 
@@ -408,15 +421,90 @@ describe('Clerk: roles that reach every scope', () => {
   ]
 
   test('count only from the organizations named', () => {
-    const only = { roles: ['headOffice'], from: ['head-office'] }
+    const only = { roles: ['headOffice'], from: ['org_1'] }
 
     expect(toGrants(memberships, only)).toEqual([
-      { scope: 'head-office', role: 'headOffice' },
-      { scope: 'north', role: 'member' },
+      { scope: 'org_1', role: 'headOffice' },
+      { scope: 'org_2', role: 'member' },
     ])
 
     // With the made-up organization alone, the role gives nothing.
-    expect(toGrants(memberships.slice(1), only)).toEqual([{ scope: 'north', role: 'member' }])
+    expect(toGrants(memberships.slice(1), only)).toEqual([{ scope: 'org_2', role: 'member' }])
+  })
+
+  test('with no organization named, no membership gives one: Clerk’s own admin of any organization is not head office', () => {
+    // The config's role that reaches every scope is called "admin", as Clerk's built-in role is.
+    const roles = { admin: { write: true, all: true }, member: { write: true, all: false } }
+
+    const anyAdmin = [
+      { role: 'org:admin', organization: { id: 'org_7', slug: 'north', name: 'North' } },
+      { role: 'org:member', organization: { id: 'org_8', slug: 'south', name: 'South' } },
+    ]
+
+    const grants = toGrants(anyAdmin, { roles: ['admin'], from: [] })
+    expect(grants).toEqual([{ scope: 'org_8', role: 'member' }])
+
+    expect(accessFrom(roles, grants, null)).toEqual({
+      read: ['org_8'],
+      write: ['org_8'],
+      active: null,
+    })
+
+    // And the same when the organizations are named and this isn't one of them.
+    expect(toGrants(anyAdmin, { roles: ['admin'], from: ['org_1'] })).toEqual(grants)
+  })
+
+  test('the server says at start-up when nobody can hold a role that reaches every scope', () => {
+    expect(everyScopeUnnamed(['headOffice'], [])).toContain('nobody reaches every scope')
+    expect(everyScopeUnnamed(['headOffice'], [])).toContain('"headOffice"')
+    expect(everyScopeUnnamed(['headOffice'], ['org_1'])).toBeNull()
+    // A config with no such role has nothing to name.
+    expect(everyScopeUnnamed([], [])).toBeNull()
+  })
+})
+
+describe('a grant, when it is used', () => {
+  const north = { read: ['north'], write: ['north'], active: 'north' } as const
+
+  test('reaches no more than it stated and no more than its person holds now', () => {
+    // Held as before: as stated.
+    expect(grantNow(north, { read: ['north', 'south'], write: ['north'], active: null })).toEqual(
+      north,
+    )
+
+    // Head office holds everything: still only what the grant stated.
+    expect(grantNow(north, { read: 'all', write: 'all', active: null })).toEqual(north)
+
+    // Now read-only there: it reads, and writes nothing.
+    expect(grantNow(north, { read: ['north'], write: [], active: 'north' })).toEqual({
+      read: ['north'],
+      write: [],
+      active: 'north',
+    })
+  })
+
+  test('is no grant once the scope it was for is gone', () => {
+    expect(grantNow(north, { read: ['south'], write: ['south'], active: 'south' })).toBeNull()
+    expect(grantNow(north, { read: [], write: [], active: null })).toBeNull()
+
+    // A grant for every scope, for someone who now holds none.
+    expect(
+      grantNow({ read: 'all', write: 'all', active: null }, { read: [], write: [], active: null }),
+    ).toBeNull()
+  })
+
+  test('a grant that never read a scope, for a shared object’s record, stands as it was', () => {
+    const shared = { read: [], write: [], active: null }
+    expect(grantNow(shared, { read: ['north'], write: ['north'], active: 'north' })).toEqual(shared)
+  })
+
+  test('a grant for every scope is cut down to what its person holds', () => {
+    expect(
+      grantNow(
+        { read: 'all', write: 'all', active: null },
+        { read: ['north', 'south'], write: ['north'], active: null },
+      ),
+    ).toEqual({ read: ['north', 'south'], write: ['north'], active: null })
   })
 })
 

@@ -27,9 +27,11 @@ In a Spool with [record scopes](security.md#record-scopes), an enrolment (a row 
   and writes on that record's timeline.
 - **Held runs.** A run with no scope is not sent. That is a run enrolled before scopes were
   turned on: nothing says whose record it is for, and sending it as the system would be a
-  way round the scopes. The log says how many were held, each tick. Run `bun run db:scopes`
-  (`spools scopes backfill`) and they go out at the next tick; a run whose record is gone,
-  or has no scope itself, stays held.
+  way round the scopes. Held runs are left out of what a tick takes, so however many there
+  are, and however long they have been due, they never stand in the way of a run that can be
+  sent. The log says how many were held, each tick (counted up to a thousand). Run
+  `bun run db:scopes` (`spools scopes backfill`) and they go out at the next tick; a run
+  whose record is gone, or has no scope itself, stays held.
 - **A record that moves scope** takes its runs with it.
 - Suppression (unsubscribes, bounces, complaints) is by address and is the whole
   business's, whatever the scope: an address that unsubscribed is never emailed again.

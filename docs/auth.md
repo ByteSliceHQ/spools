@@ -116,24 +116,37 @@ each person holds.
 
 - **Clerk organizations.** `clerk({ scopes: 'organizations' })`: a person holds the scope of
   each organization they belong to, with their role in it. The scope is the organization's
-  slug (so `north` for records whose scope field holds `north`) and the role is the
-  membership's without Clerk's prefix: `org:member` is `member` in `scopes.roles`. Give head
-  office a role marked `all`. The organization active in the session is the scope the person
-  works in; switching with Clerk's own switcher switches the CRM. Not run against a live
-  Clerk account yet: the mapping is tested, the calls to Clerk are not.
+  id (so `org_2abc...` is what a record's scope field holds; for a `select` field, make each
+  option's `value` an organization's id and its `label` the name people know it by) and the
+  role is the membership's without Clerk's prefix: `org:member` is `member` in
+  `scopes.roles`. The organization active in the session is the scope the person works in;
+  switching with Clerk's own switcher switches the CRM. Every membership and every
+  organization is read, however many there are. Not run against a live Clerk account yet:
+  the mapping and the paging are tested against a stand-in for Clerk's API.
+
   **Say where head office is, and turn organization creation off.** A role marked `all`
-  reaches every scope, and in Clerk whoever creates an organization is its admin and can give
-  anyone any role in it. So name the organizations such a role counts from, and in the Clerk
-  dashboard don't let users create organizations:
+  reaches every scope. In Clerk, whoever creates an organization is its admin and can give
+  anyone any role in it, and Clerk's built-in `org:admin` is held by whoever runs any
+  organization at all. So such a role counts only from the organizations you name, by id,
+  and in the Clerk dashboard users should not be able to create organizations:
 
   ```ts
-  auth: clerk({ scopes: 'organizations', everyScopeFrom: ['head-office'] }),
+  auth: clerk({ scopes: 'organizations', everyScopeFrom: ['org_2abcHeadOffice'] }),
   ```
 
-  A role marked `all` held in any other organization then gives nothing. Without
-  `everyScopeFrom` it counts from every organization, which is only safe while nobody but you
-  can create one. An ordinary role in a made-up organization gives that organization's slug
-  as a scope; keep slugs you use as scopes out of reach the same way.
+  A role marked `all` held in any other organization gives nothing: not every scope, and not
+  that organization's own either. Without `everyScopeFrom` no membership gives such a role,
+  so nobody reaches every scope, and the server says so when it starts
+  (`[env] Record scopes from Clerk organizations: nobody reaches every scope ...`). An
+  ordinary role in an organization someone made for themselves gives that organization's id
+  as a scope, which no record has unless someone who writes it files one there.
+
+  **Why the id and not the slug.** A slug reads better in a config, but it is not Clerk's to
+  keep: an organization's administrators can rename it, and a slug let go of (by a rename, or
+  by deleting the organization) can be taken by another organization. Scopes keyed by slug
+  would hand one group's records to whoever took its slug. An id is never given out twice.
+  If you already hold records whose scope field has slugs in it, change them to the ids
+  before you turn this on.
 
 - **Development.** `devAuth({ scopes: { list, grants } })`, by email address:
 

@@ -114,6 +114,42 @@ export function accessFrom(
 }
 
 /**
+ * What a grant made earlier still gives, now: no more than it stated, and no
+ * more than the person it was made for holds today. A scope they have lost
+ * since is gone from it, and a scope they may now only read is no longer
+ * written. Null when the grant could read something and none of it is left:
+ * it is then no grant at all. One that never read a scope (made for a shared
+ * object's record) stands as it was.
+ */
+export function grantNow(granted: ScopeAccess, held: ScopeAccess): ScopeAccess | null {
+  const both = (
+    stated: ScopeAccess['read'],
+    now: ScopeAccess['read'],
+  ): 'all' | readonly string[] => {
+    if (stated === 'all') {
+      return now
+    }
+
+    return now === 'all' ? stated : stated.filter((scope) => now.includes(scope))
+  }
+
+  const read = both(granted.read, held.read)
+  const write = both(granted.write, held.write)
+
+  if (read !== 'all' && read.length === 0 && (granted.read === 'all' || granted.read.length > 0)) {
+    return null
+  }
+
+  const reads = (scope: string) => read === 'all' || read.includes(scope)
+
+  return {
+    read,
+    write,
+    active: granted.active !== null && reads(granted.active) ? granted.active : null,
+  }
+}
+
+/**
  * A short name for what an access can read, the same for two requests that see
  * the same records. The browser keeps what it remembers (the search index,
  * relation titles, recently opened records) under it, so nothing fetched while

@@ -13,6 +13,7 @@ import * as files from '../../src/server/files'
 import * as records from '../../src/server/records'
 import { Agents } from '../../src/server/runtime/agents'
 import * as boundary from '../../src/server/runtime/boundary'
+import { httpLayer } from '../../src/server/runtime/http'
 import { backfillScopes } from '../../src/server/scope-backfill'
 import {
   asSystem,
@@ -22,6 +23,8 @@ import {
   readGrant,
 } from '../../src/server/scopes'
 import * as service from '../../src/server/service'
+import { objectTable, spool } from '../../src/server/spool'
+import { oneOf } from '../../src/server/store/query'
 import { Store } from '../../src/server/store/store'
 import { Activity, Note, SequenceRun } from '../../src/server/store/tables'
 import { buildContactIndex } from '../../src/server/sync'
@@ -52,7 +55,7 @@ import {
 
 scopedWorld()
 
-const { nora, sam } = people
+const { nora, ned, sam } = people
 
 const sweep = async (objectKey: string, q: string) => {
   for (const row of await sys(records.listRecords({ objectKey, q, limit: 500 }))) {
@@ -739,6 +742,195 @@ test('a sequence run with no scope is held until the backfill says whose it is, 
     expect(sent.map((e) => e.to)).toEqual(['held@birch.test'])
   } finally {
     await sys(Store.use((store) => store.remove(SequenceRun, { where: { recordId: id } })))
+    await sys(records.deleteRecord('contacts', id))
+  }
+})
+
+test('held sequence runs take no place from one that can be sent, however many and however old they are', async () => {
+  // More runs with no scope than a tick takes at a time, every one due before the run that
+  // can be sent. Were they part of the batch, they would be all of it, at every tick, for ever.
+  const HELD = 30
+  const held: string[] = []
+  const hourAgo = new Date(Date.now() - 3_600_000)
+
+  const sendable = (
+    await sys(
+      records.createRecord(
+        'contacts',
+        { name: 'Birch queued', email: 'queued@birch.test', branch: 'south' },
+        'seed',
+      ),
+    )
+  ).id
+
+  const runsOf = (recordIds: string[]) => ({
+    where: { campaignKey: 'welcome', objectKey: 'contacts' },
+    filter: oneOf('recordId', recordIds),
+  })
+
+  try {
+    for (let i = 0; i < HELD; i++) {
+      const values = { name: `Birch stuck ${i}`, email: `stuck${i}@birch.test`, branch: 'south' }
+      held.push((await sys(records.createRecord('contacts', values, 'seed'))).id)
+    }
+
+    await sys(
+      Effect.gen(function* () {
+        const store = yield* Store
+
+        for (const recordId of [...held, sendable]) {
+          yield* store.insert(SequenceRun, {
+            campaignKey: 'welcome',
+            objectKey: 'contacts',
+            recordId,
+            status: 'active',
+            nextStep: 'hello',
+            dueAt: recordId === sendable ? new Date(Date.now() - 60_000) : hourAgo,
+          })
+        }
+
+        // As rows written before scopes were turned on are: no scope, until the backfill.
+        yield* store.update(SequenceRun, runsOf(held), { scope: null })
+      }),
+    )
+
+    sent.length = 0
+
+    const request = new Request('http://crm.test/api/cron/sequences', {
+      headers: { authorization: `Bearer ${CRON_TOKEN}` },
+    })
+
+    const result: { sent?: number; held?: number } = await (
+      await sequencesHandlers.GET({ request })
+    ).json()
+
+    expect(result).toMatchObject({ sent: 1, held: HELD })
+    expect(sent.map((e) => e.to)).toEqual(['queued@birch.test'])
+
+    // The held runs are as they were: still active, still due, still nobody's.
+    const still = await sys(Store.use((store) => store.find(SequenceRun, runsOf(held))))
+    expect(still).toHaveLength(HELD)
+    expect(still.every((run) => run.status === 'active' && run.scope === null)).toBe(true)
+  } finally {
+    await sys(Store.use((store) => store.remove(SequenceRun, runsOf([...held, sendable]))))
+
+    for (const id of [...held, sendable]) {
+      await sys(records.deleteRecord('contacts', id))
+    }
+  }
+})
+
+test('a read-only person starts nothing: a target is refused before it runs, not when its first write comes back', async () => {
+  const started: string[] = []
+
+  const engine = Layer.succeed(
+    Agents,
+    Agents.of({
+      configured: Effect.succeed(true),
+      executeWorkflow: (name) =>
+        Effect.sync(() => {
+          started.push(name)
+          return { skipped: false as const, executionId: 'run' }
+        }),
+      chat: Effect.succeed(null),
+    }),
+  )
+
+  const nina = await record('contacts', ids.north.contact)
+  const ctx = { objectKey: 'contacts', record: nina, actor: ned, trigger: 'action:probe' }
+  sightings.length = 0
+
+  const activities = () =>
+    sys(Store.use((store) => store.count(Activity, { where: { recordId: nina.id } })))
+
+  try {
+    await installWorld({ agents: engine })
+    const before = await activities()
+
+    // Ned reads North and writes nothing. A workflow, the app's handler, a kind the app added
+    // and a sequence each change things for whoever starts them.
+    for (const target of ['swirls:enrich', 'local:probe', 'look:around', 'campaign:welcome']) {
+      await expect(as('ned', runTarget(target, ctx))).rejects.toThrow('not change them')
+    }
+
+    expect(started).toEqual([])
+    expect(sightings).toEqual([])
+    expect(await activities()).toBe(before)
+
+    // Nora writes North: hers starts.
+    await as('nora', runTarget('swirls:enrich', { ...ctx, actor: nora }))
+    expect(started).toEqual(['enrich'])
+  } finally {
+    await installWorld()
+
+    await sys(
+      Store.use((store) =>
+        store.remove(Activity, { where: { recordId: nina.id, kind: 'workflow' } }),
+      ),
+    )
+  }
+})
+
+test('the backfill gives a scope only to a row that still has none: a row moved meanwhile keeps where it went', async () => {
+  const values = { name: 'Alder backfilled', branch: 'north' }
+  const id = (await sys(records.createRecord('contacts', values, 'seed'))).id
+
+  const note = await sys(
+    Store.use((store) =>
+      store.insert(Note, {
+        title: 'Alder old note',
+        body: '',
+        objectKey: 'contacts',
+        recordId: id,
+      }),
+    ),
+  )
+
+  const scopeOf = async () =>
+    (await sys(Store.use((store) => store.first(Note, { where: { id: note.id } }))))?.scope
+
+  // A store that, the moment the backfill has read the record's scope, does what a record
+  // moving South at that moment does: gives the note the scope the record went to.
+  let moved = false
+
+  const movedMeanwhile = Layer.effect(
+    Store,
+    Effect.gen(function* () {
+      const real = yield* Store
+
+      return Store.of({
+        ...real,
+        find: (table, query) =>
+          real.find(table, query).pipe(
+            Effect.tap(() => {
+              if (moved || table.name !== objectTable('contacts').name) {
+                return Effect.void
+              }
+
+              moved = true
+              return real.update(Note, { where: { id: note.id } }, { scope: 'south' })
+            }),
+          ),
+      })
+    }),
+  ).pipe(
+    Layer.provide(spool().database.layer),
+    Layer.provide(httpLayer((url, init) => drive.handle(url, init))),
+  )
+
+  try {
+    // As a note written before scopes were turned on is.
+    await sys(Store.use((store) => store.update(Note, { where: { id: note.id } }, { scope: null })))
+    expect(await scopeOf()).toBeNull()
+
+    await installWorld({ store: movedMeanwhile })
+    await sys(backfillScopes())
+    expect(moved).toBe(true)
+    // The backfill read "north" for the record. It must not put that over what the move wrote.
+    expect(await scopeOf()).toBe('south')
+  } finally {
+    await installWorld()
+    await sys(Store.use((store) => store.remove(Note, { where: { id: note.id } })))
     await sys(records.deleteRecord('contacts', id))
   }
 })

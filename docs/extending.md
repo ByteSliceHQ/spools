@@ -144,7 +144,11 @@ scopes: {
 
 Its answer for a person is kept for a minute, so a change takes that long to show. Returning
 nothing for a person shows them no scoped record. A resolver here wins over the sign-in
-provider's.
+provider's. `list` is also what a record's scope is checked against when it is saved: with
+one, a scope it doesn't name is refused; without one, any text is taken (never `*`).
+
+A run target, a handler or an automation runs for whoever may change the record it is run
+for. Someone who only reads the record starts none of them.
 
 ## Run targets: add a new kind
 

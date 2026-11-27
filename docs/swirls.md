@@ -129,8 +129,12 @@ and nothing in a tool call's body (which a model writes) can switch one.
   and `search` and `create`, which reach the rest of the scope, are refused. `describe` and
   the marketing tools reach no scoped record and work as before.
 - **Whose it is.** A grant is made for the person whose work started the workflow, and is
-  refused once that person is off the access list. A change a tool makes under a grant
-  that starts another workflow hands on a grant for the same person.
+  refused once that person is off the access list. Each call is given no more than that
+  person holds when it is made: if they have lost the record's scope since, the grant is
+  refused, and if they may now only read it, the workflow's writes are. A change a tool makes
+  under a grant that starts another workflow hands on a grant for the same person.
+- **Who can start one.** Whoever may change the record. An action, an automation or a
+  sequence started for someone who only reads the record is refused before it starts.
 - **How long it lasts.** Fifteen minutes, or [`scopes.grantMinutes`](configuration.md#scopes).
   A workflow that waits (on a person, on a timer) before it writes back needs that set
   longer than its longest wait. Until a grant runs out, whoever holds it has its reach, so

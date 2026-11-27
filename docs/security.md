@@ -30,10 +30,10 @@ to one scope, and a person reaches only the scopes they hold.
 | Who                                            | Can do                                                                                                                                                                    |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A person who holds a scope with a writing role | Read and change that scope's records, and what hangs off them: timeline, tasks, notes, files, sequence runs                                                               |
-| A person whose roles are all read-only         | Read what they hold, and shared objects. Any change is refused: scoped records, shared objects' records, folders and files                                                |
+| A person whose roles are all read-only         | Read what they hold, and shared objects. Any change is refused: scoped records, shared objects' records, folders and files. They start no action, workflow or sequence    |
 | A person whose role has `all`                  | The same, in every scope                                                                                                                                                  |
 | A person on the access list who holds nothing  | Read shared objects and the shared file library, which are everyone's by the config's own word. They change nothing, and see no scoped record and nobody on the team list |
-| A workflow calling the tool API                | What its signed grant says: the one record it was started for, while the person who started it is still on the access list. With no grant, no scoped record               |
+| A workflow calling the tool API                | What its signed grant says, and no more than the person who started it holds when the call is made: the one record it was started for. With no grant, no scoped record    |
 | A cron job, a webhook, a script                | Nothing scoped, unless the code that runs says it is the system (`asSystem`)                                                                                              |
 
 **Where it is kept.** In one place, under everything: every store is behind a guard
@@ -41,14 +41,22 @@ to one scope, and a person reaches only the scopes they hold.
 to the scopes of whoever the request is for. Pages, search, reports, exports, imports, saved
 views, the assistant's tools and your own extensions all reach the database through it, on
 every database adapter. A record of another scope is not found; it is never "forbidden". With
-nobody said, a scoped table refuses the call, so new code that forgets fails closed.
+nobody said, a scoped table refuses the call, so new code that forgets fails closed. A refusal
+is a failure of its own (`ScopeRefused`), with words for staff, and is never reported as a
+database failure: code that expects one (a unique index keeping one row) doesn't mistake a
+refusal for it.
 
 **What to know.**
 
-- **With Clerk organizations, users must not be able to create organizations**, and the
-  organizations a role marked `all` counts from should be named (`everyScopeFrom`): whoever
-  creates an organization can give themselves any role in it. See
-  [Signing in](auth.md#record-scopes).
+- **With Clerk organizations, a scope is the organization's id, and head office has to be
+  named.** A role marked `all` counts only from the organizations listed in `everyScopeFrom`,
+  by id. Without that list nobody reaches every scope, and the server says so when it starts:
+  Clerk's own `org:admin` is held by whoever runs any organization, and whoever creates an
+  organization can give themselves any role in it, so such a role is never taken on an
+  organization's word. Turn organization creation by users off as well. Scopes are keyed by
+  the organization's id (`org_...`) and never by its slug, because an organization's
+  administrators can rename its slug, to one that another scope's records were filed under.
+  See [Signing in](auth.md#record-scopes).
 - **What a person holds is kept for a minute.** A scope taken away at the provider stops
   working within one.
 - **The scope a person works in is a preference, not proof.** The `spools-scope` cookie (or
@@ -57,7 +65,26 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
   and can't move to another scope while scoped records point at it: move or unlink those
   first. Its timeline, tasks, notes, folder and sequence runs move with it, in the same
   transaction: a move that can't take them all is undone, and a row being added to a record
-  as it moves waits and takes the scope the record came to.
+  as it moves waits and takes the scope the record came to. A record being pointed at is held
+  until the record that points at it is saved, so a move and a new link to the same record
+  can't pass each other: whichever comes second waits, and is refused.
+- **Deleting a record clears the links to it, so it is refused while that would write another
+  scope.** An optional relation is emptied when the record it points at is deleted, by the
+  database, whoever the linking record belongs to. So a shared record (a product) can't be
+  deleted while records of a scope the deleter can't change point at it, and neither can a
+  scoped record that a record of another scope still points at. Someone who can change those
+  records unlinks them first, or a role that writes every scope deletes it.
+- **A scope kept in a relation.** When an object's scope field is a relation (a depot's
+  region), the record it points at is that scope's key. Nobody deletes that record while any
+  record takes its scope from it, a role marked `all` and the system included: every one of
+  them would be left with no scope. The database refuses it too (`ON DELETE RESTRICT` on that
+  relation). And nobody changes a record's id.
+- **What can be a scope.** A record can't be given `*` as its scope, by anyone: it stands for
+  every scope, and the record's timeline, tasks and notes would be everyone's. A select
+  field's scopes are its options. For a text or relation field, a scope the resolver doesn't
+  list is refused when a record is saved; a resolver of your own that lists none
+  ([Extending](extending.md#scopes-who-holds-what)) is not asked, and then a mistyped scope
+  makes a record only a role marked `all` sees.
 - **Records that crossed before scopes were turned on.** A relation that already pointed
   into another scope is left as it is. The related record's title is not shown, filters can't
   ask about it, and a list sorted by that relation sorts the row as one with no related
@@ -83,18 +110,24 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
 - **Files.** The file store knows nothing of scopes, so the CRM checks every folder and file
   it is asked about: a record's folder, and everything under it, is only reached by those who
   reach the record. A file is opened, renamed, moved or deleted through the folder it is in
-  (the link carries it), never by its id alone. Anyone with access to the store itself still
+  (the link carries it), never by its id alone. Whether it is in that folder is asked of the
+  file itself when the folder holds more than a listing shows. Anyone with access to the store itself still
   reads all of it. The shared library, and folders the team made outside a record's folder,
   are everyone's.
 - **Grants for the tool API.** A workflow started for a record is handed a token signed with
   `APP_SECRET` (HMAC-SHA256, compared in constant time). It states the record's scope, the
   record, who started the work and when it ends: fifteen minutes later unless
   `scopes.grantMinutes` says. The tool API answers a call that carries it about that record
-  only, and refuses it once that person is off the access list. It is not checked again
-  against what the person holds: someone who loses a scope but stays on the access list
-  keeps a grant made before until it runs out. Whoever holds a grant has its reach until
-  then, so workflows must keep it out of prompts and messages. See
+  only, and refuses it once that person is off the access list. Each time it is used it is
+  cut down to what that person holds at that moment: someone who has lost the scope has lost
+  the grant with it, and someone who may now only read it has a grant that only reads. As
+  with everything a person holds, that is within the minute. Whoever holds a grant has its
+  reach until then, so workflows must keep it out of prompts and messages. See
   [Swirls](swirls.md#record-scopes).
+- **Actions, automations and sequences are changes.** Running an action on a record, and
+  anything else that starts a workflow, the app's own handler or an email sequence for it,
+  needs the right to change that record. It is checked before anything is started, so a
+  read-only person's click starts no workflow.
 - **The assistant.** Its chats must be each person's own, which needs federation with your
   sign-in provider: with a project API key everyone would read everyone's chats, so the
   assistant is refused and says so. And the assistant's record tools are refused in chat,
@@ -109,8 +142,11 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
   reads others gets them record by record. This is the page being tidy, not the rule: the
   server refuses each change itself, and says why, whatever a page shows. Starring a favourite
   is a person's own and stays, and so do saved views, which are shared by everyone.
-- **Only PGlite has been run** with scopes. The guard is the same code for every adapter,
-  but run the integration tests on your database (`TEST_STORE`) before relying on it.
+- **Every store is tested.** The scope tests run on PGlite, on Postgres through Effect SQL
+  and through Prisma, in CI. The ones that set two changes against each other (a move and a
+  new link, a delete and a new link) run as two connections on a real Postgres. A database
+  adapter of your own inherits the guard; run the integration tests on it (`TEST_STORE`)
+  before relying on it.
 
 ## Things to know
 

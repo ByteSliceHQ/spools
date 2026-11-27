@@ -8,12 +8,13 @@ import { apiRoute } from '../../src/server/handlers'
 import * as records from '../../src/server/records'
 import { Agents, type AssistantChat } from '../../src/server/runtime/agents'
 import * as boundary from '../../src/server/runtime/boundary'
-import { scopeSession } from '../../src/server/scopes'
+import { Scopes, scopeSession } from '../../src/server/scopes'
 import { Users } from '../../src/server/users'
 import {
   as,
   branches,
   column,
+  grants,
   installWorld,
   people,
   requestFrom,
@@ -203,6 +204,55 @@ test('the assistant is refused while its chats are shared by everyone, and says 
     // Each person's chats their own: the assistant is there.
     await installWorld({ agents: engine(false) })
     expect((await as('nora', assistantChat))?.shared).toBe(false)
+  } finally {
+    await installWorld()
+  }
+})
+
+test('the team is worked out by asking about several people at a time, and each person once a minute at most', async () => {
+  let asking = 0
+  let most = 0
+  let asked = 0
+
+  // A resolver that takes a moment to answer, as one over the network does, and counts.
+  const slow = Layer.succeed(
+    Scopes,
+    Scopes.of({
+      grants: (user) =>
+        Effect.gen(function* () {
+          asked++
+          asking++
+          most = Math.max(most, asking)
+          yield* Effect.sleep('20 millis')
+          asking--
+          return [...(grants[user.id] ?? [])]
+        }),
+      list: Effect.succeed([...branches]),
+    }),
+  )
+
+  try {
+    await installWorld({ scopes: slow })
+
+    const twice = Effect.gen(function* () {
+      const users = yield* Users
+      asked = 0
+      const first = yield* users.team
+      const forTheFirst = asked
+      const second = yield* users.team
+      return { first, second, forTheFirst, forBoth: asked }
+    })
+
+    const { first, second, forTheFirst, forBoth } = await as('nora', twice)
+
+    expect(column(first, 'name')).toEqual(['Bo Both', 'Hana Office', 'Ned Northview', 'Nora North'])
+    expect(second).toEqual(first)
+    // Everyone on the access list was asked about, together and not one after another.
+    expect(forTheFirst).toBe(Object.keys(people).length)
+    expect(most).toBeGreaterThan(1)
+    expect(most).toBeLessThanOrEqual(8)
+    // And nobody again for the second list.
+    expect(forBoth).toBe(forTheFirst)
   } finally {
     await installWorld()
   }

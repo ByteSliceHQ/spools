@@ -51,3 +51,6 @@ packages/create-spools/template/
 
 # Editors
 .idea/
+
+# What Prisma notes down when the scope tests push their fixture's schema to a test database
+packages/spools/tests/fixtures/scoped/migrations/

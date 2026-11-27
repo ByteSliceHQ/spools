@@ -8,12 +8,21 @@ import { runTarget } from '../../src/server/actions'
 import * as records from '../../src/server/records'
 import { Agents } from '../../src/server/runtime/agents'
 import { Auth } from '../../src/server/runtime/auth'
-import { GRANT_HEADER, grantFor, mintGrant, openGrant, withGrant } from '../../src/server/scopes'
+import {
+  GRANT_HEADER,
+  grantFor,
+  mintGrant,
+  openGrant,
+  Scopes,
+  withGrant,
+} from '../../src/server/scopes'
 import { spool } from '../../src/server/spool'
 import { Store } from '../../src/server/store/store'
 import { Activity, Note } from '../../src/server/store/tables'
 import {
   as,
+  branches,
+  grants,
   ids,
   installWorld,
   northIn,
@@ -249,5 +258,50 @@ test('a grant lasts a quarter of an hour unless the config says, and a workflowâ
         store.remove(Activity, { where: { recordId: ids.north.contact, kind: 'workflow' } }),
       ),
     )
+  }
+})
+
+test('a grant reaches no more than its person holds when it is used: a scope taken away is taken from their workflows too', async () => {
+  const record = await nina()
+  // A workflow Nora started for Nina, while she wrote North.
+  const grant = (await as('nora', grantFor('contacts', record))) ?? ''
+  const about = { objectKey: 'contacts', id: record.id }
+  const get = () => call('get', about, grant)
+  const update = () => call('update', { ...about, values: { status: 'customer' } }, grant)
+
+  const holding = (held: typeof grants) =>
+    installWorld({ scopes: Scopes.layerTest(held, branches) })
+
+  try {
+    expect((await get()).ok).toBe(true)
+
+    // She may now only read North: the workflow reads for her still, and writes nothing.
+    await holding({ ...grants, [nora.id]: [{ scope: 'north', role: 'viewer' }] })
+    expect((await get()).ok).toBe(true)
+    const refused = await update()
+    expect(refused.ok).toBe(false)
+    expect((await sys(records.getRecord('contacts', record.id)))?.status).toBe(record.status)
+
+    // She is moved to South, and stays on the access list: the grant's scope is gone.
+    await holding({ ...grants, [nora.id]: [{ scope: 'south', role: 'member' }] })
+    const gone = await get()
+    expect(gone.ok).toBe(false)
+    expect(northIn(gone)).toEqual([])
+
+    // What she holds now is not what the grant was for: it reaches nothing of South either.
+    expect((await call('get', { objectKey: 'contacts', id: ids.south.contact }, grant)).ok).toBe(
+      false,
+    )
+
+    // She holds nothing at all.
+    await holding({ ...grants, [nora.id]: [] })
+    expect((await get()).ok).toBe(false)
+    expect((await update()).ok).toBe(false)
+
+    // Given North back, the same grant stands again until it runs out.
+    await holding(grants)
+    expect((await get()).ok).toBe(true)
+  } finally {
+    await installWorld()
   }
 })

@@ -4,7 +4,10 @@ import { PGlite } from '@electric-sql/pglite'
 import type { Effect } from 'effect'
 
 import { pglite } from '../../src/adapters/database/pglite/server'
+import { postgres } from '../../src/adapters/database/postgres/server'
+import { prisma } from '../../src/adapters/database/prisma/server'
 import { flashdrive } from '../../src/adapters/files/flashdrive/server'
+import { crmConfigSchema } from '../../src/crm/config-schema'
 import { defineExtensions } from '../../src/crm/extensions'
 import type { ScopeGrant, ScopeInfo } from '../../src/crm/scopes'
 import * as api from '../../src/server/extension-api'
@@ -14,16 +17,23 @@ import { Auth, type AuthAdapter, type AuthUser } from '../../src/server/runtime/
 import { Email, type OutboundEmail } from '../../src/server/runtime/email'
 import { asSystem, asUser, Scopes } from '../../src/server/scopes'
 import { defineSpool, type Spool, spool } from '../../src/server/spool'
+import { allTables } from '../../src/server/store/schema-sql'
+import type { StoreAdapter } from '../../src/server/store/store'
 import type { CrmUser } from '../../src/server/users'
 import * as workspace from '../../src/server/workspace'
 import { createFakeStore } from '../../src/testing/fake-file-store'
 import { installStandIns, run } from '../../src/testing/run'
 import fixture from '../fixtures/scoped.config.json' with { type: 'json' }
+import contract from '../fixtures/scoped/prisma/schema.json' with { type: 'json' }
+import { prepareScopedDatabase } from '../support/scoped-database'
 
 /**
  * A Spool with record scopes, for the tests in scopes-*.test.ts: a business
- * with two branches, North and South, on a database of its own (PGlite in this
- * process), so nothing here touches the Spool the other integration tests use.
+ * with two branches, North and South, on a database of its own, so nothing here
+ * touches the Spool the other integration tests use. The database is on the
+ * store TEST_STORE names, as theirs is (tests/support/preload.ts): PGlite in
+ * this process, or a Postgres beside the one at DATABASE_URL, through Effect SQL
+ * or Prisma (tests/support/scoped-database.ts).
  *
  *   Nora   holds North, and may write
  *   Ned    holds North, read-only
@@ -32,7 +42,9 @@ import fixture from '../fixtures/scoped.config.json' with { type: 'json' }
  *   Hana   head office: every branch
  *   Otto   on the access list, and holds nothing
  *
- * Companies, contacts and deals belong to a branch; products are shared. Every
+ * Companies, contacts and deals belong to a branch; products, kits and regions
+ * are shared. A depot belongs to a region: its scope field is a relation, so
+ * its scope is a region's id, which a test grants as it makes one. Every
  * North record has "Alder" in its name and every South one "Birch", so a leak
  * is a South word in something a North person was given (`southIn`).
  *
@@ -345,16 +357,48 @@ async function seed() {
   await as('bo', workspace.toggleFavorite(bo.id, 'contacts', ids.south.contact), null)
 }
 
+/** The store the world is on, as the other integration tests read it. */
+export const STORE = process.env['TEST_STORE'] ?? 'pglite'
+
+/** Whether two programs can be in the database at once. PGlite has one connection: they take turns. */
+export const MANY_CONNECTIONS = STORE !== 'pglite'
+
 let client: PGlite | undefined
+/** Where the world's Postgres is, once it has been made ready: the same one for every test file of a run. */
+let postgresUrl: string | undefined
 let seeded = false
 
-/** The world's own database, for a test that puts a store of its own over it (to watch, or to make fail). */
+/** The world's own PGlite, for a test that puts a store of its own over it (to watch, or to make fail). */
 export const database = (): PGlite => {
   if (!client) {
-    throw new Error('The world has not been made yet')
+    throw new Error('The world has not been made on PGlite')
   }
 
   return client
+}
+
+/**
+ * The world's database adapter, on the store TEST_STORE names. A Postgres is
+ * made ready and emptied the first time, from the environment as the run was
+ * given it, and DATABASE_URL then names it for as long as the world stands.
+ */
+async function worldStore(): Promise<StoreAdapter> {
+  if (STORE === 'pglite') {
+    client ??= await PGlite.create()
+    return pglite({ client })
+  }
+
+  if (STORE !== 'postgres' && STORE !== 'prisma') {
+    throw new Error(`TEST_STORE is "${STORE}"; use "pglite", "postgres" or "prisma"`)
+  }
+
+  postgresUrl ??= await prepareScopedDatabase(
+    process.env,
+    allTables(crmConfigSchema.parse(fixture)),
+  )
+
+  process.env['DATABASE_URL'] = postgresUrl
+  return STORE === 'postgres' ? postgres() : prisma({ contract })
 }
 
 const ENV = {
@@ -411,13 +455,14 @@ export function scopedWorld(
     saved.set('FLASHDRIVE_BASE_URL', process.env['FLASHDRIVE_BASE_URL'])
     delete process.env['FLASHDRIVE_BASE_URL']
 
-    client ??= await PGlite.create()
+    // The world's Postgres is another database than the one the run was given: put back after.
+    saved.set('DATABASE_URL', process.env['DATABASE_URL'])
 
     defineSpool({
       crm: fixture,
       extensions,
       auth: options.auth ?? auth,
-      database: pglite({ client }),
+      database: await worldStore(),
       files: flashdrive(),
     })
 

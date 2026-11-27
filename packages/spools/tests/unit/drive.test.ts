@@ -486,6 +486,31 @@ describe('folders', () => {
   })
 })
 
+describe('where a file is', () => {
+  test('a file says which folder it is in, though the folder’s listing stops before it', async () => {
+    const full = await folder('Full')
+
+    await client.exec(`INSERT INTO "public"."file_nodes" (id, name, kind, parent_id, created_at, updated_at, pending)
+      SELECT gen_random_uuid()::text, 'a' || n, 'file', '${full}', now(), now(), false FROM generate_series(1, 1000) n`)
+
+    // Sorted after the thousand: the listing never reaches it.
+    const last = await add('zz last.txt', full)
+    const listing = await here.ok((f) => f.list(full))
+
+    expect([listing.truncated, listing.files.some((file) => file.id === last)]).toEqual([
+      true,
+      false,
+    ])
+
+    expect(await here.ok((f) => f.fileFolder(last))).toBe(full)
+    const top = await add('top.txt')
+    expect(await here.ok((f) => f.fileFolder(top))).toBeNull()
+    expect((await here.fail((f) => f.fileFolder(crypto.randomUUID()))).status).toBe(404)
+    // A folder is not a file.
+    expect((await here.fail((f) => f.fileFolder(full))).status).toBe(404)
+  })
+})
+
 describe('ensuring folders', () => {
   test("makes what isn't there, finds what is, and says which folder each path is", async () => {
     const paths = ['Deals/Globex', 'Deals/Globex/Proposals', 'Deals/Initech']

@@ -2,11 +2,14 @@ import { Effect, Predicate as Is } from 'effect'
 
 import { EVERY_SCOPE, type ScopeAccess } from '../../crm/scopes'
 import { CurrentAccess } from '../runtime/access'
-import { DatabaseError, type Timeout } from '../runtime/errors'
+import { DatabaseError, ScopeRefused, type Timeout } from '../runtime/errors'
 import { objectTables } from './objects'
 import {
   and,
+  isNull,
+  not,
   oneOf,
+  or,
   type Order,
   type OrderBy,
   type Predicate,
@@ -42,14 +45,18 @@ import { systemTables } from './tables'
  *
  * In a Spool without `scopes` every call goes through as it was given.
  *
- * A refusal is a `DatabaseError` whose message is written for staff, so the
- * store's own types are as they were.
+ * A refusal is a `ScopeRefused` (runtime/errors.ts), whose message is written
+ * for staff. It is in every store method's failures beside `DatabaseError`, and
+ * is never one: catching a database failure doesn't catch a refusal.
  */
 
 export { CurrentAccess } from '../runtime/access'
 
+/** What the store underneath the guard answers with: it knows nothing of scopes. */
 type Read<A> = Effect.Effect<A, DatabaseError | Timeout>
 type Write<A> = Effect.Effect<A, DatabaseError>
+/** What a write answers with once it is behind the guard: the same, or a refusal. */
+type GuardedWrite<A> = Effect.Effect<A, DatabaseError | ScopeRefused>
 
 /** Which rows, with the types gone. */
 export type AnyWhich = {
@@ -62,27 +69,54 @@ export type AnyQuery = AnyWhich &
     readonly select?: readonly string[]
   }
 
-/** Each store method on rows with their types gone, which is what `makeStore` builds and the guard wraps. */
-type RawMethods = {
-  readonly find: (table: AnyTable, query?: AnyQuery) => Read<RawRow[]>
-  readonly first: (table: AnyTable, query: AnyQuery) => Read<RawRow | null>
-  readonly count: (table: AnyTable, which?: AnyWhich) => Read<number>
+/**
+ * Each store method on rows with their types gone, which is what `makeStore`
+ * builds and the guard wraps. `Refusal` is what a call can fail with besides
+ * the database's own failures: nothing underneath the guard, `ScopeRefused`
+ * once it is behind it.
+ */
+type RawMethods<Refusal> = {
+  readonly find: (
+    table: AnyTable,
+    query?: AnyQuery,
+  ) => Effect.Effect<RawRow[], DatabaseError | Timeout | Refusal>
+  readonly first: (
+    table: AnyTable,
+    query: AnyQuery,
+  ) => Effect.Effect<RawRow | null, DatabaseError | Timeout | Refusal>
+  readonly count: (
+    table: AnyTable,
+    which?: AnyWhich,
+  ) => Effect.Effect<number, DatabaseError | Timeout | Refusal>
   readonly countValues: (
     table: AnyTable,
     column: string,
     which: AnyWhich & { atLeast: number },
-  ) => Read<ValueCount[]>
-  readonly insert: (table: AnyTable, values: RawChanges) => Write<RawRow>
-  readonly update: (table: AnyTable, which: AnyWhich, changes: RawChanges) => Write<number>
-  readonly remove: (table: AnyTable, which: AnyWhich) => Write<number>
+  ) => Effect.Effect<ValueCount[], DatabaseError | Timeout | Refusal>
+  readonly insert: (
+    table: AnyTable,
+    values: RawChanges,
+  ) => Effect.Effect<RawRow, DatabaseError | Refusal>
+  readonly update: (
+    table: AnyTable,
+    which: AnyWhich,
+    changes: RawChanges,
+  ) => Effect.Effect<number, DatabaseError | Refusal>
+  readonly remove: (
+    table: AnyTable,
+    which: AnyWhich,
+  ) => Effect.Effect<number, DatabaseError | Refusal>
   readonly refreshDates: (
     table: AnyTable,
     objectKey: string,
     kinds: DateKinds,
     recordId?: string,
-  ) => Write<void>
+  ) => Effect.Effect<void, DatabaseError | Refusal>
   readonly transaction: StoreShape['transaction']
-  readonly lock: (table: AnyTable, which: AnyWhich) => Write<number>
+  readonly lock: (
+    table: AnyTable,
+    which: AnyWhich,
+  ) => Effect.Effect<number, DatabaseError | Refusal>
   readonly ping: StoreShape['ping']
 }
 
@@ -91,7 +125,12 @@ type RawMethods = {
  * to the store doesn't build until it is given a raw form here, a line in
  * `SCOPE_DECISIONS` and a body in `guard`.
  */
-export type RawStore = { readonly [Method in keyof StoreShape]: RawMethods[Method] }
+export type RawStore<Refusal = never> = {
+  readonly [Method in keyof StoreShape]: RawMethods<Refusal>[Method]
+}
+
+/** A store behind the guard: every method may refuse. */
+export type Guarded = RawStore<ScopeRefused>
 
 /** What the guard does with each store method. Every method has to say. */
 export const SCOPE_DECISIONS = {
@@ -100,23 +139,19 @@ export const SCOPE_DECISIONS = {
   count: 'narrowed to what can be read',
   countValues: 'narrowed to what can be read',
   insert:
-    'takes the active scope (or its record’s, read with the record held); a scope that is not held and a relation out of the scope are refused',
+    'takes the active scope (or its record’s, read with the record held); a scope that is not held, "*", a value the scope field doesn’t offer and a relation out of the scope are refused; a record it points at is held until it is written',
   update:
-    'narrowed to what can be written; a move to a scope that is not held, and a relation out of the scope, are refused; a move and its rows’ new scope are one transaction',
-  remove: 'narrowed to what can be written',
+    'narrowed to what can be written; a move to a scope that is not held or is no scope, a relation out of the scope and a change of a record’s id are refused; a move and its rows’ new scope are one transaction',
+  remove:
+    'narrowed to what can be written; refused while records the caller can’t write point at the record (the database would clear their relation), and for anyone while records take their scope from it',
   refreshDates: 'one record: only when it can be read; every record: only as the system',
   transaction: 'passes: the access set outside it is still set inside it',
   lock: 'narrowed to what can be written',
   ping: 'passes: it reads no table',
 } as const satisfies { readonly [Method in keyof StoreShape]: string }
 
-/** Why the guard refused a call. Its message is what staff read. */
-export class ScopeRefusal extends Error {
-  readonly _tag = 'ScopeRefusal'
-}
-
-const refuse = (message: string) =>
-  Effect.fail(new DatabaseError({ cause: new ScopeRefusal(message) }))
+/** Refuses a call. The message is what staff read. */
+const refuse = (message: string) => Effect.fail(new ScopeRefused({ message }))
 
 /** A read the guard makes on a write's way in: giving up on it is the write failing. */
 const within = <A>(read: Read<A>): Write<A> =>
@@ -134,6 +169,33 @@ const NOBODY = (table: AnyTable) =>
   `Nothing said whose work this is, so ${table.name} can't be reached. Work with nobody signed in runs inside asSystem(...), or carries a grant.`
 
 const NOT_FOUND = 'Record not found'
+
+/**
+ * What is wrong with a value as a record's scope, or null. "*" stands for every
+ * scope (a row on a shared object's record carries it), so a record that held it
+ * would hand its timeline, tasks and notes to everyone. A select field's scopes
+ * are its options, and nothing else is one. A text field takes any other value
+ * here: which of those is a scope is the resolver's to say (`mustBeScope` in
+ * src/server/scopes.ts).
+ */
+function scopeProblem(table: AnyTable, scope: string): string | null {
+  if (scope === EVERY_SCOPE) {
+    return `"${EVERY_SCOPE}" stands for every ${label()}, so a record can't be given it.`
+  }
+
+  const config = globalThis.spoolsSpool?.config
+  const objectKey = Object.entries(objectTablesNow()).find(([, t]) => t === table)?.[0]
+  const fieldKey = objectKey === undefined ? undefined : config?.scopes?.objects[objectKey]
+
+  const field =
+    objectKey === undefined || fieldKey === undefined
+      ? undefined
+      : config?.objects[objectKey]?.fields[fieldKey]
+
+  return field?.type === 'select' && !field.options.some((option) => option.value === scope)
+    ? `There is no ${label()} "${scope}".`
+    : null
+}
 
 /** A scope's value as text, or null for an empty one. Scopes are text or keys: nothing else is one. */
 function scopeText(value: Scalar | RawRow | undefined): string | null {
@@ -254,6 +316,20 @@ const scopedRelations = (table: AnyTable) =>
     return marker?.kind === 'own' ? [{ name, relation, target: relation.table(), marker }] : []
   })
 
+/**
+ * The scoped objects whose records point at a table's rows, by the column that
+ * holds the key. `keyed` is the relation a scoped object's scope field is: its
+ * records take their scope from the row they point at.
+ */
+const pointingAt = (table: AnyTable) =>
+  Object.values(table.relations).flatMap((back) => {
+    const marker = back.kind === 'many' ? markerOf(back.table()) : undefined
+
+    return marker?.kind === 'own'
+      ? [{ from: back.table(), column: back.column, marker, keyed: back.column === marker.column }]
+      : []
+  })
+
 /** Whether a table is an object's (scoped or shared), not one of the CRM's own. */
 const isObjectTable = (table: AnyTable): boolean => Object.values(objectTablesNow()).includes(table)
 
@@ -277,7 +353,7 @@ const touches = (table: AnyTable, query: AnyQuery, mode: 'read' | 'write' = 'rea
  * said whose work this is, and for a write by someone who can write nothing.
  */
 const scoped = (table: AnyTable, which: AnyQuery, mode: 'read' | 'write') =>
-  Effect.flatMap(CurrentAccess, (access): Effect.Effect<AnyWhich, DatabaseError> => {
+  Effect.flatMap(CurrentAccess, (access): Effect.Effect<AnyWhich, ScopeRefused> => {
     if (!scopesOf() || !touches(table, which, mode)) {
       return Effect.succeed(which)
     }
@@ -383,7 +459,7 @@ const onScopedRecord = (
 }
 
 /** A store that keeps to `CurrentAccess`. */
-export function guard(store: RawStore): RawStore {
+export function guard(store: RawStore): Guarded {
   /**
    * The records a row's relations point at must be ones it may point at: of the
    * row's own scope when the row has one, and within reach of whoever is
@@ -400,6 +476,13 @@ export function guard(store: RawStore): RawStore {
 
       if (key === null) {
         continue
+      }
+
+      // A row with a scope must stay in the scope of what it points at. That record is held
+      // until the row is written (`linked`), so it can't move scope in between: a move waits
+      // for this, and then finds the row pointing at it.
+      if (scope !== undefined) {
+        yield* store.lock(target, { where: { [target.primary]: key } })
       }
 
       const found = yield* within(
@@ -419,6 +502,21 @@ export function guard(store: RawStore): RawStore {
 
     return undefined
   })
+
+  /**
+   * Writing a row whose relations `relationsInScope` checks. The check holds
+   * each record the row points at, and a hold lasts only as long as the
+   * transaction it is made in: so the check and the write are one. Inside the
+   * caller's transaction, when it has one.
+   */
+  const linked = <A>(
+    table: AnyTable,
+    values: RawChanges,
+    write: GuardedWrite<A>,
+  ): GuardedWrite<A> =>
+    scopedRelations(table).some((r) => scopeText(values[r.relation.column]) !== null)
+      ? store.transaction(write)
+      : write
 
   /** The scope of the record a hanging row is on: the record's own, or everyone's for a shared object's. */
   const ownerScope = Effect.fn('scope.ownerScope')(function* (
@@ -472,10 +570,10 @@ export function guard(store: RawStore): RawStore {
   const hung = <A>(
     marker: Extract<TableScope, { kind: 'owner' }>,
     values: RawChanges,
-    write: Write<A>,
-  ): Write<A> => (onScopedRecord(marker, values) ? store.transaction(write) : write)
+    write: GuardedWrite<A>,
+  ): GuardedWrite<A> => (onScopedRecord(marker, values) ? store.transaction(write) : write)
 
-  const insert: RawStore['insert'] = Effect.fn('scope.insert')(function* (table, values) {
+  const insert: Guarded['insert'] = Effect.fn('scope.insert')(function* (table, values) {
     const marker = markerOf(table)
 
     if (
@@ -542,13 +640,26 @@ export function guard(store: RawStore): RawStore {
       return yield* refuse(`Say which ${label()} this is for.`)
     }
 
+    const problem = scopeProblem(table, scope)
+
+    if (problem !== null) {
+      return yield* refuse(problem)
+    }
+
     if (!holds(access.write, scope)) {
       return yield* refuse(`You can't add records to that ${label()}.`)
     }
 
     const row = { ...values, [marker.column]: scope }
-    yield* relationsInScope(table, row, scope, access)
-    return yield* store.insert(table, row)
+
+    return yield* linked(
+      table,
+      row,
+      Effect.gen(function* () {
+        yield* relationsInScope(table, row, scope, access)
+        return yield* store.insert(table, row)
+      }),
+    )
   })
 
   /** The rows of every hanging table that are on these records, given the records' new scope. */
@@ -572,11 +683,22 @@ export function guard(store: RawStore): RawStore {
     }
   })
 
-  const update: RawStore['update'] = Effect.fn('scope.update')(function* (table, which, changes) {
+  const update: Guarded['update'] = Effect.fn('scope.update')(function* (table, which, changes) {
     const marker = markerOf(table)
     const related = scopedRelations(table).filter((r) => changes[r.relation.column] !== undefined)
     const moves = marker?.kind === 'own' && changes[marker.column] !== undefined
     const rows = yield* scoped(table, which, 'write')
+
+    // Other records point at a record by its id, and a scoped object whose scope field is a
+    // relation takes its scope from one. Nothing in the CRM renames a record: only the system may.
+    if (
+      scopesOf() &&
+      isObjectTable(table) &&
+      changes[table.primary] !== undefined &&
+      !(yield* CurrentAccess)?.system
+    ) {
+      return yield* refuse("A record's id can't be changed.")
+    }
 
     if (marker?.kind === 'owner') {
       const access = yield* CurrentAccess
@@ -647,6 +769,12 @@ export function guard(store: RawStore): RawStore {
         const id = scopeText(row[table.primary]) ?? ''
 
         if (moves && next !== current) {
+          const problem = next === null ? null : scopeProblem(table, next)
+
+          if (problem !== null) {
+            return yield* refuse(problem)
+          }
+
           if (next === null || !holds(access.write, next)) {
             return yield* refuse(
               next === null
@@ -701,8 +829,76 @@ export function guard(store: RawStore): RawStore {
       return changed
     })
 
-    // The move and the scope of everything that hangs off the record are kept together, or neither is.
-    return yield* moves ? store.transaction(checkedAndChanged) : checkedAndChanged
+    // The move and the scope of everything that hangs off the record are kept together, or
+    // neither is. And a record a row is pointed at is held from the check to the change.
+    return yield* store.transaction(checkedAndChanged)
+  })
+
+  /**
+   * Deleting a record clears the relation of every record that points at it (an
+   * optional relation is ON DELETE SET NULL): the database writes those rows,
+   * whoever they belong to. So the delete is refused while any of them is out of
+   * the caller's reach to write, counted underneath the guard, where every scope
+   * is seen. And a record that others take their scope from (a scope field that
+   * is a relation) is deleted by nobody while they do: clearing it would leave
+   * each of them without a scope.
+   *
+   * The rows are held from the count to the delete, so a record can't be
+   * pointed at them in between: the database makes whoever adds one wait, and
+   * then refuses it.
+   */
+  const remove: Guarded['remove'] = Effect.fn('scope.remove')(function* (table, which) {
+    const rows = yield* scoped(table, which, 'write')
+    const pointing = pointingAt(table)
+
+    if (pointing.length === 0) {
+      return yield* store.remove(table, rows)
+    }
+
+    const access = yield* CurrentAccess
+
+    return yield* store.transaction(
+      Effect.gen(function* () {
+        yield* store.lock(table, rows)
+
+        const going = (yield* within(store.find(table, { ...rows, select: [table.primary] })))
+          .map((row) => scopeText(row[table.primary]))
+          .filter((id) => id !== null)
+
+        for (const { from, column, marker, keyed } of going.length > 0 ? pointing : []) {
+          const theirs = oneOf(column, going)
+
+          if (keyed) {
+            if ((yield* within(store.count(from, { filter: theirs }))) > 0) {
+              return yield* refuse(
+                `This can't be deleted while ${from.name} have it as their ${label()}. Move or delete those first.`,
+              )
+            }
+
+            continue
+          }
+
+          // Whoever writes every scope may clear them all. With nobody said, none.
+          if (access?.write === 'all') {
+            continue
+          }
+
+          const beyond = access
+            ? and(theirs, or(isNull(marker.column), not(oneOf(marker.column, access.write))))
+            : theirs
+
+          if ((yield* within(store.count(from, { filter: beyond }))) > 0) {
+            return yield* refuse(
+              access
+                ? `This record can't be deleted while ${from.name} of a ${label()} you can't change point at it. Someone who can change them has to unlink those first.`
+                : NOBODY(from),
+            )
+          }
+        }
+
+        return yield* store.remove(table, rows)
+      }),
+    )
   })
 
   return {
@@ -754,8 +950,7 @@ export function guard(store: RawStore): RawStore {
       ),
     insert,
     update,
-    remove: (table, which) =>
-      Effect.flatMap(scoped(table, which, 'write'), (rows) => store.remove(table, rows)),
+    remove,
     refreshDates: (table, objectKey, kinds, recordId) =>
       Effect.gen(function* () {
         if (!markerOf(table)) {

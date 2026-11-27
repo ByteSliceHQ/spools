@@ -81,9 +81,19 @@ sort by a related record's column (`['company', 'name']`) reaches a backend as
 related record doesn't meet `where` must sort as a row with no related record. A backend built
 on `sqlBackend` gets this from `selectSql`. One that writes its own `ORDER BY` has to write the
 condition too, or refuse the order: never drop the condition and sort by the bare column. The
-Prisma adapter writes the same subselect through `relatedOrderText`, for a related column that
-is text or a moment, and refuses any other; that path has not been run against a database
-yet.
+Prisma adapter writes the same subselect through `relatedOrderText`, for a related column of
+any kind (a record's title can be a field of any type), and the scope tests run it against a
+real database.
+
+A store call can fail with `ScopeRefused` as well as `DatabaseError`: the guard refusing it,
+in words for staff. It is a failure of its own, so `Effect.catchTag('DatabaseError', ...)`
+written for a unique index never takes a refusal for a row that was already there.
+
+The guard also asks more of two writes than a store without scopes does. A row that points at
+a scoped record holds that record (`lock`) until the row is written, and deleting a record
+that scoped records point at holds it while they are counted, so both are transactions. Your
+backend's `lock` must be a real row lock (`SELECT ... FOR UPDATE`) for these to mean anything
+with more than one connection.
 
 ## Using the store
 
@@ -148,3 +158,11 @@ TEST_STORE=prisma   DATABASE_URL=... bun run test:integration
 
 Point `DATABASE_URL` at a database made for tests, with the schema pushed
 (`bun run db:push`). The tests write to it.
+
+The record-scope tests (`scopes-*.test.ts`) run on a Spool of their own, whose config is not
+the starter's, so on a real Postgres they use a second database: the one `DATABASE_URL` names
+with `_scopes` after it (`spools_test_scopes`), on the same server. They make it if it isn't
+there, push their schema to it with Prisma (`packages/spools/tests/fixtures/scoped/prisma`,
+written by `bun run test:scopes:gen` in `packages/spools`) and empty it at the start of each
+run. On a server where the tests may not create a database, make one yourself and name it
+with `TEST_SCOPES_DATABASE_URL`.

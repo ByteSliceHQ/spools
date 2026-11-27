@@ -13,7 +13,8 @@
     "objects": {
       "companies": "branch",
       "contacts": "branch",
-      "deals": "branch"
+      "deals": "branch",
+      "depots": "region"
     },
     "roles": {
       "member": { "write": true },
@@ -29,6 +30,10 @@
       "fields": {
         "name": { "type": "text", "required": true, "searchable": true },
         "city": { "type": "text", "searchable": true },
+        "founded": { "type": "date" },
+        "staff": { "type": "number" },
+        "revenue": { "type": "currency" },
+        "listed": { "type": "boolean" },
         "branch": {
           "type": "select",
           "options": [
@@ -141,6 +146,27 @@
         "maker": { "type": "relation", "to": "companies" }
       },
       "views": [{ "id": "all", "label": "All kits", "type": "table", "columns": ["name", "maker"] }]
+    },
+    "regions": {
+      "label": "Region",
+      "labelPlural": "Regions",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true }
+      },
+      "views": [{ "id": "all", "label": "All regions", "type": "table", "columns": ["name"] }]
+    },
+    "depots": {
+      "label": "Depot",
+      "labelPlural": "Depots",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true },
+        "region": { "type": "relation", "to": "regions" }
+      },
+      "views": [
+        { "id": "all", "label": "All depots", "type": "table", "columns": ["name", "region"] }
+      ]
     }
   },
   "automations": [{ "on": "contacts.updated", "run": "local:probe" }],

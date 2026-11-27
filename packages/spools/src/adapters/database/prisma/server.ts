@@ -227,9 +227,19 @@ function compile(table: AnyTable, m: DynModel, p: Predicate, extra: Extra): Pris
   }
 }
 
-/** What a raw expression gives back, by the kind of column it reads. Only the kinds a record's title is. */
-const RAW_CODEC: Partial<Record<Kind, string>> = {
+/**
+ * What a raw expression gives back, by the kind of column it reads: the codec
+ * the contract gives a column of that kind (src/crm/codegen.ts). Every kind has
+ * one, since a record's title, which a list sorted by a relation sorts by, may
+ * be a field of any type.
+ */
+const RAW_CODEC: Record<Kind, string> = {
   text: 'pg/text@1',
+  integer: 'pg/int4@1',
+  float: 'pg/float8@1',
+  decimal: 'pg/numeric@1',
+  boolean: 'pg/bool@1',
+  date: 'pg/date-string@1',
   timestamp: 'pg/timestamptz@1',
 }
 
@@ -250,16 +260,14 @@ function ordering(table: AnyTable, { by, dir, nulls }: Order) {
 
     // A related record's column, but only of a record that meets a condition (the scope guard's:
     // scope.ts). The ORM's own order by a relation takes no condition, so this is the subselect
-    // sql.ts writes, with nothing left out: an order it can't write this way is refused.
+    // sql.ts writes, with nothing left out, whatever kind of column it sorts by.
     if ('related' in by) {
       const text = relatedOrderText(table, by)
-      const codec = RAW_CODEC[text.kind]
 
-      if (!codec) {
-        throw new Error(`Can't sort by a related record's ${text.kind} column here`)
-      }
+      const related = fns
+        .raw(template(text.parts), columnOf(m, text.key))
+        .returns(RAW_CODEC[text.kind])
 
-      const related = fns.raw(template(text.parts), columnOf(m, text.key)).returns(codec)
       return related[dir](...options)
     }
 

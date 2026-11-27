@@ -5,6 +5,7 @@ import { Effect, Layer } from 'effect'
 import { clerk } from '../../src/adapters/auth/clerk/server'
 import { Auth } from '../../src/server/runtime/auth'
 import { httpLayer } from '../../src/server/runtime/http'
+import { Scopes } from '../../src/server/scopes'
 import { makeStore, Store } from '../../src/server/store/store'
 import { testRuntime } from '../../src/testing/run'
 
@@ -56,6 +57,13 @@ const clerkUser = (id: string, email: string, change: Record<string, unknown> = 
 /** Clerk's SDK reads a body as JSON only when the content type is exactly this. */
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+
+const ORGANIZATIONS = Array.from({ length: 230 }, (_, n) => ({
+  object: 'organization',
+  id: `org_${n}`,
+  name: `Branch ${n}`,
+  slug: `branch-${n}`,
+}))
 
 const refusal = (status: number, code: string, message = code) =>
   json({ errors: [{ code, message, long_message: message }] }, status)
@@ -124,6 +132,37 @@ const answer = (request: Request): Response => {
         },
       ],
       total_count: 2,
+    })
+  }
+
+  // More organizations than one page holds: 230 in all, and user_1 is a member of each.
+  if (
+    url.pathname === '/v1/users/user_1/organization_memberships' ||
+    url.pathname === '/v1/organizations'
+  ) {
+    const limit = Number(url.searchParams.get('limit') ?? 10)
+    const offset = Number(url.searchParams.get('offset') ?? 0)
+    const page = ORGANIZATIONS.slice(offset, offset + limit)
+
+    return json({
+      data:
+        url.pathname === '/v1/organizations'
+          ? page
+          : page.map((organization, i) => ({
+              object: 'organization_membership',
+              id: `orgmem_${offset + i}`,
+              role: organization.id === 'org_0' ? 'org:headOffice' : 'org:member',
+              organization,
+              public_user_data: {
+                user_id: 'user_1',
+                identifier: 'ana@acme.test',
+                first_name: 'Ana',
+                last_name: 'Ortiz',
+                image_url: '',
+                has_image: false,
+              },
+            })),
+      total_count: ORGANIZATIONS.length,
     })
   }
 
@@ -370,5 +409,67 @@ describe('Clerk, when it says no or has a bad moment', () => {
     const again = await accountToken('user_1', 'google')
     expect(again).toMatchObject({ _tag: 'Success', success: 'ya29.first' })
     expect(to(path)).toHaveLength(2)
+  })
+})
+
+describe('Clerk organizations as record scopes', () => {
+  const ana = { id: 'user_1', email: 'ana@acme.test', name: 'Ana Ortiz' }
+
+  /** Runs a program on the scopes the adapter provides, as it is set up. */
+  const withScopes = <A, E>(
+    options: Parameters<typeof clerk>[0],
+    program: Effect.Effect<A, E, Scopes>,
+  ) => {
+    const { scopes } = clerk(options)
+
+    if (!scopes) {
+      throw new Error('The adapter was not asked for scopes')
+    }
+
+    const rt = testRuntime(scopes)
+    return rt.runPromise(program).finally(() => rt.dispose())
+  }
+
+  test('every membership is read, a page at a time, however many organizations a person is in', async () => {
+    const path = '/v1/users/user_1/organization_memberships'
+
+    const grants = await withScopes(
+      { scopes: 'organizations' },
+      Scopes.use((scopes) => scopes.grants(ana)),
+    )
+
+    expect(grants).toHaveLength(230)
+    expect(grants.at(-1)).toEqual({ scope: 'org_229', role: 'member' })
+    // The scope is the organization's id, never the slug its administrators can rename.
+    expect(grants.every((grant) => grant.scope.startsWith('org_'))).toBe(true)
+
+    expect(to(path).map((call) => [call.query.get('limit'), call.query.get('offset')])).toEqual([
+      // Clerk's client leaves an offset of nothing out.
+      ['100', null],
+      ['100', '100'],
+      ['100', '200'],
+    ])
+  })
+
+  test('every organization is listed for the switcher, a page at a time', async () => {
+    const listed = await withScopes(
+      { scopes: 'organizations' },
+      Scopes.use((scopes) => scopes.list),
+    )
+
+    expect(listed).toHaveLength(230)
+    expect(listed[0]).toEqual({ key: 'org_0', label: 'Branch 0' })
+    expect(listed.at(-1)).toEqual({ key: 'org_229', label: 'Branch 229' })
+    expect(to('/v1/organizations')).toHaveLength(3)
+  })
+
+  test('each adapter keeps its own `everyScopeFrom`: one made later doesn’t change one made before', async () => {
+    const first = clerk({ scopes: 'organizations', everyScopeFrom: ['org_0'] })
+    // Another adapter, made afterwards with nothing named.
+    clerk({ scopes: 'organizations' })
+
+    const check = first.features?.find((feature) => feature.name.includes('Record scopes'))?.check
+    // The first still knows its own (this Spool's config has no role that reaches every scope).
+    expect(check?.({})).toBeNull()
   })
 })

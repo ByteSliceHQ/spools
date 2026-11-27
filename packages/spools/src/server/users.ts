@@ -23,6 +23,9 @@ type Failure = AuthError | Timeout
 
 const TTL_MS = 60 * 1000
 
+/** How many people the resolver is asked about at a time when the team is worked out. */
+const ASKED_AT_ONCE = 8
+
 /**
  * Whether an address is on the config's access list. It says nothing about who
  * holds the address: ask only about one that has been verified, or to decide
@@ -139,17 +142,21 @@ export class Users extends Context.Service<
         }
 
         const mine = access.read
-        const sharing: CrmUser[] = []
 
-        for (const user of users) {
-          const held = yield* heldBy(user)
-
-          if (mine.length > 0 && (held === 'all' || held.some((scope) => mine.includes(scope)))) {
-            sharing.push(user)
-          }
+        // Whoever holds nothing shares a scope with nobody, and nobody need be asked about.
+        if (mine.length === 0) {
+          return []
         }
 
-        return sharing
+        // What each person holds is kept for a minute (`heldBy`), so the provider is asked once
+        // a minute per person at most; when it is asked, it is asked about several people at a
+        // time, not one after another: a team's first page doesn't wait for each in turn.
+        const held = yield* Effect.forEach(users, heldBy, { concurrency: ASKED_AT_ONCE })
+
+        return users.filter((_, i) => {
+          const theirs = held[i] ?? []
+          return theirs === 'all' || theirs.some((scope) => mine.includes(scope))
+        })
       }).pipe(Effect.withSpan('Users.team'))
 
       const signInAccounts = Effect.fn('Users.signInAccounts')(function* (userId: string) {

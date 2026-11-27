@@ -415,8 +415,26 @@ const fileInReach = Effect.fn('files.fileInReach')(function* (
   }
 
   yield* folderInReach(folderId, mode)
-  const inside = yield* (yield* FileStore).list(folderId)
-  return inside.files.some((file) => file.id === id) ? undefined : yield* notThere()
+  const files = yield* FileStore
+  const inside = yield* files.list(folderId)
+
+  if (inside.files.some((file) => file.id === id)) {
+    return undefined
+  }
+
+  // A listing stops at a limit. A file it left out may still be in this folder: the file says.
+  if (!inside.truncated) {
+    return yield* notThere()
+  }
+
+  const folder = yield* files.fileFolder(id).pipe(
+    Effect.catchIf(
+      (error) => error.status === 404,
+      () => Effect.fail(notThere()),
+    ),
+  )
+
+  return folder === folderId ? undefined : yield* notThere()
 })
 
 const describeRecord = Effect.fn('files.describeRecord')(function* (ref: RecordRef) {
