@@ -504,8 +504,13 @@ export const deleteRecord = Effect.fn('records.deleteRecord')(function* (
   yield* store.remove(objectTable(objectKey), { where: { id } })
   // Activities aren't foreign-keyed (they span every object), so clear them explicitly.
   yield* store.remove(Activity, { where: { objectKey, recordId: id } })
-  // Forget which folder was the record's. The folder and its files stay in the file store (see files.ts).
-  yield* store.remove(RecordFolder, { where: { objectKey, recordId: id } })
+
+  // Forget which folder was the record's. The folder and its files stay in the file store (see
+  // files.ts). In a Spool with record scopes the row is kept: it is what says whose the folder
+  // is, and without it the folder and its files would be everyone's.
+  if (!crmConfig().scopes) {
+    yield* store.remove(RecordFolder, { where: { objectKey, recordId: id } })
+  }
 })
 
 export type TitleOption = { id: string; title: string }

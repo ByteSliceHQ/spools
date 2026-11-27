@@ -27,14 +27,14 @@ you need the separation a database gives.
 With [`scopes`](configuration.md#scopes) in the config, each record of a scoped object belongs
 to one scope, and a person reaches only the scopes they hold.
 
-| Who                                            | Can do                                                                                                      |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| A person who holds a scope with a writing role | Read and change that scope's records, and what hangs off them: timeline, tasks, notes, files, sequence runs |
-| A person who holds it with a read-only role    | Read them. Any change is refused                                                                            |
-| A person whose role has `all`                  | The same, in every scope                                                                                    |
-| A person on the access list who holds nothing  | Shared objects only. They see no scoped record and nobody on the team list                                  |
-| A workflow calling the tool API                | What its signed grant says: the scope of the record it was started for. With no grant, no scoped record     |
-| A cron job, a webhook, a script                | Nothing scoped, unless the code that runs says it is the system (`asSystem`)                                |
+| Who                                            | Can do                                                                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A person who holds a scope with a writing role | Read and change that scope's records, and what hangs off them: timeline, tasks, notes, files, sequence runs                                                               |
+| A person whose roles are all read-only         | Read what they hold, and shared objects. Any change is refused: scoped records, shared objects' records, folders and files                                                |
+| A person whose role has `all`                  | The same, in every scope                                                                                                                                                  |
+| A person on the access list who holds nothing  | Read shared objects and the shared file library, which are everyone's by the config's own word. They change nothing, and see no scoped record and nobody on the team list |
+| A workflow calling the tool API                | What its signed grant says: the scope of the record it was started for. With no grant, no scoped record                                                                   |
+| A cron job, a webhook, a script                | Nothing scoped, unless the code that runs says it is the system (`asSystem`)                                                                                              |
 
 **Where it is kept.** In one place, under everything: every store is behind a guard
 (`packages/spools/src/server/store/scope.ts`) that narrows each read, count, change and delete
@@ -55,6 +55,13 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
   can't ask about it, but the row keeps the related record's id, and a list sorted by that
   relation is still ordered by the title that isn't shown. Clear such relations when you
   turn scopes on.
+- **A deleted record's folder stays its scope's.** The folder and its files are kept in the
+  file store, and the row that says whose they were is kept with them. Every record's folder
+  carries part of the record's id in its name, so a new record never takes over a folder
+  another left, and a folder's name never says whether another scope has a record called the
+  same. A record deleted _before_ scopes were turned on has no such row: its folder is
+  nobody's, so everyone's, and the backfill can't tell whose it was. Move or remove those
+  folders before turning scopes on.
 - **Rows written before scopes were turned on** have no scope and are only there for a role
   with `all`, until `bun run db:scopes` (`spools scopes backfill`) has given them their
   record's. A task or note on no record stays with head office: nothing says whose it was.

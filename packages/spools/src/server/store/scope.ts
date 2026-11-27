@@ -209,9 +209,14 @@ const scopedRelations = (table: AnyTable) =>
     return marker?.kind === 'own' ? [{ name, relation, target: relation.table(), marker }] : []
   })
 
+/** Whether a table is an object's (scoped or shared), not one of the CRM's own. */
+const isObjectTable = (table: AnyTable): boolean => Object.values(objectTablesNow()).includes(table)
+
 /** Whether a query touches a scoped table at all: its own, one a condition reaches, or one it brings records of. */
-const touches = (table: AnyTable, query: AnyQuery): boolean =>
+const touches = (table: AnyTable, query: AnyQuery, mode: 'read' | 'write' = 'read'): boolean =>
   markerOf(table) !== undefined ||
+  // A change to a shared object's record is checked too: whoever writes nothing may not make it.
+  (mode === 'write' && isObjectTable(table)) ||
   reaches(table, query.filter) ||
   Object.keys(query.include ?? {}).some((name) => {
     const target = table.relations[name]?.table()
@@ -228,19 +233,23 @@ const touches = (table: AnyTable, query: AnyQuery): boolean =>
  */
 const scoped = (table: AnyTable, which: AnyQuery, mode: 'read' | 'write') =>
   Effect.flatMap(CurrentAccess, (access): Effect.Effect<AnyWhich, DatabaseError> => {
-    if (!scopesOf() || !touches(table, which)) {
+    if (!scopesOf() || !touches(table, which, mode)) {
       return Effect.succeed(which)
     }
 
     if (!access) {
-      return refuse(NOBODY(table))
+      // Work with nobody signed in may still change a shared object's records.
+      return markerOf(table) || touches(table, which)
+        ? refuse(NOBODY(table))
+        : Effect.succeed(which)
     }
 
     const marker = markerOf(table)
     // A person's own rows (a favourite) are theirs to make and remove wherever they can read.
     const held = mode === 'read' || (marker?.kind === 'owner' && marker.personal) ? 'read' : 'write'
 
-    if (marker && held === 'write' && writesNothing(access)) {
+    // Whoever can write nothing changes nothing: a shared object's records included.
+    if ((marker || isObjectTable(table)) && held === 'write' && writesNothing(access)) {
       return refuse('You can look at these records, but not change them.')
     }
 
@@ -398,17 +407,31 @@ export function guard(store: RawStore): RawStore {
   const insert: RawStore['insert'] = Effect.fn('scope.insert')(function* (table, values) {
     const marker = markerOf(table)
 
-    if (!marker && (!scopesOf() || scopedRelations(table).length === 0)) {
+    if (
+      !marker &&
+      (!scopesOf() || (scopedRelations(table).length === 0 && !isObjectTable(table)))
+    ) {
       return yield* store.insert(table, values)
     }
 
     const access = yield* CurrentAccess
+
+    // A shared object's record: anyone who can write something may add one. With nobody said, as before.
+    if (!marker && scopedRelations(table).length === 0) {
+      return access && writesNothing(access)
+        ? yield* refuse('You can look at these records, but not add to them.')
+        : yield* store.insert(table, values)
+    }
 
     if (!access) {
       return yield* refuse(NOBODY(table))
     }
 
     if (!marker) {
+      if (writesNothing(access)) {
+        return yield* refuse('You can look at these records, but not add to them.')
+      }
+
       yield* relationsInScope(table, values, undefined, access)
       return yield* store.insert(table, values)
     }

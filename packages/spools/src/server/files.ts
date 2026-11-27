@@ -9,8 +9,8 @@ import { addActivity, getRecord, valueText } from './records'
 import { CurrentAccess } from './runtime/access'
 import { FilesError, fromHook, type StaffError } from './runtime/errors'
 import { type FileChange, FileStore, type FolderChange, type StoredFolder } from './runtime/files'
-import { asSystem, scopesOn } from './scopes'
-import { crmConfig, getObject, spool } from './spool'
+import { asSystem, recordScope, scopesOn } from './scopes'
+import { crmConfig, getObject, objectTable, spool } from './spool'
 import { oneOf } from './store/query'
 import { Store } from './store/store'
 import { FileUpload, RecordFolder } from './store/tables'
@@ -171,7 +171,7 @@ const folderInReach = Effect.fn('files.folderInReach')(function* (
   folderId: string | null,
   mode: 'read' | 'write',
 ) {
-  if (!scopesOn() || folderId === null) {
+  if (!scopesOn()) {
     return undefined
   }
 
@@ -179,6 +179,15 @@ const folderInReach = Effect.fn('files.folderInReach')(function* (
 
   if (!access) {
     return yield* notThere()
+  }
+
+  // Whoever can write nothing changes no folder and no file, the shared ones included.
+  if (mode === 'write' && access.write !== 'all' && access.write.length === 0) {
+    return yield* fail('You can look at these files, but not change them.')
+  }
+
+  if (folderId === null) {
+    return undefined
   }
 
   const trail = yield* trailTo(folderId)
@@ -663,11 +672,34 @@ export const recordFolder = Effect.fn('files.recordFolder')(function* (
     existing = null
   }
 
+  // The folder is made in the file store before its row is written, and the store has no way
+  // to take it back. So whoever can't write the row is stopped here, with nothing made: a
+  // read-only person who finds no folder is told there is none yet.
+  if (scopesOn()) {
+    const access = yield* CurrentAccess
+    const record = yield* getRecord(objectKey, recordId)
+    const scope = record ? recordScope(objectKey, record) : null
+    const shared = objectTable(objectKey).scope === undefined
+
+    const writes =
+      !!access &&
+      (access.write === 'all' ||
+        (shared ? access.write.length > 0 : scope !== null && access.write.includes(scope)))
+
+    if (!writes) {
+      return yield* fail('This record has no folder yet. Someone who can change it can add one.')
+    }
+  }
+
   let path = yield* plannedPath(objectKey, recordId)
 
-  // Two records with the same name each get a folder: the second carries part of its id.
-  // Asked as the system: a record of another scope may have the same name, and its folder is not this one's.
-  if ((yield* asSystem(db.count(RecordFolder, { where: { driveId: drive, path } }))) > 0) {
+  // Two records with the same name each get a folder: the second carries part of its id. In a
+  // Spool with record scopes every folder does, so a name never says whether another scope has
+  // a record called the same, and a new record never takes over a folder a deleted one left.
+  if (
+    scopesOn() ||
+    (yield* asSystem(db.count(RecordFolder, { where: { driveId: drive, path } }))) > 0
+  ) {
     path = `${path} (${recordId.slice(0, 8)})`
   }
 

@@ -567,3 +567,122 @@ test('the mailbox sync’s index of addresses holds only what its owner can reac
   // With nobody said it is refused: the sync runs each mailbox as its owner.
   await expect(unattended(buildContactIndex())).rejects.toThrow()
 })
+
+test('a deleted record’s folder stays its scope’s, and a new record of the same name doesn’t take it over', async () => {
+  const south = (
+    await sys(records.createRecord('companies', { name: 'Elm Gone', branch: 'south' }, 'seed'))
+  ).id
+
+  const kept = await as('sam', files.recordFolder('companies', south))
+  await as('sam', service.deleteRecord('companies', south, sam))
+
+  // The folder and its files stay in the file store. They are still South's.
+  await expect(as('nora', files.listFolder(kept.folderId))).rejects.toThrow()
+  await expect(as('otto', files.listFolder(kept.folderId))).rejects.toThrow()
+  expect((await as('sam', files.listFolder(kept.folderId))).files).toEqual([])
+  const top = await as('nora', files.listFolder(null))
+  const shared = top.folders.find((f) => f.name === 'Companies')
+  expect(southIn(await as('nora', files.listFolder(shared?.id ?? '')))).toEqual([])
+
+  expect(JSON.stringify(await as('nora', files.listFolder(shared?.id ?? '')))).not.toContain(
+    'Elm Gone',
+  )
+
+  // A North record of the same name gets a folder of its own.
+  const north = (
+    await sys(records.createRecord('companies', { name: 'Elm Gone', branch: 'north' }, 'seed'))
+  ).id
+
+  try {
+    const fresh = await as('nora', files.recordFolder('companies', north))
+    expect(fresh.folderId).not.toBe(kept.folderId)
+  } finally {
+    await sys(records.deleteRecord('companies', north))
+  }
+})
+
+test('a read-only person opening a record’s files makes no folder, and changes none', async () => {
+  const id = (
+    await sys(records.createRecord('companies', { name: 'Fir Fresh', branch: 'north' }, 'seed'))
+  ).id
+
+  try {
+    const before = drive.calls.length
+    await expect(as('ned', files.recordFolder('companies', id))).rejects.toThrow('no folder yet')
+    // Nothing was asked of the file store: no folder named after the record was left behind.
+    expect(drive.calls.length).toBe(before)
+
+    // Once someone who can change the record has made it, he is shown it.
+    const made = await as('nora', files.recordFolder('companies', id))
+    expect((await as('ned', files.recordFolder('companies', id))).folderId).toBe(made.folderId)
+
+    // Whoever writes nothing changes no folder and no file: a shared one, the top level, or his own scope's.
+    const refused = 'You can look at these files, but not change them.'
+    await expect(as('ned', files.createFolder(null, 'Planted'))).rejects.toThrow(refused)
+    await expect(as('otto', files.createFolder(null, 'Planted'))).rejects.toThrow(refused)
+    await expect(as('ned', files.createFolder(made.folderId, 'Planted'))).rejects.toThrow(refused)
+
+    await expect(as('ned', files.changeFolder(made.folderId, { name: 'Renamed' }))).rejects.toThrow(
+      refused,
+    )
+
+    await expect(as('ned', files.deleteFolder(made.folderId))).rejects.toThrow(refused)
+
+    await expect(
+      as(
+        'ned',
+        files.startUpload(
+          { folderId: null, name: 'a.txt', sizeBytes: 5, sha256: 'a'.repeat(64) },
+          people.ned,
+        ),
+      ),
+    ).rejects.toThrow(refused)
+
+    expect(JSON.stringify(await as('nora', files.listFolder(null)))).not.toContain('Planted')
+  } finally {
+    await sys(records.deleteRecord('companies', id))
+  }
+})
+
+test('whoever can write nothing changes nothing, a shared object’s records included', async () => {
+  const product = () => sys(records.getRecord('products', ids.product))
+
+  try {
+    for (const who of ['ned', 'otto'] as const) {
+      const person = people[who]
+
+      await expect(
+        as(who, service.createRecord('products', { name: 'Planted' }, person)),
+      ).rejects.toThrow()
+
+      await expect(
+        as(who, records.createRecord('products', { name: 'Planted' }, person.id)),
+      ).rejects.toThrow()
+
+      await expect(
+        as(who, service.updateRecord('products', ids.product, { sku: 'CHANGED' }, person)),
+      ).rejects.toThrow()
+
+      await expect(as(who, service.deleteRecord('products', ids.product, person))).rejects.toThrow()
+    }
+
+    expect((await product())?.sku).toBe('CR-1')
+    expect(await sys(records.listRecords({ objectKey: 'products', q: 'Planted' }))).toEqual([])
+
+    // Reading a shared object is what "shared" means: both still can.
+    expect(
+      column(await as('otto', records.listRecords({ objectKey: 'products' })), 'name'),
+    ).toEqual(['Crate'])
+
+    // And a person who writes somewhere may change a shared record.
+    const changed = await as(
+      'nora',
+      service.updateRecord('products', ids.product, { sku: 'CR-2' }, nora),
+    )
+
+    expect(changed?.sku).toBe('CR-2')
+  } finally {
+    await sweep('products', 'Planted')
+    await sys(records.updateRecord('products', ids.product, { sku: 'CR-1' }))
+  }
+})
