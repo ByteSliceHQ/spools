@@ -80,8 +80,10 @@ sort by a related record's column (`['company', 'name']`) reaches a backend as
 `{ related: ['company', 'name'], where }` when the related object is scoped, and a row whose
 related record doesn't meet `where` must sort as a row with no related record. A backend built
 on `sqlBackend` gets this from `selectSql`. One that writes its own `ORDER BY` has to write the
-condition too (TypeScript stops it building until it handles the new form); the Prisma adapter
-writes the same subselect through `relatedOrderText`.
+condition too, or refuse the order: never drop the condition and sort by the bare column. The
+Prisma adapter writes the same subselect through `relatedOrderText`, for a related column that
+is text or a moment, and refuses any other; that path has not been run against a database
+yet.
 
 ## Using the store
 
