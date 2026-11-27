@@ -276,6 +276,63 @@ const foldersOutOfReach = Effect.fn('files.foldersOutOfReach')(function* (
   return hidden
 })
 
+/** A listing with more folders than this gives a reader who can't reach every record no counts, rather than list each one. */
+const COUNTED_LIMIT = 50
+
+/**
+ * How many things are directly inside each of these folders, for whoever is
+ * asking. The store's own number counts the folders of records out of reach
+ * (how many customers another branch has, under "Companies"), so for a reader
+ * who can't reach every record each folder is listed and counted again without
+ * them. `null`, as when the store doesn't say, for a folder too large to
+ * list at once and for a listing of more folders than `COUNTED_LIMIT`.
+ */
+const itemsInReach = Effect.fn('files.itemsInReach')(function* (
+  folders: readonly (Placed & { items: number | null })[],
+) {
+  const access = scopesOn() ? yield* CurrentAccess : null
+
+  if (!scopesOn() || access?.read === 'all') {
+    return new Map(folders.map((folder) => [folder.id, folder.items]))
+  }
+
+  if (folders.length > COUNTED_LIMIT) {
+    return new Map(folders.map((folder) => [folder.id, null]))
+  }
+
+  const files = yield* FileStore
+
+  const counted = yield* Effect.forEach(
+    folders,
+    (folder) =>
+      Effect.gen(function* () {
+        // Nothing inside: nothing to leave out.
+        if (folder.items === 0) {
+          return [folder.id, 0] as const
+        }
+
+        const inside = yield* files.list(folder.id)
+
+        if (inside.truncated) {
+          return [folder.id, null] as const
+        }
+
+        const hidden = yield* foldersOutOfReach(
+          inside.folders.map((f) => ({ id: f.id, path: `${folder.path}/${f.name}` })),
+        )
+
+        const shown = inside.folders.filter((f) => !hidden.has(f.id)).length
+        return [folder.id, inside.files.length + shown] as const
+      }).pipe(
+        // A folder that went away while it was counted has no number, and the listing still answers.
+        Effect.catchTag('FilesError', () => Effect.succeed([folder.id, null] as const)),
+      ),
+    { concurrency: 8 },
+  )
+
+  return new Map<string, number | null>(counted)
+})
+
 /** How many folders are looked through before a folder is changed. One larger than this is left to someone who holds every scope. */
 const BENEATH_LIMIT = 2000
 
@@ -413,6 +470,14 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
 
   const shownFolders = inside.folders.filter((f) => !hidden.has(f.id))
 
+  const items = yield* itemsInReach(
+    shownFolders.map((f) => ({
+      id: f.id,
+      path: under ? `${under}/${f.name}` : f.name,
+      items: f.items,
+    })),
+  )
+
   // Which of the folders shown are a record's own, for their badge.
   const owners = new Map<string, RecordRef>()
   const shown = shownFolders.map((f) => f.id)
@@ -438,7 +503,7 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
       shownFolders.map((f) => ({
         id: f.id,
         name: f.name,
-        items: f.items,
+        items: items.get(f.id) ?? null,
         record: owners.get(f.id) ?? null,
       })),
     ),
@@ -477,13 +542,14 @@ export const searchFiles = Effect.fn('files.searchFiles')(function* (q: string) 
     )
   }
 
+  const reached = found.files.filter((f) => reachable.get(f.folderId) === true)
+
   return {
-    files: sortByName(
-      found.files
-        .filter((f) => reachable.get(f.folderId) === true)
-        .map((f): DriveFile => ({ ...f, path: f.path ?? f.name })),
-    ),
-    truncated: found.truncated,
+    files: sortByName(reached.map((f): DriveFile => ({ ...f, path: f.path ?? f.name }))),
+    // "There are more" is only said of what the reader could be shown. When the store cut its
+    // answer short and some of it was held back, whether more of theirs exists can't be told
+    // (the store has no next page to ask for), and saying so would say how much others have.
+    truncated: found.truncated && reached.length === found.files.length,
   }
 })
 
