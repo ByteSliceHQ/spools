@@ -93,10 +93,17 @@ export const none = (relation: string, where?: Predicate): Predicate => ({
 })
 export const search = (text: string): Predicate => ({ op: 'search', text })
 
-/** What to sort by: a column, a column of the record a relation leads to, or the first of several columns that isn't empty. */
+/**
+ * What to sort by: a column, a column of the record a relation leads to, or the
+ * first of several columns that isn't empty. `related` is a relation's column
+ * again, but only of a record that meets `where`: a row whose related record
+ * doesn't sorts as one that has none. The guard every store is behind writes it
+ * (scope.ts), so a list never orders by a record its reader can't reach.
+ */
 export type OrderBy =
   | string
   | readonly [relation: string, column: string]
+  | { readonly related: readonly [relation: string, column: string]; readonly where: Predicate }
   | { readonly firstOf: readonly string[] }
 export type Order = {
   readonly by: OrderBy

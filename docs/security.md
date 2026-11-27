@@ -57,10 +57,13 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
   and can't move to another scope while scoped records point at it: move or unlink those
   first. Its timeline, tasks, notes, folder and sequence runs move with it.
 - **Records that crossed before scopes were turned on.** A relation that already pointed
-  into another scope is left as it is. The related record's title is not shown, and filters
-  can't ask about it, but the row keeps the related record's id, and a list sorted by that
-  relation is still ordered by the title that isn't shown. Clear such relations when you
-  turn scopes on.
+  into another scope is left as it is. The related record's title is not shown, filters can't
+  ask about it, and a list sorted by that relation sorts the row as one with no related
+  record. The row keeps the related record's id. Clear such relations when you turn scopes
+  on.
+- **A shared object can point at a scoped one** (a product's supplier). Whoever can't reach
+  the related record is shown the row without it, can't filter by it, and has it sorted as a
+  row with none.
 - **A deleted record's folder stays its scope's.** The folder and its files are kept in the
   file store, and the row that says whose they were is kept with them. Every record's folder
   carries part of the record's id in its name, so a new record never takes over a folder

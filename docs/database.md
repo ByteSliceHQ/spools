@@ -75,6 +75,14 @@ Scopes are kept by a guard every store is behind (`packages/spools/src/server/st
 so an adapter you write inherits them by building its store with `makeStore`. Code with nobody
 signed in reaches a scoped table only inside `asSystem(...)`.
 
+The guard hands your backend the query already narrowed. One part of that is in the order: a
+sort by a related record's column (`['company', 'name']`) reaches a backend as
+`{ related: ['company', 'name'], where }` when the related object is scoped, and a row whose
+related record doesn't meet `where` must sort as a row with no related record. A backend built
+on `sqlBackend` gets this from `selectSql`. One that writes its own `ORDER BY` has to write the
+condition too (TypeScript stops it building until it handles the new form); the Prisma adapter
+writes the same subselect through `relatedOrderText`.
+
 ## Using the store
 
 Server code in the framework, and an adapter that keeps its own tables, reach the
@@ -99,7 +107,8 @@ const open =
 `where` is columns that must equal a value, and `null` means empty. `filter` is
 anything else: comparisons, text, relations, full-text search
 (`packages/spools/src/server/store/query.ts`). A row's TypeScript type follows from its
-table, and `update` and `remove` refuse to run with no condition.
+table, and `update`, `remove` and `lock` refuse to run with no condition of the caller's own,
+whoever is asking.
 
 Writes that belong together go in a transaction: everything in it is kept, or none of it.
 

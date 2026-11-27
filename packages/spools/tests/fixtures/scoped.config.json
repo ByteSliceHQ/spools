@@ -131,6 +131,16 @@
       "views": [
         { "id": "all", "label": "All products", "type": "table", "columns": ["name", "sku"] }
       ]
+    },
+    "kits": {
+      "label": "Kit",
+      "labelPlural": "Kits",
+      "titleField": "name",
+      "fields": {
+        "name": { "type": "text", "required": true },
+        "maker": { "type": "relation", "to": "companies" }
+      },
+      "views": [{ "id": "all", "label": "All kits", "type": "table", "columns": ["name", "maker"] }]
     }
   },
   "automations": [{ "on": "contacts.updated", "run": "local:probe" }],

@@ -67,6 +67,7 @@ test('the world holds both branches, as the server itself sees it', async () => 
     companies: 4,
     contacts: 3,
     deals: 3,
+    kits: 0,
     products: 1,
   })
 })
@@ -115,6 +116,7 @@ test('count: totals are of the scope, on every path that counts', async () => {
     companies: 2,
     contacts: 2,
     deals: 1,
+    kits: 0,
     products: 1,
   })
 
@@ -122,6 +124,7 @@ test('count: totals are of the scope, on every path that counts', async () => {
     companies: 0,
     contacts: 0,
     deals: 0,
+    kits: 0,
     products: 1,
   })
 })
@@ -597,4 +600,93 @@ test('a change, a delete or a hold with no condition of the caller’s own is re
       Store.use((store) => store.update(Task, { where: { title: 'Ring Alder' } }, {})),
     ),
   ).toBe(1)
+})
+
+test('a list sorted by a relation is never in the order of records its reader can’t reach', async () => {
+  const names = async (
+    who: 'nora' | 'hana',
+    objectKey: string,
+    field: string,
+    dir: 'asc' | 'desc',
+  ) =>
+    (
+      await as(
+        who,
+        records.listRecords({ objectKey, sort: { field, dir }, relations: 'titles' }),
+        null,
+      )
+    ).map((row) => String(row.name))
+
+  // Nell is a North contact whose company is a South one: "Birch Supply" would put her first,
+  // going down. To Nora she has no company, and sorts as contacts without one do: last.
+  expect(await names('nora', 'contacts', 'company', 'desc')).toEqual([
+    'Nina Alder',
+    'Nell Crossing',
+  ])
+
+  expect(await names('nora', 'contacts', 'company', 'asc')).toEqual(['Nina Alder', 'Nell Crossing'])
+
+  // Whoever reaches both companies is given the order of both: Birch Supply's two, then Alder Works's.
+  const both = await names('hana', 'contacts', 'company', 'desc')
+  expect(both.slice(0, 2).toSorted()).toEqual(['Nell Crossing', 'Sofia Birch'])
+  expect(both[2]).toBe('Nina Alder')
+
+  // A shared object pointing at a scoped one: kits are everyone's, their makers are not.
+  const made: string[] = []
+
+  try {
+    for (const [name, who, maker] of [
+      ['Box', 'sam', ids.south.depot],
+      ['Carton', 'nora', ids.north.annex],
+      ['Drum', 'nora', ids.north.company],
+      ['Empty', 'nora', null],
+    ] as const) {
+      made.push(
+        (await as(who, service.createRecord('kits', { name, makerId: maker }, people[who]))).id,
+      )
+    }
+
+    // Makers going down: Birch Depot (Box), Alder Works (Drum), Alder Annex (Carton), none (Empty).
+    expect(await names('hana', 'kits', 'maker', 'desc')).toEqual(['Box', 'Drum', 'Carton', 'Empty'])
+
+    // Nora isn't shown Box's maker, so it sorts with Empty, which has none. Ties go by id.
+    const hers = await names('nora', 'kits', 'maker', 'desc')
+    expect(hers.slice(0, 2)).toEqual(['Drum', 'Carton'])
+    expect(hers.slice(2).toSorted()).toEqual(['Box', 'Empty'])
+
+    // Renaming the maker she can't reach moves nothing for her.
+    await as(
+      'sam',
+      service.updateRecord('companies', ids.south.depot, { name: 'Aa Depot' }, people.sam),
+    )
+
+    expect(await names('nora', 'kits', 'maker', 'desc')).toEqual(hers)
+
+    expect(await names('nora', 'kits', 'maker', 'asc')).toEqual([
+      'Carton',
+      'Drum',
+      ...hers.slice(2),
+    ])
+
+    // The store itself, asked directly for the first row by a relation's column.
+    const first = await as(
+      'nora',
+      Store.use((store) =>
+        store.first(objectTable('kits'), {
+          order: [{ by: ['maker', 'name'], dir: 'desc', nulls: 'last' }],
+        }),
+      ),
+      null,
+    )
+
+    expect(first?.name).toBe('Drum')
+  } finally {
+    await sys(
+      service.updateRecord('companies', ids.south.depot, { name: 'Birch Depot' }, people.sam),
+    )
+
+    for (const id of made) {
+      await sys(records.deleteRecord('kits', id))
+    }
+  }
 })

@@ -4,7 +4,15 @@ import { EVERY_SCOPE, type ScopeAccess } from '../../crm/scopes'
 import { CurrentAccess } from '../runtime/access'
 import { DatabaseError, type Timeout } from '../runtime/errors'
 import { objectTables } from './objects'
-import { and, oneOf, type Predicate, type Query, type Scalar } from './query'
+import {
+  and,
+  oneOf,
+  type Order,
+  type OrderBy,
+  type Predicate,
+  type Query,
+  type Scalar,
+} from './query'
 import type { DateKinds, RawChanges, RawRow, StoreShape, ValueCount } from './store'
 import type { AnyTable, TableScope } from './table'
 import { systemTables } from './tables'
@@ -22,8 +30,9 @@ import { systemTables } from './tables'
  *   `scopes.objects`, and the system tables that hang off a record) only shows,
  *   counts, changes, deletes and holds the rows `CurrentAccess` can read or write;
  * - a condition that reaches another table (`some`, `none`) is narrowed on that
- *   table too, and a related record `include` brings back is left out when it
- *   is out of reach;
+ *   table too, a related record `include` brings back is left out when it is
+ *   out of reach, and a list sorted by a relation sorts such a row as one with
+ *   no related record;
  * - a new row takes the active scope, a row that hangs off a record takes that
  *   record's, and a scope that isn't held is refused whoever sends it;
  * - a relation between two scoped objects must stay inside one scope, and a
@@ -86,7 +95,7 @@ export type RawStore = { readonly [Method in keyof StoreShape]: RawMethods[Metho
 
 /** What the guard does with each store method. Every method has to say. */
 export const SCOPE_DECISIONS = {
-  find: 'rows are narrowed to what can be read; so are conditions through relations, and related records brought back',
+  find: 'rows are narrowed to what can be read; so are conditions through relations, related records brought back, and the related records an order sorts by',
   first: 'as find',
   count: 'narrowed to what can be read',
   countValues: 'narrowed to what can be read',
@@ -202,6 +211,42 @@ function reaches(table: AnyTable, p: Predicate | undefined): boolean {
   }
 }
 
+/** What an order sorts by when it sorts by a related record's column: the relation, the column and the table it is in. */
+function relatedOrder(table: AnyTable, by: OrderBy) {
+  if (Is.isString(by) || 'firstOf' in by) {
+    return undefined
+  }
+
+  const [name, column] = 'related' in by ? by.related : by
+  const target = Object.hasOwn(table.relations, name) ? table.relations[name]?.table() : undefined
+  return target && { name, column, target, where: 'related' in by ? by.where : undefined }
+}
+
+/**
+ * An order with every related record it sorts by narrowed to what can be read:
+ * a row whose related record is out of reach sorts as one that has none.
+ * Without this a list sorted by a relation would be in the order of titles its
+ * reader is never shown, and could be read back from where a row lands.
+ */
+function orderInReach(
+  table: AnyTable,
+  order: AnyQuery['order'],
+  access: ScopeAccess,
+): AnyQuery['order'] {
+  return order?.map((each): Order => {
+    const found = relatedOrder(table, each.by)
+
+    if (!found) {
+      return each
+    }
+
+    const asked = found.where && narrowed(found.target, found.where, access)
+    const rule = reach(found.target, access.read)
+    const where = asked && rule ? and(asked, rule) : (asked ?? rule)
+    return where ? { ...each, by: { related: [found.name, found.column], where } } : each
+  })
+}
+
 /** The relations of a table that lead to a scoped object's record, by the column that holds the key. */
 const scopedRelations = (table: AnyTable) =>
   Object.entries(table.relations).flatMap(([name, relation]) => {
@@ -223,8 +268,8 @@ const touches = (table: AnyTable, query: AnyQuery, mode: 'read' | 'write' = 'rea
     return !!target && markerOf(target) !== undefined
   }) ||
   (query.order ?? []).some(({ by }) => {
-    const target = Array.isArray(by) ? table.relations[String(by[0])]?.table() : undefined
-    return !!target && markerOf(target) !== undefined
+    const found = relatedOrder(table, by)
+    return !!found && (markerOf(found.target) !== undefined || reaches(found.target, found.where))
   })
 
 /**
@@ -622,7 +667,14 @@ export function guard(store: RawStore): RawStore {
         }
 
         const related = relatedInReach(table, query.include, access)
-        const rows = yield* store.find(table, { ...query, ...which, include: related.include })
+
+        const rows = yield* store.find(table, {
+          ...query,
+          ...which,
+          include: related.include,
+          order: orderInReach(table, query.order, access),
+        })
+
         return related.hide(rows)
       }),
     first: (table, query) =>
@@ -635,7 +687,14 @@ export function guard(store: RawStore): RawStore {
         }
 
         const related = relatedInReach(table, query.include, access)
-        const row = yield* store.first(table, { ...query, ...which, include: related.include })
+
+        const row = yield* store.first(table, {
+          ...query,
+          ...which,
+          include: related.include,
+          order: orderInReach(table, query.order, access),
+        })
+
         return row ? (related.hide([row])[0] ?? null) : null
       }),
     count: (table, which = {}) =>
