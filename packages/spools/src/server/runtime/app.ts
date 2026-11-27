@@ -7,7 +7,7 @@ import { SignIns } from '../sign-ins'
 import { spool } from '../spool'
 import { type Store, storeLayer } from '../store/store'
 import { Users } from '../users'
-import { carriedAccess, CurrentAccess } from './access'
+import { carriedAccess, carriedPerson, CurrentAccess, CurrentPerson } from './access'
 import { Agents } from './agents'
 import type { Auth } from './auth'
 import { Email } from './email'
@@ -132,7 +132,12 @@ export function runServer<A, E>(program: Effect.Effect<A, E, AppServices>): Prom
   // Called from anywhere else, nobody has said, and a scoped table refuses until the program does.
   const access = carriedAccess()
   return runtime().runPromise(
-    access ? Effect.provideService(program, CurrentAccess, access) : program,
+    access
+      ? program.pipe(
+          Effect.provideService(CurrentAccess, access),
+          Effect.provideService(CurrentPerson, carriedPerson()),
+        )
+      : program,
   )
 }
 

@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import {
   accessFrom,
+  DEFAULT_GRANT_MINUTES,
   EVERY_SCOPE,
   NO_ACCESS,
   type ScopeAccess,
@@ -14,7 +15,7 @@ import {
   type ScopeSession,
   SYSTEM_ACCESS,
 } from '../crm/scopes'
-import { CurrentAccess } from './runtime/access'
+import { type BoundRecord, CurrentAccess, CurrentPerson, CurrentRecord } from './runtime/access'
 import * as config from './runtime/config'
 import {
   type AuthError,
@@ -202,7 +203,10 @@ export const asUser =
   (user: CrmUser, wanted?: string | null) =>
   <A, E, R>(program: Effect.Effect<A, E, R>): Effect.Effect<A, E | Failure, R | Scopes> =>
     scopesOn()
-      ? Effect.flatMap(accessOf(user, wanted), (access) => withAccess(access)(program))
+      ? Effect.flatMap(accessOf(user, wanted), (access) =>
+          // A grant minted while this runs is this person's (`grantFor`).
+          Effect.provideService(withAccess(access)(program), CurrentPerson, user.id),
+        )
       : program
 
 /** The cookie that says which scope a person asked to work in. A preference, never proof: `asUser` checks it against what they hold. */
@@ -269,17 +273,35 @@ export const scopeSession = Effect.fn('scopes.scopeSession')(function* (
 /** The header a call to the tool API carries its grant in. */
 export const GRANT_HEADER = 'x-spools-grant'
 
-/** How long a grant is good for unless its maker says otherwise. */
-const GRANT_TTL_MS = 60 * 60 * 1000
+/** How long a grant is good for: `scopes.grantMinutes` in crm.config.json, a quarter of an hour unless it says. */
+const grantTtlMs = () => (crmConfig().scopes?.grantMinutes ?? DEFAULT_GRANT_MINUTES) * 60_000
 
-/** What a grant says, as it is signed: what can be read and written, the active scope, who it was made for, when it ends. */
+/**
+ * What a grant says, as it is signed: what can be read and written, the active
+ * scope, who it was made for, the record it was made for (`o`, `i`), what
+ * started the work (`t`), and when it ends.
+ */
 const grantPayload = z.object({
   r: z.union([z.literal('all'), z.array(z.string()).max(500)]),
   w: z.union([z.literal('all'), z.array(z.string()).max(500)]),
   a: z.string().nullable(),
   u: z.string().optional(),
+  o: z.string().optional(),
+  i: z.string().optional(),
+  t: z.string().max(200).optional(),
   e: z.number(),
 })
+
+/** What a grant states, once it has been checked. */
+export type Grant = {
+  readonly access: ScopeAccess
+  /** The person it was made for, if it was made for one. The tool route refuses it once they are off the access list. */
+  readonly userId: string | null
+  /** The record it was made for, if it was made for one. The tool API then answers about that record and no other. */
+  readonly record: BoundRecord | null
+  /** What started the work it was made for: a workflow's trigger. Stated, and signed; a tool call says nothing to check it against. */
+  readonly trigger: string | null
+}
 
 /** The key grants are signed with. A deployment without one makes and takes none. */
 const grantSecret = Effect.gen(function* () {
@@ -304,11 +326,12 @@ const signed = (secret: string, payload: string) =>
  * Signed with `APP_SECRET`, like an unsubscribe link, so neither a workflow nor
  * a model can widen it; and nothing but this header carries a scope, so nothing
  * a model can put in a tool call switches one. It never carries the system's
- * own access.
+ * own access. It can say who it was made for and which record: both are
+ * checked when it comes back (`toolRoute`, src/server/tools.ts).
  */
 export const mintGrant = Effect.fn('scopes.mintGrant')(function* (
   access: ScopeAccess,
-  options: { userId?: string; ttlMs?: number } = {},
+  options: { userId?: string; record?: BoundRecord; trigger?: string; ttlMs?: number } = {},
 ) {
   const secret = yield* grantSecret
   const now = yield* Clock.currentTimeMillis
@@ -319,15 +342,18 @@ export const mintGrant = Effect.fn('scopes.mintGrant')(function* (
       w: access.write,
       a: access.active,
       u: options.userId,
-      e: now + (options.ttlMs ?? GRANT_TTL_MS),
+      o: options.record?.objectKey,
+      i: options.record?.recordId,
+      t: options.trigger?.slice(0, 200),
+      e: now + (options.ttlMs ?? grantTtlMs()),
     }),
   ).toString('base64url')
 
   return `${payload}.${signed(secret, payload)}`
 })
 
-/** The access a grant states, or null when it isn't one this server signed, or has run out. */
-export const readGrant = Effect.fn('scopes.readGrant')(function* (grant: string | null) {
+/** What a grant states, or null when it isn't one this server signed, or has run out. */
+export const openGrant = Effect.fn('scopes.openGrant')(function* (grant: string | null) {
   const [payload, signature, ...rest] = (grant ?? '').split('.')
 
   if (!payload || !signature || rest.length > 0) {
@@ -355,13 +381,43 @@ export const readGrant = Effect.fn('scopes.readGrant')(function* (grant: string 
     }
   })
 
-  if (!said || said.e <= (yield* Clock.currentTimeMillis)) {
+  // Half a record is no record: a grant that names one must name all of it.
+  if (
+    !said ||
+    said.e <= (yield* Clock.currentTimeMillis) ||
+    (said.o === undefined) !== (said.i === undefined)
+  ) {
     return null
   }
 
-  const access: ScopeAccess = { read: said.r, write: said.w, active: said.a }
-  return access
+  const stated: Grant = {
+    access: { read: said.r, write: said.w, active: said.a },
+    userId: said.u ?? null,
+    record:
+      said.o === undefined || said.i === undefined ? null : { objectKey: said.o, recordId: said.i },
+    trigger: said.t ?? null,
+  }
+
+  return stated
 })
+
+/** The access a grant states, or null when it isn't one this server signed, or has run out. */
+export const readGrant = (grant: string | null) =>
+  Effect.map(openGrant(grant), (stated) => stated?.access ?? null)
+
+/**
+ * Runs a program with what a grant states: its access, for the person it was
+ * made for, and about the record it was made for. The tool route does this
+ * once it has checked the person is still on the access list.
+ */
+export const withGrant =
+  (grant: Grant) =>
+  <A, E, R>(program: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    program.pipe(
+      withAccess(grant.access),
+      Effect.provideService(CurrentPerson, grant.userId),
+      Effect.provideService(CurrentRecord, grant.record),
+    )
 
 /** The scope of a record of an object, as its row holds it: null for a shared object's, and for one with none. */
 export const recordScope = (objectKey: string, record: CrmRecord) => {
@@ -375,14 +431,17 @@ export const recordScope = (objectKey: string, record: CrmRecord) => {
 
 /**
  * The grant a workflow started for a record is handed: the record's scope, to
- * read, and to write only if whoever started it could. Null in a Spool without
- * scopes, and when nobody said whose work this is: a workflow then has no
- * grant, and its calls to the tool API reach no scoped record.
+ * read, and to write only if whoever started it could. It is made for that
+ * record, so a call that carries it is answered about that record and no
+ * other, and for the person whose work this is (`CurrentPerson`), so it stops
+ * when they leave. Null in a Spool without scopes, and when nobody said whose
+ * work this is: a workflow then has no grant, and its calls to the tool API
+ * reach no scoped record.
  */
 export const grantFor = Effect.fn('scopes.grantFor')(function* (
   objectKey: string,
   record: CrmRecord,
-  options: { userId?: string; ttlMs?: number } = {},
+  options: { userId?: string; trigger?: string; ttlMs?: number } = {},
 ) {
   const access = yield* CurrentAccess
 
@@ -393,9 +452,10 @@ export const grantFor = Effect.fn('scopes.grantFor')(function* (
   const scope = recordScope(objectKey, record)
   const reads = scope !== null && (access.read === 'all' || access.read.includes(scope))
   const writes = scope !== null && (access.write === 'all' || access.write.includes(scope))
+  const userId = options.userId ?? (yield* CurrentPerson) ?? undefined
 
   return yield* mintGrant(
     { read: reads && scope ? [scope] : [], write: writes && scope ? [scope] : [], active: scope },
-    options,
+    { ...options, userId, record: { objectKey, recordId: record.id } },
   )
 })

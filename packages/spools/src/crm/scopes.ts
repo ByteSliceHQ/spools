@@ -21,6 +21,9 @@ export type ScopeInfo = { key: string; label: string }
  */
 export type ScopeGrant = { scope: string; role: string }
 
+/** How many minutes a signed grant for the tool API lasts unless `scopes.grantMinutes` says (docs/swirls.md). */
+export const DEFAULT_GRANT_MINUTES = 15
+
 /** The scope key a resolver may use for a role that reaches every scope. */
 export const EVERY_SCOPE = '*'
 

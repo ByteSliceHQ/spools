@@ -33,7 +33,7 @@ to one scope, and a person reaches only the scopes they hold.
 | A person whose roles are all read-only         | Read what they hold, and shared objects. Any change is refused: scoped records, shared objects' records, folders and files                                                |
 | A person whose role has `all`                  | The same, in every scope                                                                                                                                                  |
 | A person on the access list who holds nothing  | Read shared objects and the shared file library, which are everyone's by the config's own word. They change nothing, and see no scoped record and nobody on the team list |
-| A workflow calling the tool API                | What its signed grant says: the scope of the record it was started for. With no grant, no scoped record                                                                   |
+| A workflow calling the tool API                | What its signed grant says: the one record it was started for, while the person who started it is still on the access list. With no grant, no scoped record               |
 | A cron job, a webhook, a script                | Nothing scoped, unless the code that runs says it is the system (`asSystem`)                                                                                              |
 
 **Where it is kept.** In one place, under everything: every store is behind a guard
@@ -84,6 +84,15 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
   (the link carries it), never by its id alone. Anyone with access to the store itself still
   reads all of it. The shared library, and folders the team made outside a record's folder,
   are everyone's.
+- **Grants for the tool API.** A workflow started for a record is handed a token signed with
+  `APP_SECRET` (HMAC-SHA256, compared in constant time). It states the record's scope, the
+  record, who started the work and when it ends: fifteen minutes later unless
+  `scopes.grantMinutes` says. The tool API answers a call that carries it about that record
+  only, and refuses it once that person is off the access list. It is not checked again
+  against what the person holds: someone who loses a scope but stays on the access list
+  keeps a grant made before until it runs out. Whoever holds a grant has its reach until
+  then, so workflows must keep it out of prompts and messages. See
+  [Swirls](swirls.md#record-scopes).
 - **The assistant.** Its chats must be each person's own, which needs federation with your
   sign-in provider: with a project API key everyone would read everyone's chats, so the
   assistant is refused and says so. And the assistant's record tools are refused in chat,

@@ -1,6 +1,6 @@
 import { Effect, Predicate, Schema } from 'effect'
 
-import { carrying, CurrentAccess } from './access'
+import { carrying, CurrentAccess, CurrentPerson } from './access'
 
 /**
  * The failures staff can see. Each one's `message` is written for the person
@@ -137,9 +137,9 @@ export const fromHook = <A>(
 ): Effect.Effect<Awaited<A>, ExtensionError> =>
   // The app's code calls back in through `@swirls/spools/extensions`: what it does there is
   // done with the access of whoever called it, and nothing more (access.ts).
-  Effect.flatMap(CurrentAccess, (access) =>
+  Effect.flatMap(Effect.all([CurrentAccess, CurrentPerson]), ([access, person]) =>
     Effect.tryPromise({
-      try: async (): Promise<Awaited<A>> => await carrying(access, call),
+      try: async (): Promise<Awaited<A>> => await carrying(access, call, person),
       catch: (cause) => new ExtensionError({ hook, cause }),
     }),
   )

@@ -15,13 +15,11 @@ export type { RunContext, RunResult } from '../crm/extensions'
 const startWorkflow = Effect.fn('actions.startWorkflow')(function* (name: string, ctx: RunContext) {
   const agents = yield* Agents
 
-  // In a Spool with record scopes the workflow is handed a grant for this record's scope, to
-  // send back with each call it makes to the tool API (`x-spools-grant`). Without it those
-  // calls reach no scoped record. A day: a workflow may wait on a person before it writes back.
-  const grant = yield* grantFor(ctx.objectKey, ctx.record, {
-    userId: ctx.actor?.id,
-    ttlMs: 24 * 60 * 60 * 1000,
-  })
+  // In a Spool with record scopes the workflow is handed a grant to send back with each call it
+  // makes to the tool API (`x-spools-grant`). Without it those calls reach no scoped record. It
+  // is made for this record and for whoever this work is for, and lasts as long as the config
+  // says (`scopes.grantMinutes`): a workflow that waits on a person needs that set longer.
+  const grant = yield* grantFor(ctx.objectKey, ctx.record, { trigger: ctx.trigger })
 
   const event = {
     objectKey: ctx.objectKey,

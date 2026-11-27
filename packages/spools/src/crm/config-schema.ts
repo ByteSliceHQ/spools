@@ -378,6 +378,13 @@ export const crmConfigSchema = z
         labelPlural: z.string().trim().min(1).max(40).default('Scopes'),
         objects: z.record(ident, ident),
         roles: z.record(ident, scopeRoleSchema),
+        /**
+         * How many minutes the signed grant a workflow is handed lasts: 15
+         * unless this says (docs/swirls.md). Longer only for workflows that
+         * wait before they write back: until it runs out, whoever holds a
+         * grant has its reach.
+         */
+        grantMinutes: z.number().int().min(1).max(10_080).optional(),
       })
       .optional(),
     automations: z.array(automationSchema).default([]),

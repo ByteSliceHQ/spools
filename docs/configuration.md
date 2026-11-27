@@ -64,11 +64,12 @@ they hold.
 }
 ```
 
-| Key                    | Description                                                                                                                                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `label`, `labelPlural` | What a scope is called in the CRM. Default "Scope", "Scopes".                                                                                                                                           |
-| `objects`              | For each scoped object, the field that says which scope a record is in: a `select`, a `text` or a `relation` field, not encrypted. An object left out is shared by everyone.                            |
-| `roles`                | What a scope can be held with. `write` lets the role create, change and delete (without it the role only reads). `all` makes the role reach every scope, whichever one it was granted in (head office). |
+| Key                    | Description                                                                                                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`, `labelPlural` | What a scope is called in the CRM. Default "Scope", "Scopes".                                                                                                                                            |
+| `objects`              | For each scoped object, the field that says which scope a record is in: a `select`, a `text` or a `relation` field, not encrypted. An object left out is shared by everyone.                             |
+| `roles`                | What a scope can be held with. `write` lets the role create, change and delete (without it the role only reads). `all` makes the role reach every scope, whichever one it was granted in (head office).  |
+| `grantMinutes`         | How many minutes the signed grant a workflow is handed lasts ([Swirls](swirls.md#record-scopes)). Default 15, at most 10080 (a week). Set it longer only for workflows that wait before they write back. |
 
 - **Who holds what** is not in the config: it comes from your sign-in provider
   ([Clerk organizations](auth.md#record-scopes), or `devAuth({ scopes })` in development) or

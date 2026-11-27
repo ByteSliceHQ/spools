@@ -105,8 +105,7 @@ In a Spool with [record scopes](security.md#record-scopes) the tool API reaches 
 and nothing in a tool call's body (which a model writes) can switch one.
 
 - A workflow started for a record gets `grant` in its input, beside `objectKey`, `record`,
-  `actor` and `trigger`. It is good for the record's scope, and to write only if whoever
-  started the workflow could. Send it back with every call to the tool API:
+  `actor` and `trigger`. Send it back with every call to the tool API:
 
   ```
   headers: @ts {
@@ -120,11 +119,24 @@ and nothing in a tool call's body (which a model writes) can switch one.
 
   The workflows a new Spool comes with don't send it yet: add the header to each `http`
   node that calls `/api/swirls/tools/*` before turning scopes on, or their write-backs are
-  refused. A grant lasts a day.
+  refused.
 
-  Treat the grant as a secret of the run. Put it in the header and nowhere else: never into a
-  prompt, a message or anything a model reads or writes, or text the model was fed could send
-  it somewhere else.
+- **What a grant is good for.** The scope of the record the workflow was started for, to
+  read, and to write only if whoever started the workflow could. It is made for that one
+  record: `get`, `update` and `add_note` answer about it and no other record of the scope,
+  and `search` and `create`, which reach the rest of the scope, are refused. `describe` and
+  the marketing tools reach no scoped record and work as before.
+- **Whose it is.** A grant is made for the person whose work started the workflow, and is
+  refused once that person is off the access list. A change a tool makes under a grant
+  that starts another workflow hands on a grant for the same person.
+- **How long it lasts.** Fifteen minutes, or [`scopes.grantMinutes`](configuration.md#scopes).
+  A workflow that waits (on a person, on a timer) before it writes back needs that set
+  longer than its longest wait. Until a grant runs out, whoever holds it has its reach, so
+  keep it as short as your workflows allow.
+- **Treat the grant as a secret of the run.** Put it in the header and nowhere else: never
+  into a prompt, a message or anything a model reads or writes, or text the model was fed
+  could send it somewhere else.
+- A grant is signed with `APP_SECRET`. Changing that secret ends every grant in flight.
 
 - **The assistant's record tools are refused in chat.** A chat's tool workflows are started
   by the engine, not the CRM, so there is no input to put a grant in, and a value the model
