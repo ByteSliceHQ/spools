@@ -117,9 +117,11 @@ and nothing in a tool call's body (which a model writes) can switch one.
   }
   ```
 
-  The workflows a new Spool comes with don't send it yet: add the header to each `http`
-  node that calls `/api/swirls/tools/*` before turning scopes on, or their write-backs are
-  refused.
+  The two record workflows a new Spool comes with (`new_contact`, `enrich_contact`) send
+  it, and leave the header out when there is no grant (a Spool without scopes). A Spool
+  made before they did has to add it to each `http` node that calls
+  `/api/swirls/tools/*`, and deploy the workflows, before turning scopes on, or their
+  write-backs are refused. `crm_event` in `swirls/schemas.swirls` lists `grant` too.
 
 - **What a grant is good for.** The scope of the record the workflow was started for, to
   read, and to write only if whoever started the workflow could. It is made for that one

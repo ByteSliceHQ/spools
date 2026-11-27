@@ -96,7 +96,10 @@ In the rest of this file `P` is `packages/spools/src`, and a path that starts wi
   scopes of whoever the request is for (`CurrentAccess`). Don't work around it: code with
   nobody signed in (a cron route, a schedule, a script) runs inside `asSystem(...)` or it is
   refused a scoped table, and a new store method doesn't build until it says what it does
-  about scopes. The file store is checked separately, in `P/server/files.ts`.
+  about scopes. The file store is checked separately, in `P/server/files.ts`. A control that
+  changes something is shown by `useWriteReach()` (`P/crm/ui/write-reach.ts`; the rules are
+  `writeReach` in `P/crm/scopes.ts`), so whoever can't make a change isn't offered it. That is
+  for the page's sake only: the guard is what refuses.
 - **Encryption:** fields marked `"encrypted"` are stored as plaintext because
   `@cipherstash/stack-prisma` 1.2.1 only supports Prisma Next 0.17, not Prisma 8.
   `crm:gen` warns about each one. Don't remove the markers.

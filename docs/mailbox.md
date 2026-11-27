@@ -46,6 +46,22 @@ Each teammate sees what their mailboxes allow under the envelope button at the
 bottom of the sidebar and on the Integrations page, with a "Read now" button and
 the last error if a read failed.
 
+## With record scopes
+
+In a Spool with [record scopes](security.md#record-scopes), each mailbox is read as its
+owner, whoever starts the read (the schedule, the cron job, "Read now").
+
+- Mail and meetings are matched to the records the owner can reach, and logged only on
+  records the owner can change. One group's subject lines never land on another group's
+  contact, even when both know the same address.
+- A mailbox whose owner only reads logs nothing: writing to a timeline is a change, and
+  theirs are refused.
+- A mailbox whose owner is no longer on the access list is left alone.
+- Each timeline entry takes its record's scope, and moves with the record if it moves.
+- "Compose email" is a change to the record: someone who only reads the record isn't
+  offered it, and the server refuses it.
+- Connections on the Integrations page are each person's own, as before.
+
 ## Setup
 
 For the sign-in account, all of it is in Clerk and the provider's console; the CRM

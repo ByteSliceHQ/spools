@@ -254,6 +254,45 @@ Anyone who may use the CRM can see, add, rename, move and delete every file, as 
 notes and tasks. Folders give no separate permissions. Whoever can open a FlashDrive drive,
 or holds a key to the bucket, can read every file in it.
 
+### With record scopes
+
+In a Spool with [record scopes](security.md#record-scopes) the file store still knows
+nothing of them, so the CRM checks every folder and file it is asked about.
+
+| What                                                      | Whose it is                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| A scoped record's folder, and everything under it         | Its record's scope. Anyone else is told it isn't there: listed, searched, opened or changed                                    |
+| A shared object's record's folder                         | Everyone's                                                                                                                     |
+| The library, and folders the team made outside a record   | Everyone's                                                                                                                     |
+| A file                                                    | The folder it is in. It is opened, renamed, moved and deleted through that folder (the link carries it), never by its id alone |
+| A deleted record's folder                                 | Still its scope's: the folder and files stay in the store, and the row that says whose they were is kept                       |
+| A folder from before scopes were on, whose record is gone | Nobody's, so everyone's: nothing says whose it was. Move or remove these before turning scopes on                              |
+
+- **Someone who only reads** opens and searches what they can reach and changes nothing:
+  no upload, new folder, rename, move or delete, in a record's folder or a shared one. The
+  file browser shows them no controls for it, and the server refuses each change itself.
+  Someone who writes some scopes and only reads others gets the controls folder by folder.
+- **A record's folder is made by someone who can change the record.** A person who only
+  reads a record with no folder yet is told it has none.
+- **Every record's folder carries part of the record's id** (`Companies/Acme (1f0c9a2e)`),
+  so a name never says whether another scope has a record called the same, and a new record
+  never takes over a folder another left.
+- **A shared folder that holds other scopes' record folders** ("Companies") can be renamed,
+  moved or deleted only by someone who can change every record whose folder is inside it.
+  The number beside it counts what the reader can see inside, not what the store holds; a
+  listing of more than 50 folders shows no counts to someone who can't reach every record.
+- **Search** returns files in folders the reader can reach. "And more" is only said when
+  nothing the store found was held back. The store returns its first 200 matches whoever
+  asks, so a search that mostly matches other scopes' files can miss some of the reader's
+  own: search for more of the name.
+- **A folder is never without an owner while it is made.** The row that says whose it is,
+  is written before the folder, and learns the folder's id after. If the server stops in
+  between, the row still owns the folder by its path, and the next visit to the record
+  finishes the work. Renaming or moving the parent folder in the store itself during that
+  moment is the one thing that can part them.
+- Anyone with access to the store itself (the FlashDrive drive, the bucket) reads all of
+  it, whatever their scope in the CRM.
+
 ## Troubleshooting
 
 | What you see                                                   | What it means                                                                                                                                                                                                                 |
