@@ -11,9 +11,11 @@ const back = (error: string) =>
   })
 
 /**
- * Start connecting the signed-in teammate's Google or Microsoft account: sets a
- * short-lived cookie that ties the flow to this browser, then redirects to the
- * provider's consent screen.
+ * Start connecting an account as the signed-in teammate: sets a short-lived
+ * cookie that ties the flow to this browser, then redirects to the provider's
+ * consent screen. For a provider shared by group, `?group=` says which group
+ * the connection is for; it is checked and signed into the `state` here, and
+ * the callback reads it from there.
  */
 export const integrationConnectHandlers = {
   GET: apiRoute(
@@ -31,7 +33,14 @@ export const integrationConnectHandlers = {
       }
 
       return Effect.gen(function* () {
-        const { url, cookie } = yield* createAuthRequest(params.provider, user.id)
+        const group = new URL(request.url).searchParams.get('group')
+
+        const { url, cookie } = yield* createAuthRequest(
+          params.provider,
+          user,
+          undefined,
+          group === null ? {} : { group },
+        )
 
         const secure = ((yield* config.variable('APP_URL')) ?? '').startsWith('https://')
           ? '; Secure'

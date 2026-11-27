@@ -191,10 +191,14 @@ model MailboxSync {
 
 /// An account a teammate connected on the Integrations page: another mailbox, or
 /// a service an extension adds. A person can connect several accounts per provider.
+/// Most are that teammate's own. One whose provider is shared belongs to the team or
+/// to one group of it, whoever connected it.
 model Integration {
   id String @id @onCreate(uuid())
   createdAt DateTime @default(now()) @onCreate(now()) @map("created_at")
   updatedAt temporal.UpdatedAt @map("updated_at")
+  /// The teammate who connected it. Whose it is, unless `shared` says it is the
+  /// team's or a group's: then this is who connected it last, and nothing more.
   userId String @map("user_id")
   provider String
   /// Which account at the provider: the email address of a mailbox, lower-cased.
@@ -205,8 +209,26 @@ model Integration {
   scopes String
   status String
   lastError String? @map("last_error")
+  /// Whose it is: empty for the teammate in `userId`, "team" for everyone, "group"
+  /// for the group in `groupKey`. The tokens are sealed for this, so changing it here
+  /// leaves them unreadable.
+  shared String @default("")
+  /// Which group a "group" connection is for. Empty otherwise.
+  groupKey String @default("") @map("group_key")
+  /// The name of whoever connected a shared connection, as it was then: they may
+  /// no longer be on the access list when it is shown.
+  connectedByName String? @map("connected_by_name")
+  /// When a shared connection was last connected or connected again.
+  connectedAt DateTime? @map("connected_at")
+  /// For a shared connection, what it is: its provider, its account, and the team or
+  /// which group, as one value. No two rows may hold the same one, so an account is
+  /// connected once for the team (or for a group) whoever connects it. Empty on a
+  /// connection of one's own, and on a shared one stored before this column: connecting
+  /// the account again fills it in.
+  ownerKey String? @map("owner_key")
 
-  @@unique([userId, provider, account])
+  @@unique([userId, provider, account, shared, groupKey])
+  @@unique([ownerKey])
   @@map("integrations")
   @@rls
 }

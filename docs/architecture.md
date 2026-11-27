@@ -189,7 +189,7 @@ activities and tasks so that lists can filter and sort by them:
 | `mailbox_sync`       | How far the mail and calendar sync has read each of a teammate's mailboxes. No credentials                                 |
 | `record_folders`     | Which folder in the file store is a record's own. The folders and files themselves are in the store                        |
 | `file_uploads`       | A file on its way into the store, until the store confirms it                                                              |
-| `integrations`       | Accounts teammates connected on the Integrations page, with their OAuth tokens sealed by the vault before they are stored  |
+| `integrations`       | Accounts connected on the Integrations page, a teammate's own or shared, their OAuth tokens sealed by the vault first      |
 | `sequence_runs`      | Each record's place in an email [sequence](campaigns.md): which email is next and when it is due                           |
 | `guide_progress`     | Which [guides](guides.md) each person has finished or dismissed, so each is offered once                                   |
 | `marketing_sites`    | What the last check of the business's website found, and what the assistant learned from it. See [Marketing](marketing.md) |

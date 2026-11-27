@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { PGlite } from '@electric-sql/pglite'
 import { Effect, Exit, Layer } from 'effect'
@@ -20,7 +23,8 @@ import {
 import { allTables, schemaSql } from '../../src/server/store/schema-sql'
 import { placeholders, selectSql, updateSql } from '../../src/server/store/sql'
 import { Store, type StoreShape } from '../../src/server/store/store'
-import { GuideProgress, Note, SequenceRun, Task } from '../../src/server/store/tables'
+import { createdAt, defineTable, id, optional, text, updatedAt } from '../../src/server/store/table'
+import { GuideProgress, Integration, Note, SequenceRun, Task } from '../../src/server/store/tables'
 import { testRuntime } from '../../src/testing/run'
 import example from '../fixtures/example.config.json' with { type: 'json' }
 
@@ -413,6 +417,101 @@ describe('the schema a store makes for itself', () => {
 
     // A required field added later has no value for the records already there; they are kept all the same.
     expect(rows).toEqual([{ name: 'Kept', tier: null }])
+  })
+})
+
+describe('a data directory made by an earlier version', () => {
+  // `integrations` as `main` describes it: no `shared`, `groupKey` or `ownerKey`, and one
+  // row per person, provider and account. The plain index stands for any index a table drops.
+  const before = defineTable({
+    model: 'Integration',
+    name: 'integrations',
+    columns: {
+      id: id(),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+      userId: text(),
+      provider: text(),
+      account: text(),
+      credentials: text(),
+      scopes: text(),
+      status: text(),
+      lastError: optional(text()),
+    },
+    unique: [['userId', 'provider', 'account']],
+    indexes: [['provider']],
+  })
+
+  const indexNames = async (db: PGlite) => {
+    const { rows } = await db.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'integrations' ORDER BY indexname`,
+    )
+
+    return rows.map((row) => row.indexname)
+  }
+
+  test('loses the indexes its tables no longer declare, and nothing else', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'spools-pglite-'))
+
+    try {
+      const old = await PGlite.create(dataDir)
+
+      for (const statement of schemaSql([before])) {
+        await old.exec(statement)
+      }
+
+      await old.exec(
+        `INSERT INTO integrations (id, user_id, provider, account, credentials, scopes, status, created_at, updated_at)
+         VALUES ('row-1', 'ada', 'books', 'acme', 'sealed', '', 'connected', now(), now())`,
+      )
+
+      expect(await indexNames(old)).toEqual([
+        'integrations_pkey',
+        'integrations_provider_idx',
+        'integrations_user_id_provider_account_key',
+      ])
+
+      await old.close()
+
+      // The server starts again on the same directory, with the tables as they are now.
+      const db = await PGlite.create(dataDir)
+
+      try {
+        for (const statement of schemaSql([Integration])) {
+          await db.exec(statement)
+        }
+
+        // The retired unique index and the index nothing declares are gone; the primary key stays.
+        expect(await indexNames(db)).toEqual([
+          'integrations_owner_key_key',
+          'integrations_pkey',
+          'integrations_user_id_provider_account_shared_group_key_key',
+        ])
+
+        const { rows } = await db.query<{ id: string; shared: string }>(
+          'SELECT id, shared FROM integrations',
+        )
+
+        expect(rows).toEqual([{ id: 'row-1', shared: '' }])
+
+        // What the old index refused: the same person holding an account as their own and for the team.
+        await db.exec(
+          `INSERT INTO integrations (id, user_id, provider, account, credentials, scopes, status, shared, owner_key, created_at, updated_at)
+           VALUES ('row-2', 'ada', 'books', 'acme', 'sealed', '', 'connected', 'team', 'books acme team', now(), now())`,
+        )
+
+        // Applying it again changes nothing.
+        for (const statement of schemaSql([Integration])) {
+          await db.exec(statement)
+        }
+
+        expect(await indexNames(db)).toHaveLength(3)
+      } finally {
+        await db.close()
+      }
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true })
+    }
   })
 })
 

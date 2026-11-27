@@ -173,8 +173,13 @@ marketing: {
 
 Add an OAuth provider under `integrations` and it appears on the Integrations
 page. The framework runs the connect flow and keeps the tokens encrypted; your
-handlers ask for a current token with `getAccessToken`. The full example is in
-[Integrations](integrations.md#add-a-provider).
+handlers find a connection with `findConnections` and ask for a current token with
+`getAccessToken`. The full example is in [Integrations](integrations.md#add-a-provider).
+
+A connection belongs to the teammate who connected it. Add `shared: 'team'` for an
+account the whole business uses (one accounting system), or `shared: 'group'` with
+`groups` for one per branch or region, and `canManage` to say who may connect and
+disconnect it. See [Share a provider with the team](integrations.md#share-a-provider-with-the-team).
 
 ```ts
 integrations: {
@@ -187,6 +192,9 @@ integrations: {
     tokenUrl: "https://books.example.com/oauth/token",
     scopes: ["invoices.write"],
     account: async ({ get }) => (await get<{ id: string }>("https://books.example.com/api/me")).id,
+    // Left out, each teammate connects their own. With it, one connection serves everyone.
+    shared: "team",
+    canManage: ["finance@acme.example"],
   },
 },
 ```

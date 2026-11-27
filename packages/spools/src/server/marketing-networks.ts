@@ -477,10 +477,13 @@ const labelOf = (provider: string) =>
   Object.hasOwn(providers(), provider) ? (providers()[provider]?.label ?? provider) : provider
 
 /**
- * The token a network's code needs: from the environment, or from a
- * teammate's connection. Any connected teammate's account will do, and
- * `prefer` (whoever approved the post) is tried first. Null for a network
- * that names no access.
+ * The token a network's code needs: from the environment, or from a connection
+ * to the provider it names. The built-in networks' providers are shared with
+ * the team (marketing-providers.ts), so that is the team's connection, whoever
+ * made it; the one `prefer` connected (whoever approved the post) is tried
+ * first. A network an app adds may name a provider of its own that isn't
+ * shared: any teammate's connection to it is used for everyone, as it always
+ * was. Null for a network that names no access.
  */
 export const accessToken = Effect.fn('marketingNetworks.accessToken')(function* (
   access: NetworkAccess | undefined,

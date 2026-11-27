@@ -163,12 +163,17 @@ export const Integration = defineTable({
   model: 'Integration',
   name: 'integrations',
   doc: `An account a teammate connected on the Integrations page: another mailbox, or
-a service an extension adds. A person can connect several accounts per provider.`,
+a service an extension adds. A person can connect several accounts per provider.
+Most are that teammate's own. One whose provider is shared belongs to the team or
+to one group of it, whoever connected it.`,
   columns: {
     id: id(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
-    userId: text(),
+    userId: text({
+      doc: `The teammate who connected it. Whose it is, unless \`shared\` says it is the
+team's or a group's: then this is who connected it last, and nothing more.`,
+    }),
     provider: text(),
     account: text({
       doc: 'Which account at the provider: the email address of a mailbox, lower-cased.',
@@ -180,8 +185,40 @@ the database. Never plaintext: see src/server/runtime/vault.ts.`,
     scopes: text(),
     status: text(),
     lastError: optional(text()),
+    shared: withDefault(
+      text({
+        doc: `Whose it is: empty for the teammate in \`userId\`, "team" for everyone, "group"
+for the group in \`groupKey\`. The tokens are sealed for this, so changing it here
+leaves them unreadable.`,
+      }),
+      '',
+    ),
+    groupKey: withDefault(
+      text({ doc: 'Which group a "group" connection is for. Empty otherwise.' }),
+      '',
+    ),
+    connectedByName: optional(
+      text({
+        doc: `The name of whoever connected a shared connection, as it was then: they may
+no longer be on the access list when it is shown.`,
+      }),
+    ),
+    connectedAt: optional(
+      timestamp({ doc: 'When a shared connection was last connected or connected again.' }),
+    ),
+    ownerKey: optional(
+      text({
+        doc: `For a shared connection, what it is: its provider, its account, and the team or
+which group, as one value. No two rows may hold the same one, so an account is
+connected once for the team (or for a group) whoever connects it. Empty on a
+connection of one's own, and on a shared one stored before this column: connecting
+the account again fills it in.`,
+      }),
+    ),
   },
-  unique: [['userId', 'provider', 'account']],
+  // The first keeps one row per person for an account of their own. The second keeps one
+  // row per shared account: an empty `ownerKey` is no value, so it limits nothing else.
+  unique: [['userId', 'provider', 'account', 'shared', 'groupKey'], ['ownerKey']],
 })
 
 export const RecordFolder = defineTable({

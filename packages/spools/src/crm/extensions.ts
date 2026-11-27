@@ -127,8 +127,13 @@ export type Extensions = {
   email?: { send: EmailSender }
   /**
    * Services teammates can connect on the Integrations page, by id. The framework
-   * runs the OAuth flow and stores the tokens encrypted; your handlers get a
-   * current token from `getAccessToken` in src/server/integrations.ts.
+   * runs the OAuth flow and stores the tokens encrypted; your handlers find a
+   * connection with `findConnections` and get a current token from
+   * `getAccessToken` (both from `@swirls/spools/extensions`).
+   *
+   * A connection is its teammate's own unless the provider says `shared: 'team'`
+   * (one for everyone) or `shared: 'group'` with `groups` (one per branch or
+   * region); `canManage` then says who may connect and disconnect it.
    */
   integrations?: Record<string, IntegrationProvider>
   /**
@@ -138,6 +143,14 @@ export type Extensions = {
   marketing?: {
     posts?: Record<string, PostNetwork>
     ads?: Record<string, AdNetwork>
+    /**
+     * Who may connect, reconnect and disconnect the accounts the built-in networks
+     * use (LinkedIn, X, Google Ads) on the Integrations page: email addresses, or
+     * a function asked about one person. It is a provider's `canManage`, for the
+     * providers the framework supplies. Left out, anyone on the access list may.
+     * Publishing through a connected account is never limited by this.
+     */
+    canManage?: IntegrationProvider['canManage']
   }
   /** How files attached to records are laid out in the file store. */
   files?: {

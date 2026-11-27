@@ -20,10 +20,13 @@ database: pglite(),                          // in .data/pglite
 database: pglite({ dataDir: "memory" }),     // gone when the process ends
 ```
 
-Its tables are made when it starts and kept up with the config from then on. It only
-adds (tables, columns, indexes); it never drops, renames or retypes anything, so a
-field you remove from the config leaves its column behind. A required field added to
-an object that already has records is left empty on them.
+Its tables are made when it starts and kept up with the config from then on. It adds
+tables, columns and indexes, and never drops, renames or retypes a table or a column, so
+a field you remove from the config leaves its column behind. A required field added to
+an object that already has records is left empty on them. The one thing it removes is an
+index a table no longer declares: an index holds no data, and a unique one left behind
+would go on refusing rows the tables now allow. So a data directory made by an earlier
+version keeps working after an upgrade that changes what must be unique.
 
 One process can open a data directory at a time. Stop the dev server before
 `bun run db:seed`, and use `postgres()` where several instances run.
