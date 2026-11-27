@@ -5,11 +5,12 @@ import { mapCsv, parseCsv, relationCells } from '../../src/crm/csv'
 import type { Hooks } from '../../src/crm/extensions'
 import * as records from '../../src/server/records'
 import { Invalid } from '../../src/server/runtime/errors'
-import { deepSearch, quickIndex } from '../../src/server/search'
+import { deepSearch, quickIndex, suggestValues } from '../../src/server/search'
 import * as service from '../../src/server/service'
 import { crmConfig } from '../../src/server/spool'
 import { runTool } from '../../src/server/tools'
-import { exportCsv } from '../../src/server/workspace'
+import { calculate } from '../../src/server/views'
+import { buildReports, exportCsv } from '../../src/server/workspace'
 import { failure, run } from '../../src/testing/run'
 import { useRelationsSpool } from '../support/relations-spool'
 
@@ -360,6 +361,34 @@ describe('lists, filters and search', () => {
     await change('people', person.id, { tagsIds: [] })
     const fresh = await run(quickIndex(before))
     expect(fresh.objects['people']?.rows.map((r) => r[0])).toEqual([person.id])
+  })
+})
+
+describe('the rest of a list page', () => {
+  test('footer counts, typed suggestions and reports work on an object with relations fields', async () => {
+    const tag = await named('tags', 'Rest Tag')
+    await make('people', { name: 'Rest Rae', tagsIds: [tag] })
+    await make('people', { name: 'Rest Roy' })
+
+    // An empty list is empty, not filled.
+    expect(
+      await run(
+        calculate('people', { q: 'Rest' }, { tags: 'filled', teams: 'empty', name: 'filled' }),
+      ),
+    ).toEqual({ tags: 1, teams: 2, name: 2 })
+
+    // Nothing to offer here; what matters is that it reads only fields that have a column.
+    expect(await run(suggestValues('people', 'Rest'))).toBeArray()
+
+    const reports = await run(buildReports())
+    expect(reports.breakdowns.map((b) => `${b.objectKey}.${b.field}`)).toEqual(['people.status'])
+
+    expect(reports.created.map((c) => c.objectKey)).toEqual([
+      'companies',
+      'people',
+      'tags',
+      'teams',
+    ])
   })
 })
 
