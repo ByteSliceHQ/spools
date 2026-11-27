@@ -173,6 +173,24 @@ export const relationTitlesFn = createServerFn({ method: 'GET' })
     ),
   )
 
+/**
+ * Which of the records a picker lists a record holds in a relations field. The
+ * page has the first of a record's links only, so for one that holds more it
+ * asks about the ones it is about to show ticked or unticked.
+ */
+export const heldLinksFn = createServerFn({ method: 'GET' })
+  .validator(
+    recordRef.extend({
+      field: z.string().max(200),
+      ids: z.array(z.string().uuid()).min(1).max(100),
+    }),
+  )
+  .handler(
+    crmHandler('crm.heldLinks', ({ data }) =>
+      records.linkedAmong(data.objectKey, data.id, data.field, data.ids),
+    ),
+  )
+
 export const createRecordFn = createServerFn({ method: 'POST' })
   .validator(z.object({ objectKey, values: z.record(z.string(), z.unknown()) }))
   .handler(

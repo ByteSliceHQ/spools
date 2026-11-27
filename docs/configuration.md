@@ -168,11 +168,23 @@ form:
 | `["<id>", "<id>"]`, or the ids in one string | Replaces the set. `[]` or `""` empties it.               |
 | `{ "add": ["<id>"], "remove": ["<id>"] }`    | Links and lets go of those records, and leaves the rest. |
 
-One write names at most 100 ids. An id that is not a record of the target
-object is refused, and nothing of the change is kept. A list is refused when the
-record holds more than the 100 a read brings back, because whoever sent it
-cannot have seen what it would remove: use `add` and `remove` there. The app's
-own forms and cells always send `add` and `remove`.
+One write names at most 1,000 ids in a list, and as many in each of `add` and
+`remove`: as many as an export writes in one cell, so a file the CRM exported
+imports again. A longer one is refused with a message that names the field and
+the limit; send the rest in further writes with `add`. An id that is not a
+record of the target object is refused, and so is a record's own id in a field
+that holds records of its own object (a person is not their own mentor). Nothing
+of a refused change is kept. A list is refused when the record holds more than
+the 100 a read brings back, because whoever sent it cannot have seen what it
+would remove: use `add` and `remove` there. The app's own forms and cells always
+send `add` and `remove`.
+
+A cell shows the first 100 of a record's links. Its picker asks the server which
+of the records it lists are held, so one that isn't among those 100 is still
+ticked, and can be let go there.
+
+Two people can link the same pair at the same moment, one from each side: the
+link is made once, and neither of them is refused.
 
 A change to a record's links is a change to that record: it goes through its
 hooks and automations, moves its `updatedAt`, and adds a line to its timeline
@@ -184,7 +196,10 @@ with one row per pair, made by `bun run crm:gen` and `bun run db:push` like any
 other. Deleting a record deletes its links, never the records at the other end.
 `crm:gen` refuses a target or an inverse that doesn't fit, `required`, a field
 named `<field>Ids`, `<field>Count` or `<field>Links` beside it, a links table
-whose name another table has, and a view sorted by the field. Renaming the
+whose name another table has, and a view sorted by the field. The config itself
+is refused, by the server as well as by `crm:gen`, when a links table or an
+object's table would be one of the CRM's own (an object `file` with a field
+`uploads` would keep its links in `file_uploads`). Renaming the
 field or its object names a new, empty table: the links stay in the old one
 until you move them.
 
@@ -353,7 +368,8 @@ made on a phone are only counted once someone logs them.
 Any view can be exported as CSV, and CSV files can be imported: columns are matched
 to fields by key or label, `select` values by option label, and relations by the
 related record's title. A `relations` field is one cell with its titles
-separated by `;` (`VIP; Partner`), up to 1,000 of them on export; on import each
+separated by `;` (`VIP; Partner`), up to 1,000 of them on export, which is as
+many as an import takes for one record; on import each
 title is matched the same way, and one that matches nothing is left out. A title
 that itself contains `;` can't be matched: use the record's id in its place. An
 import is limited to 1,000 rows and doesn't fire automations.

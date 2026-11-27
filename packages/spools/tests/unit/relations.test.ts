@@ -18,12 +18,14 @@ import {
   operatorsFor,
   relationIds,
 } from '../../src/crm/filters'
+import { heldState, linksChange, readLinksChange, writeLinksChange } from '../../src/crm/links-form'
 import { suggest } from '../../src/crm/suggest'
 import { compileFilters } from '../../src/server/filter-query'
 import { httpLayer } from '../../src/server/runtime/http'
 import { linkSide, linkTables, objectTables } from '../../src/server/store/objects'
 import { and, asc, eq, none, oneOf, or, some } from '../../src/server/store/query'
 import { allTables, schemaSql } from '../../src/server/store/schema-sql'
+import { lockSql } from '../../src/server/store/sql'
 import { Store, type StoreShape } from '../../src/server/store/store'
 import { testRuntime } from '../../src/testing/run'
 import example from '../fixtures/example.config.json' with { type: 'json' }
@@ -144,6 +146,31 @@ describe('the config', () => {
     })
 
     expect(problems(result).join('\n')).toContain('"people_tags"')
+  })
+
+  test("refuses a links table, or an object's, that would be one of the CRM's own", () => {
+    // An object "file" with a field "uploads" would keep its links in file_uploads, where uploads are kept.
+    const links = changed((c) => {
+      c['objects'].file = {
+        ...structuredClone(c['objects'].teams),
+        fields: {
+          name: { type: 'text', required: true },
+          uploads: { type: 'relations', to: 'teams' },
+        },
+      }
+    })
+
+    expect(problems(links)).toEqual([
+      `objects.file.fields.uploads: its links would be kept in the table "file_uploads", which is one of the CRM's own tables. Rename the field`,
+    ])
+
+    const object = changed((c) => {
+      c['objects'].activities = structuredClone(c['objects'].teams)
+    })
+
+    expect(problems(object).join('\n')).toContain(
+      `objects.activities: its records would be kept in the table "activities", which is one of the CRM's own tables`,
+    )
   })
 
   test('refuses what a field with no column of its own cannot do', () => {
@@ -267,6 +294,11 @@ describe('the links table, in a store', async () => {
   afterAll(async () => {
     await rt.dispose()
     await client.close()
+  })
+
+  test('rows are held in the order of their ids, so two changes that hold the same rows take turns', () => {
+    const { parts } = lockSql(people, oneOf('id', [B, A]))
+    expect(parts.join('?')).toMatch(/ORDER BY \S+\."id" FOR UPDATE OF \S+$/)
   })
 
   test('is described once, from either side', () => {
@@ -532,5 +564,55 @@ describe('CSV import', () => {
       { name: 'Ada', tagsIds: `${A},${B}`, teamsIds: A },
       { name: 'Alan', tagsIds: A },
     ])
+  })
+})
+
+describe('a relations field in a form', () => {
+  test('a new record adds what its form starts with: the record it was made from', () => {
+    // "New" under "People holding this tag": the form opens with the tag chosen, and nothing is held yet.
+    expect(linksChange([], [A])).toEqual({ add: [A], remove: [] })
+    expect(linksChange([], [A, B])).toEqual({ add: [A, B], remove: [] })
+
+    // Taken away again before saving: nothing to add, and nothing to remove from a record that isn't there.
+    expect(linksChange([], [])).toEqual({ add: [], remove: [] })
+  })
+
+  test('a saved record sends only what changed, and leaves what the page did not show', () => {
+    expect(linksChange([A], [A])).toEqual({ add: [], remove: [] })
+    expect(linksChange([A], [A, B])).toEqual({ add: [B], remove: [] })
+    expect(linksChange([A, B], [B])).toEqual({ add: [], remove: [A] })
+    expect(linksChange([A], [B, B])).toEqual({ add: [B], remove: [A] })
+  })
+
+  test('the change is read back from the form as it was written, and what is not one is not "no change"', () => {
+    const change = linksChange([A], [B])
+    expect(readLinksChange(writeLinksChange(change))).toEqual(change)
+
+    for (const written of [
+      null,
+      '',
+      '{"add":[',
+      'null',
+      '{"add":["x"]}',
+      '{"add":[1],"remove":[]}',
+    ]) {
+      expect(readLinksChange(written)).toBeUndefined()
+    }
+  })
+
+  test('a picker over a record with more links than the page shows waits to be told which are held', () => {
+    const asked = new Map<string, boolean>()
+
+    // Everything is on the page: what isn't shown isn't held.
+    expect(heldState({ shown: [A], hidden: 0, asked }, A)).toBe('held')
+    expect(heldState({ shown: [A], hidden: 0, asked }, B)).toBe('free')
+
+    // More are held than shown: B may be one of them, and is neither ticked nor acted on until the server says.
+    expect(heldState({ shown: [A], hidden: 3, asked }, B)).toBe('unknown')
+    expect(heldState({ shown: [A], hidden: 3, asked: new Map([[B, true]]) }, B)).toBe('held')
+    expect(heldState({ shown: [A], hidden: 3, asked: new Map([[B, false]]) }, B)).toBe('free')
+
+    // What was just done wins over a page that has not caught up.
+    expect(heldState({ shown: [A], hidden: 0, asked: new Map([[A, false]]) }, A)).toBe('free')
   })
 })

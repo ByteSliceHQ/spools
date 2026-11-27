@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import type { CrmField, FieldType } from '../field-types'
 import { countKey, idsKey } from '../links'
+import { type LinksFormChange, readLinksChange } from '../links-form'
 import { allowedOptions } from '../options'
 import { inputClass } from './kit'
 import { RelationInput, RelationsInput, type RelationTitles } from './relation-picker'
@@ -346,6 +347,8 @@ type InputProps<T extends FieldType> = {
   /** For `relations`: the related records the record came with (under the field's key), and how many it holds. */
   related?: FieldData
   total?: FieldData
+  /** For `relations`: whether `value` is what a saved record holds. False for a new record's preset, which is still to be added. */
+  saved?: boolean
 }
 
 type FieldInputs = { [T in FieldType]: (props: InputProps<T>) => ReactNode }
@@ -470,7 +473,7 @@ const fieldInput = {
       titles={titles}
     />
   ),
-  relations: ({ field, name, value, titles, related, total }) => (
+  relations: ({ field, name, value, titles, related, total, saved = false }) => (
     <RelationsField
       objectKey={field.to}
       name={name}
@@ -478,6 +481,7 @@ const fieldInput = {
       related={related}
       total={total}
       titles={titles}
+      saved={saved}
     />
   ),
   user: ({ field, name, value, users }) => {
@@ -522,6 +526,7 @@ function RelationsField({
   related,
   total,
   titles,
+  saved,
 }: {
   objectKey: string
   name: string
@@ -529,6 +534,8 @@ function RelationsField({
   related: FieldData
   total: FieldData
   titles?: RelationTitles | undefined
+  /** Whether `ids` are held by a saved record, or only chosen for one that is being made. */
+  saved: boolean
 }) {
   const titleField = useCrmConfig().objects[objectKey]?.titleField ?? 'id'
   const records = relatedListSchema.safeParse(related).data ?? []
@@ -540,7 +547,14 @@ function RelationsField({
   })
 
   return (
-    <RelationsInput objectKey={objectKey} name={name} value={value} total={count} titles={titles} />
+    <RelationsInput
+      objectKey={objectKey}
+      name={name}
+      value={value}
+      held={saved ? value.map((v) => v.id) : []}
+      total={count}
+      titles={titles}
+    />
   )
 }
 
@@ -587,42 +601,43 @@ export function FieldInput({
         controlling,
         related: record?.[fieldKey],
         total: record?.[countKey(fieldKey)],
+        // A record that has been saved has an id. Without one, `record` is a new record's preset.
+        saved: record?.id !== undefined && record.id !== null,
       })}
     </>
   )
 }
 
-/** What a relations field submits: the records to link and the ones to let go. */
-const linksChangeSchema = z.object({ add: z.array(z.string()), remove: z.array(z.string()) })
-
 /** One submitted value: an input's text, whether a checkbox is ticked, or a relations field's change. */
-export type FormValue = FormDataEntryValue | boolean | z.output<typeof linksChangeSchema>
+export type FormValue = FormDataEntryValue | boolean | LinksFormChange
 
-/** A relations field's change, as its input wrote it into the form. Nothing readable is no change. */
-function linksChangeOf(written: FormDataEntryValue | null): z.output<typeof linksChangeSchema> {
-  const text = z.string().safeParse(written)
+/** What a form holds: its values by control name, and the keys of the fields whose value could not be read. */
+export type FormRead = { values: Record<string, FormValue>; unreadable: string[] }
 
-  try {
-    const parsed = linksChangeSchema.safeParse(text.success ? JSON.parse(text.data) : undefined)
-    return parsed.success ? parsed.data : { add: [], remove: [] }
-  } catch {
-    return { add: [], remove: [] }
-  }
-}
+/**
+ * Convert FormData into a plain object; unchecked checkboxes become false. A
+ * relations field whose change can't be read is named in `unreadable` and left
+ * out of `values`: the form says so instead of saving the record without it.
+ */
+export function formValues(data: FormData, fields: Record<string, CrmField>): FormRead {
+  const values: Record<string, FormValue> = {}
+  const unreadable: string[] = []
 
-/** Convert FormData into a plain object; unchecked checkboxes become false. */
-export function formValues(form: HTMLFormElement, fields: Record<string, CrmField>) {
-  const data = new FormData(form)
+  for (const [key, field] of Object.entries(fields)) {
+    const name = inputName(key, field)
 
-  return Object.fromEntries(
-    Object.entries(fields).map(([key, field]): [string, FormValue] => {
-      const name = inputName(key, field)
+    if (field.type === 'relations') {
+      const change = readLinksChange(data.get(name))
 
-      if (field.type === 'relations') {
-        return [name, linksChangeOf(data.get(name))]
+      if (change) {
+        values[name] = change
+      } else {
+        unreadable.push(key)
       }
+    } else {
+      values[name] = field.type === 'boolean' ? data.get(name) === 'on' : (data.get(name) ?? '')
+    }
+  }
 
-      return [name, field.type === 'boolean' ? data.get(name) === 'on' : (data.get(name) ?? '')]
-    }),
-  )
+  return { values, unreadable }
 }

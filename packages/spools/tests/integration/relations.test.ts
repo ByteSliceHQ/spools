@@ -12,7 +12,7 @@ import { runTool } from '../../src/server/tools'
 import { calculate } from '../../src/server/views'
 import { buildReports, exportCsv } from '../../src/server/workspace'
 import { failure, run } from '../../src/testing/run'
-import { useRelationsSpool } from '../support/relations-spool'
+import { reads, useRelationsSpool } from '../support/relations-spool'
 
 // Many-to-many relations end to end, on a Spool of its own (PGlite): people
 // have tags (which list their people back), are on several teams, and have
@@ -212,14 +212,57 @@ describe('reading and writing', () => {
     expect(refused).toBeInstanceOf(Invalid)
     expect(refused.message).toContain('peopleIds')
 
+    // The one a read does not show is held all the same, and a picker is told so.
+    const [first = '', last = ''] = [people[0], people[100]]
+    const stranger = await named('people', 'Not in the crowd')
+    expect(read['peopleIds']).not.toContain(last)
+
+    expect(
+      (await run(records.linkedAmong('tags', tag, 'people', [last, stranger, first]))).toSorted(),
+    ).toEqual([first, last].toSorted())
+
+    expect(await run(records.linkedAmong('tags', tag, 'people', [stranger]))).toEqual([])
+    expect(await run(records.linkedAmong('people', last, 'tags', [tag]))).toEqual([tag])
+    expect(await run(records.linkedAmong('tags', tag, 'name', [last]))).toEqual([])
+
     await change('tags', tag, { peopleIds: { remove: people.slice(0, 100) } })
     expect((await get('tags', tag))['peopleIds']).toEqual([people[100]])
 
-    const tooMany = await failure(
-      service.updateRecord('tags', tag, { peopleIds: [...people, ...people] }, actor),
-    )
+    // More than one write takes, as a list and as a change: refused by saying which field and how many.
+    const crowd = Array.from({ length: 1001 }, () => crypto.randomUUID())
 
-    expect(tooMany).toBeInstanceOf(Invalid)
+    for (const sent of [crowd, { add: crowd }]) {
+      const tooMany = await failure(service.updateRecord('tags', tag, { peopleIds: sent }, actor))
+
+      expect(tooMany).toBeInstanceOf(Invalid)
+      expect(tooMany.message).toStartWith('peopleIds: ')
+      expect(tooMany.message).toContain('1,001 records')
+      expect(tooMany.message).toContain('at most 1,000')
+      expect(tooMany.message).not.toContain('Unrecognized key')
+    }
+  })
+
+  test('a record is never linked to itself', async () => {
+    const person = await named('people', 'Narcissus')
+    const other = await named('people', 'Echo')
+
+    for (const sent of [{ add: [other, person] }, [person], person]) {
+      const refused = await failure(
+        service.updateRecord('people', person, { mentorsIds: sent }, actor),
+      )
+
+      expect(refused).toBeInstanceOf(Invalid)
+      expect(refused.message).toStartWith("mentorsIds: a person can't be linked to itself")
+    }
+
+    // Nothing of a refused change is kept, and taking its own id away is not linking it.
+    expect((await get('people', person))['mentorsIds']).toEqual([])
+    const fine = await change('people', person, { mentorsIds: { add: [other], remove: [person] } })
+    expect(fine?.['mentorsIds']).toEqual([other])
+
+    // A tag that happens to share nothing with the person: only a relation to its own object can name itself.
+    const tag = await named('tags', 'Not itself')
+    expect((await change('people', person, { tagsIds: [tag] }))?.['tagsIds']).toEqual([tag])
   })
 })
 
@@ -377,6 +420,20 @@ describe('the rest of a list page', () => {
       ),
     ).toEqual({ tags: 1, teams: 2, name: 2 })
 
+    // A calculation reads the links of the fields it is over, and of no other.
+    const linksRead = async (calculations: Parameters<typeof calculate>[2]) => {
+      reads.length = 0
+      await run(calculate('people', { q: 'Rest' }, calculations))
+      return [...new Set(reads.filter((table) => table.startsWith('people_')))]
+    }
+
+    expect(await linksRead({ name: 'filled', createdAt: 'filled' })).toEqual([])
+    expect(await linksRead({ tags: 'filled' })).toEqual(['people_tags'])
+
+    expect(await run(calculate('people', { q: 'Rest' }, { nextTaskDue: 'empty' }))).toEqual({
+      nextTaskDue: 2,
+    })
+
     // Nothing to offer here; what matters is that it reads only fields that have a column.
     expect(await run(suggestValues('people', 'Rest'))).toBeArray()
 
@@ -454,6 +511,48 @@ describe('CSV', () => {
     const [imported] = await run(records.listRecords({ objectKey: 'people', q: 'Csv2 Cy' }))
     expect(imported?.['tagsIds']).toEqual([x, y])
     expect(imported?.['teamsIds']).toEqual([team])
+  })
+
+  test('a record with more related records than a page shows exports and imports again whole', async () => {
+    const tags: string[] = []
+
+    for (let i = 0; i < 130; i++) {
+      tags.push((await run(records.createRecord('tags', { name: `Trip ${i}` }, 'test'))).id)
+    }
+
+    const person = await make('people', { name: 'Trip Tess', tagsIds: tags })
+    expect(person['tagsCount']).toBe(130)
+
+    const table = parseCsv(await run(exportCsv('people', { q: 'Trip Tess' })))
+    const people = toPublicConfig(crmConfig()).objects['people']
+
+    if (!people) {
+      throw new Error('The fixture has no people')
+    }
+
+    const renamed = table.map((row, i) =>
+      i === 0 ? row : row.map((c) => c.replace('Tess', 'Two')),
+    )
+
+    const asked = relationCells(people, renamed)
+    expect(asked['tags']).toHaveLength(130)
+
+    const known = { tags: await run(records.matchTitles('tags', asked['tags'] ?? [])) }
+    const { rows } = mapCsv(people, known, renamed)
+
+    expect(await run(service.importRecords('people', rows, actor))).toEqual({
+      created: 1,
+      failed: 0,
+      errors: [],
+    })
+
+    const [imported] = await run(
+      records.listRecords({ objectKey: 'people', q: 'Trip Two', links: 1000 }),
+    )
+
+    expect(imported?.['tagsCount']).toBe(130)
+    expect(imported?.['tagsIds']).toEqual(expect.arrayContaining(tags))
+    expect(imported?.['tagsIds']).toHaveLength(tags.length)
   })
 })
 
@@ -542,5 +641,46 @@ describe('deleting', () => {
         filters: [[{ field: 'people', op: 'anyOf', value: [person.id] }]],
       }),
     ).toEqual([])
+  })
+})
+
+describe('two changes at once', () => {
+  // On a store with one connection (PGlite) the two take turns; on Postgres they really meet.
+  test('linking the same pair from both sides at once keeps one link, and neither change fails', async () => {
+    for (let round = 0; round < 8; round++) {
+      const tag = await named('tags', `Both sides ${round}`)
+      const person = await named('people', `Met ${round}`)
+
+      const [mine, theirs] = await Promise.all([
+        change('people', person, { tagsIds: { add: [tag] } }),
+        change('tags', tag, { peopleIds: { add: [person] } }),
+      ])
+
+      expect(mine?.id).toBe(person)
+      expect(theirs?.id).toBe(tag)
+      expect((await get('people', person))['tagsIds']).toEqual([tag])
+      expect((await get('tags', tag))['peopleCount']).toBe(1)
+
+      // One of them linked the two, and the timeline says so once.
+      const lines = [...(await timeline('people', person)), ...(await timeline('tags', tag))]
+      expect(lines.filter((line) => line.startsWith('added '))).toHaveLength(1)
+    }
+  })
+
+  test('linking the same pair twice from one side, and a record to itself from both of its fields', async () => {
+    const tag = await named('tags', 'Twice')
+    const person = await named('people', 'Twice over')
+    const other = await named('people', 'Mentor at once')
+
+    await Promise.all([
+      change('people', person, { tagsIds: { add: [tag] } }),
+      change('people', person, { tagsIds: [tag] }),
+      change('people', person, { mentorsIds: { add: [other] } }),
+      change('people', other, { mentorsIds: { add: [person] } }),
+    ])
+
+    expect((await get('people', person))['tagsIds']).toEqual([tag])
+    expect((await get('people', person))['mentorsIds']).toEqual([other])
+    expect((await get('people', other))['mentorsIds']).toEqual([person])
   })
 })

@@ -16,6 +16,7 @@ import {
   type Filters,
   fieldOf,
   type Sort,
+  SYSTEM_COLUMNS,
 } from '../crm/filters'
 import { countKey, idsKey, inverseOf, LINKS_READ } from '../crm/links'
 import { fieldLabel } from '../crm/naming'
@@ -196,7 +197,9 @@ export type ListQuery = {
   links?: number
   /**
    * Bring back only these fields of each row (with its id and timestamps), for
-   * views that show a few of them on many rows. Unknown keys are ignored.
+   * views that show a few of them on many rows. A system column may be named
+   * too. Unknown keys are ignored, and a `relations` field that isn't named
+   * has none of its links read.
    */
   fields?: string[]
 }
@@ -333,13 +336,14 @@ export const listRecords = Effect.fn('records.listRecords')(function* ({
     return type === 'relations' ? [] : [type === 'relation' ? `${f}Id` : f]
   })
 
+  const system = fields?.filter((f) => Object.hasOwn(SYSTEM_COLUMNS, f)) ?? []
   const store = yield* Store
 
   const rows = yield* store.find(objectTable(objectKey), {
     where: columns,
     filter: matches(objectKey, { q, filters, viewerId }),
     // Without a list of fields, every column comes back.
-    select: own && [...new Set(['id', 'createdAt', 'updatedAt', ...own])],
+    select: own && [...new Set(['id', 'createdAt', 'updatedAt', ...system, ...own])],
     include: related(obj, relations, wanted),
     // The id settles ties, so paging never shows a record twice or skips one.
     order: [...order, asc('id')],
@@ -505,9 +509,11 @@ const byTitle = (a: TitleOption, b: TitleOption) => {
  * of them (the ones linked first), so a tag on ten thousand contacts costs a
  * list no more than a tag on a hundred: the count says when there are more.
  *
- * Three ordinary reads per field, however many rows: how many links each row
- * has, the links, and the titles of the records they lead to (from the related
- * object's own table).
+ * Three ordinary reads per field for the rows that hold no more than that: how
+ * many links each row has, the links, and the titles of the records they lead
+ * to (from the related object's own table). A row that holds more is read on
+ * its own, with the limit, so it costs one read more: the store has no way to
+ * ask for the first few rows of each of several groups in one read.
  */
 const withLinks = Effect.fn('records.withLinks')(function* (
   objectKey: string,
@@ -549,7 +555,13 @@ const withLinks = Effect.fn('records.withLinks')(function* (
 
         const keep = (found: readonly { sourceId: string; targetId: string }[]) => {
           for (const link of found) {
-            held.set(link[side.near], [...(held.get(link[side.near]) ?? []), link[side.far]])
+            const sofar = held.get(link[side.near])
+
+            if (sofar) {
+              sofar.push(link[side.far])
+            } else {
+              held.set(link[side.near], [link[side.far]])
+            }
           }
         }
 
@@ -593,6 +605,33 @@ const withLinks = Effect.fn('records.withLinks')(function* (
 const withItsLinks = (objectKey: string, record: CrmRecord) =>
   Effect.as(withLinks(objectKey, [record]), record)
 
+/**
+ * Which of these records a record holds in one of its relations fields. A read
+ * brings back the first of its links only (`LINKS_READ`), so a picker over a
+ * record that holds more asks here about the ones it lists.
+ */
+export const linkedAmong = Effect.fn('records.linkedAmong')(function* (
+  objectKey: string,
+  id: string,
+  fieldKey: string,
+  ids: readonly string[],
+) {
+  const [field] = linkFields(objectKey, [fieldKey])
+
+  if (!field || ids.length === 0) {
+    return []
+  }
+
+  const { side } = field
+  const store = yield* Store
+
+  const found = yield* store.find(side.link.table, {
+    filter: and(eq(side.near, id), oneOf(side.far, ids)),
+  })
+
+  return found.map((link) => link[side.far])
+})
+
 /** What a write did to one relations field: the records it linked and the ones it let go. */
 export type LinksChanged = { field: string; added: TitleOption[]; removed: TitleOption[] }
 
@@ -616,7 +655,14 @@ function splitLinks(objectKey: string, input: RecordValues) {
 /**
  * Change the records one relations field of a record holds. Only the links
  * that differ are written: rows are added for records newly held and removed
- * for ones let go. Call it in a transaction, with the record held.
+ * for ones let go. Call it in a transaction, with the record and the records
+ * the change names held (`holdRecord`, given the same values): two changes
+ * that link the same pair then happen one after the other, and the second
+ * finds the link already there. The links table holds each pair once, and on
+ * Postgres a statement that breaks that rule ends its whole transaction, so the
+ * duplicate is kept from being written, not caught afterwards.
+ *
+ * A record is never linked to itself: a person is not their own mentor.
  *
  * A set that replaces is refused when the record holds more than a read
  * brings back: whoever sent it can't have seen what they would be removing.
@@ -634,6 +680,13 @@ const writeLinks = Effect.fn('records.writeLinks')(function* (
   let add: string[]
   let remove: string[]
 
+  // Only a relation to the record's own object can name the record itself.
+  if (side.to === objectKey && ('set' in change ? change.set : change.add).includes(id)) {
+    return yield* new Invalid({
+      message: `${name}: a ${getObject(objectKey).label.toLowerCase()} can't be linked to itself under ${label}. Take its own id (${id}) out of the list.`,
+    })
+  }
+
   if ('set' in change) {
     const count = yield* store.count(table, { filter: mine })
 
@@ -644,21 +697,24 @@ const writeLinks = Effect.fn('records.writeLinks')(function* (
     }
 
     const held = (yield* store.find(table, { filter: mine })).map((link) => link[side.far])
-    add = change.set.filter((other) => !held.includes(other))
-    remove = held.filter((other) => !change.set.includes(other))
+    const [has, wants] = [new Set(held), new Set(change.set)]
+    add = change.set.filter((other) => !has.has(other))
+    remove = held.filter((other) => !wants.has(other))
   } else {
-    const wanted = change.add.filter((other) => !change.remove.includes(other))
+    const leaving = new Set(change.remove)
+    const wanted = change.add.filter((other) => !leaving.has(other))
     const named = [...new Set([...wanted, ...change.remove])]
 
-    const held =
+    const held = new Set(
       named.length === 0
         ? []
         : (yield* store.find(table, { filter: and(mine, oneOf(side.far, named)) })).map(
             (link) => link[side.far],
-          )
+          ),
+    )
 
-    add = wanted.filter((other) => !held.includes(other))
-    remove = change.remove.filter((other) => held.includes(other))
+    add = wanted.filter((other) => !held.has(other))
+    remove = change.remove.filter((other) => held.has(other))
   }
 
   // Looked up in the related object's own table: an id that names none of its records is refused here.
@@ -837,12 +893,53 @@ export const updateRecord = Effect.fn('records.updateRecord')(function* (
 /**
  * Holds a record until the transaction this is called in ends, and says whether
  * it exists. Two changes to one record then happen one after the other.
+ *
+ * Given the values about to be written (`data`), it also holds every record
+ * their relations fields name, at the other end of each link. All of them are
+ * taken in one order, whichever record the change is to: object by object in
+ * the order of their tables' names, and within a table by id. A tag added to a
+ * person and that person added to the tag, at the same moment, then wait for
+ * each other in turn. Held any other way (each change its own record first)
+ * they would each wait for the other for ever, and the database would end one.
  */
 export const holdRecord = Effect.fn('records.holdRecord')(function* (
   objectKey: string,
   id: string,
+  data: RecordInput = {},
 ) {
   const store = yield* Store
+  const wanted = new Map<string, Set<string>>([[objectKey, new Set([id])]])
+
+  for (const { key, side } of linkFields(objectKey)) {
+    const field = getObject(objectKey).fields[key]
+    const sent = data[idsKey(key)]
+
+    // What can't be read is refused when the change is checked (`changeRecord`); nothing is held for it.
+    const change =
+      field && sent !== undefined
+        ? linksChangeSchema.safeParse(fieldInputSchema(field).safeParse(sent).data).data
+        : undefined
+
+    if (change) {
+      const ids = wanted.get(side.to) ?? new Set<string>()
+      wanted.set(side.to, ids)
+
+      for (const other of 'set' in change ? change.set : [...change.add, ...change.remove]) {
+        ids.add(other)
+      }
+    }
+  }
+
+  const tables = [...wanted]
+    .map(([key, ids]) => ({ table: objectTable(key), ids: [...ids] }))
+    .toSorted((a, b) => (a.table.name < b.table.name ? -1 : a.table.name > b.table.name ? 1 : 0))
+
+  for (const { table, ids } of tables) {
+    // One statement holds a table's rows in the order of their ids (`lock`).
+    yield* store.lock(table, { filter: oneOf('id', ids) })
+  }
+
+  // Held already, if it is there: this only asks whether it is.
   return (yield* store.lock(objectTable(objectKey), { where: { id } })) > 0
 })
 

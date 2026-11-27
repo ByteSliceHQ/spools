@@ -34,6 +34,7 @@ export function RecordForm({
   className?: string
 }) {
   const [pending, setPending] = useState(false)
+  const [unread, setUnread] = useState<string>()
   // Fields other selects depend on (e.g. pipeline) are tracked, so their
   // dependents can offer the options that apply as the form is filled in.
   const controllers = controllingFields(obj.fields)
@@ -59,10 +60,24 @@ export function RecordForm({
       }}
       onSubmit={async (e) => {
         e.preventDefault()
+        const { values, unreadable } = formValues(new FormData(e.currentTarget), obj.fields)
+
+        // Nothing is sent: saving the rest would look as if these fields had been left alone.
+        if (unreadable.length > 0) {
+          const labels = unreadable.map((key) => fieldLabel(key, obj.fields[key])).join(', ')
+
+          setUnread(
+            `Could not read ${labels} from this form, so nothing was saved. Reload the page and try again.`,
+          )
+
+          return
+        }
+
+        setUnread(undefined)
         setPending(true)
 
         try {
-          await onSubmit(formValues(e.currentTarget, obj.fields))
+          await onSubmit(values)
         } finally {
           setPending(false)
         }
@@ -94,9 +109,9 @@ export function RecordForm({
           {field.description && <p className="text-c-fg3 text-xs">{field.description}</p>}
         </div>
       ))}
-      {error && (
+      {(unread ?? error) && (
         <p className="text-c-danger rounded-lg bg-red-500/10 p-3 text-[13px] whitespace-pre-wrap">
-          {error}
+          {unread ?? error}
         </p>
       )}
       {/* Stays in view at the bottom of a scrolling dialog. */}

@@ -109,7 +109,12 @@ const record =
 A failure, a bug or the request going away undoes what the program had written. Inside one,
 `store.lock(table, { where: { id } })` holds a row until the transaction ends, so reading a
 row and then writing something that depends on it can't be interleaved with someone else
-doing the same. Creating, changing and deleting a record are each a transaction: a record is
+doing the same. One call takes its rows in the order of their ids. A transaction that holds
+rows of several tables must take the tables in the same order as every other that holds the
+same rows (`holdRecord` in `records.ts` goes by table name), or two of them can each wait
+for the other. On Postgres a statement that fails ends its transaction, so inside one a
+unique index is not something to run into and catch: hold what the new row depends on, look
+for it, then add it. Creating, changing and deleting a record are each a transaction: a record is
 never saved without its line on the timeline. Keep a transaction to store calls: code that
 reaches the store some other way (an app's hook) is on another connection and doesn't see
 what isn't kept yet.
@@ -127,4 +132,18 @@ TEST_STORE=prisma   DATABASE_URL=... bun run test:integration
 ```
 
 Point `DATABASE_URL` at a database made for tests, with the schema pushed
-(`bun run db:push`). The tests write to it.
+(`bun run db:push` in `apps/starter`). The tests write to it.
+
+The tests of many-to-many relations have a config of their own
+(`packages/spools/tests/fixtures/relations.config.json`), and so a database of
+their own on Postgres: the one `DATABASE_URL` names with `_relations` after it,
+on the same server. Make it and push that config's schema to it before a run on
+`postgres` or `prisma`:
+
+```sh
+DATABASE_URL=... bun run --cwd packages/spools db:push:relations
+```
+
+It creates the database if it isn't there, writes the fixture's Prisma schema and
+contract (not committed) and pushes them. Those tests empty that database's
+records each time they start.

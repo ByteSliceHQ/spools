@@ -392,8 +392,12 @@ describe('spools gen', () => {
 
     const result = await spools(folder, ['gen', '--no-emit'])
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain("an object whose table would be another table's")
-    expect(result.stderr).toContain('Rename its key.')
+
+    // The config's own schema says so now, before gen compares tables (which still covers an adapter's).
+    expect(result.stderr).toContain(
+      `its records would be kept in the table "activities", which is one of the CRM's own tables. Rename the object`,
+    )
+
     expect(existsSync(join(folder, 'prisma/schema.prisma'))).toBe(false)
   })
 })

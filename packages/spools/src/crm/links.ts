@@ -13,10 +13,13 @@ import { tableName } from './naming'
 
 /** How many related records a record brings back for one field. `<field>Count` says how many there are. */
 export const LINKS_READ = 100
-/** How many ids one write may name: in a set that replaces, or in each of `add` and `remove`. */
-export const LINKS_WRITE = 100
-/** How many titles a cell of a CSV export holds. */
-export const LINKS_EXPORT = 1000
+/**
+ * How many ids one write may name: in a set that replaces, or in each of `add` and `remove`.
+ * Never fewer than an export writes, or a file the CRM exported could not be imported again.
+ */
+export const LINKS_WRITE = 1000
+/** How many titles a cell of a CSV export holds: as many as one write takes, so the file imports again. */
+export const LINKS_EXPORT = LINKS_WRITE
 /** What separates titles in one cell of a CSV file. */
 export const LINKS_SEPARATOR = ';'
 

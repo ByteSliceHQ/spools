@@ -7,6 +7,7 @@ import {
   fieldTypes,
   isTextLike,
 } from '../../src/crm/field-types'
+import { LINKS_EXPORT, LINKS_WRITE } from '../../src/crm/links'
 
 const field = (f: Record<string, unknown>) => fieldSchema.parse(f)
 
@@ -60,12 +61,20 @@ describe('field types', () => {
     expect(parse(tags, ['nope']).success).toBe(false)
     expect(parse(tags, { add: [a], set: [b] }).success).toBe(false)
 
-    expect(
-      parse(
-        tags,
-        Array.from({ length: 101 }, () => a),
-      ).success,
-    ).toBe(false)
+    // As many as an export writes in one cell, and no more. What is wrong is said about what was sent.
+    const ids = (n: number) => Array.from({ length: n }, () => a)
+    const said = (value: unknown) => parse(tags, value).error?.issues.map((i) => i.message)
+
+    expect(LINKS_WRITE).toBeGreaterThanOrEqual(LINKS_EXPORT)
+    expect(parse(tags, ids(LINKS_EXPORT)).data).toEqual({ set: [a] })
+
+    expect(said(ids(LINKS_WRITE + 1))).toEqual([
+      'this names 1,001 records, and one write takes at most 1,000. Send the rest in further writes, as { "add": [...] }',
+    ])
+
+    expect(said({ remove: ids(LINKS_WRITE + 1) })?.[0]).toStartWith('"remove" names 1,001 records')
+    expect(said({ set: ['nope'] })?.join()).not.toContain('Unrecognized key')
+    expect(said({ add: [a], set: [b] })?.join()).toContain('Unrecognized key')
   })
 
   test('url fields only accept http(s)', () => {

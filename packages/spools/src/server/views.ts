@@ -313,7 +313,15 @@ export const calculate = Effect.fn('views.calculate')(function* (
 
   for (let offset = 0; offset < Math.min(total, CALCULATION_ROW_LIMIT); offset += 500) {
     rows.push(
-      ...(yield* listRecords({ objectKey, ...filter, limit: 500, offset, relations: 'titles' })),
+      // Only what is calculated: a relations field that isn't has none of its links read.
+      ...(yield* listRecords({
+        objectKey,
+        ...filter,
+        limit: 500,
+        offset,
+        relations: 'titles',
+        fields: columns,
+      })),
     )
   }
 

@@ -1,6 +1,7 @@
 import { Check, ChevronDown, X } from 'lucide-react'
 import { type RefObject, useEffect, useId, useRef, useState } from 'react'
 
+import { linksChange, writeLinksChange } from '../links-form'
 import { cx, inputClass, useDismiss } from './kit'
 import { relationTitle, searchRelation } from './session'
 import { useCrmConfig } from './use-crm'
@@ -77,6 +78,12 @@ type SearchProps = {
    * and choosing one again is how it is taken away, so the search stays open.
    */
   selectedIds?: readonly string[]
+  /**
+   * Told the ids of the records listed, each time results arrive. For a field
+   * that may hold more than `selectedIds` says: its owner asks which of these
+   * are held too.
+   */
+  onOptions?: (ids: readonly string[]) => void
   /** Offer to clear the choice. */
   clearable?: boolean
   /** A record was chosen, or the choice was cleared (`null`). */
@@ -97,11 +104,16 @@ export function RelationSearch({
   selected,
   selectedTitle,
   selectedIds,
+  onOptions,
   clearable,
   onPick,
   onEscape,
   listClassName = 'max-h-60',
 }: SearchProps) {
+  // The latest one is called when results arrive, without asking again because its owner drew again.
+  const listed = useRef(onOptions)
+  listed.current = onOptions
+
   const isChosen = (id: string) => (selectedIds ? selectedIds.includes(id) : id === selected)
 
   const plural = useCrmConfig().objects[objectKey]?.labelPlural.toLowerCase() ?? 'records'
@@ -135,6 +147,7 @@ export function RelationSearch({
             setFound({ objectKey, q, options: res.options, more: res.more })
             setFailed(false)
             setActive(0)
+            listed.current?.(res.options.map((o) => o.id))
           },
           () => {
             if (!stale) {
@@ -480,22 +493,26 @@ function PickedChip({
  * stays open while records are ticked and unticked.
  *
  * What travels with the form under `name` is the change, not the set:
- * `{"add":[…],"remove":[…]}` against what the form opened with. A record
- * can hold more than a page shows (`total`), and the ones not shown must
- * stay as they are.
+ * `{"add":[…],"remove":[…]}` against what the saved record holds (`held`). A
+ * record can hold more than a page shows (`total`), and the ones not shown
+ * must stay as they are. A new record holds nothing, so what its form starts
+ * with (`value` from a preset) is all to add.
  */
 export function RelationsInput({
   objectKey,
   name,
   value,
+  held,
   total,
   titles,
 }: {
   objectKey: string
   /** Form control name (`<field>Ids`); also the id a `<label htmlFor>` points at. */
   name: string
-  /** The records held when the form opens, with their titles where the page has them. */
+  /** The records chosen when the form opens, with their titles where the page has them. */
   value: readonly { id: string; title?: string | undefined }[]
+  /** The ids among them that the saved record holds already. Empty for a record that is being made. */
+  held: readonly string[]
   /** How many the record holds in all, when that is more than `value`. */
   total?: number | undefined
   titles?: RelationTitles | undefined
@@ -503,16 +520,12 @@ export function RelationsInput({
   const plural = useCrmConfig().objects[objectKey]?.labelPlural.toLowerCase() ?? 'records'
   const wrap = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
-  const [opened] = useState(() => value.map((v) => v.id))
+  const [saved] = useState(() => [...held])
   const [picked, setPicked] = useState<{ id: string; title?: string | undefined }[]>([...value])
   const [open, setOpen] = useState(false)
   const ids = picked.map((p) => p.id)
-  const hidden = Math.max(0, (total ?? 0) - opened.length)
-
-  const change = {
-    add: ids.filter((id) => !opened.includes(id)),
-    remove: opened.filter((id) => !ids.includes(id)),
-  }
+  const hidden = Math.max(0, (total ?? 0) - saved.length)
+  const change = linksChange(saved, ids)
 
   const toggle = (option: Picked) =>
     setPicked((now) =>
@@ -562,7 +575,7 @@ export function RelationsInput({
           {picked.length === 0 && hidden === 0 ? `Choose ${plural}` : 'Add or remove'}
         </button>
       </div>
-      <input type="hidden" name={name} value={JSON.stringify(change)} />
+      <input type="hidden" name={name} value={writeLinksChange(change)} />
       {open && (
         <RelationPopover
           anchor={wrap}

@@ -224,7 +224,8 @@ export const updateRecord = Effect.fn('service.updateRecord')(function* (
     Effect.gen(function* () {
       // Held until the change is kept. A value that depends on another field (a stage on its
       // pipeline) is then checked against what the record really holds, not what it held a moment ago.
-      if (!(yield* records.holdRecord(objectKey, id))) {
+      // The records its relations fields are about to link are held with it, all in one order.
+      if (!(yield* records.holdRecord(objectKey, id, next))) {
         return null
       }
 

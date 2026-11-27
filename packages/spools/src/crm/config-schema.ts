@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { systemTables } from '../server/store/tables'
 import { fieldSchema, ident, isTextLike } from './field-types'
 import { isFolderName } from './files'
 import { cleanFilters, cleanSort, resolveTarget, SYSTEM_COLUMNS } from './filters'
@@ -425,14 +426,32 @@ export const crmConfigSchema = z
 
     const reserved = new Set(['id', ...Object.keys(SYSTEM_COLUMNS)])
 
+    // Every table has a name and a model of its own. The CRM's own tables come first: a server
+    // on PGlite makes its tables from the config as it starts, without `crm:gen` to refuse a
+    // clash, and would keep an object's records or a field's links in a system table of that name.
+    const own = "one of the CRM's own tables"
+    const tableNames = new Map(systemTables.map((t) => [t.name, own]))
+    const modelNames = new Map(systemTables.map((t) => [t.model, own]))
+
+    for (const [objKey, obj] of Object.entries(cfg.objects)) {
+      for (const [names, name, what] of [
+        [tableNames, tableName(objKey), 'table'],
+        [modelNames, modelName(objKey, obj), 'model'],
+      ] as const) {
+        if (names.get(name) === own) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['objects', objKey],
+            message: `its records would be kept in the ${what} "${name}", which is ${own}. Rename the object`,
+          })
+        }
+
+        names.set(name, `${objKey}'s`)
+      }
+    }
+
     // A relations field's links are rows of a table of their own, named after the field that owns
     // it. That name, and the name of its model, must be no other table's.
-    const tableNames = new Map(Object.keys(cfg.objects).map((key) => [tableName(key), key]))
-
-    const modelNames = new Map(
-      Object.entries(cfg.objects).map(([key, obj]) => [modelName(key, obj), key]),
-    )
-
     for (const [objKey, obj] of Object.entries(cfg.objects)) {
       for (const [fKey, f] of Object.entries(obj.fields)) {
         if (f.type !== 'relations' || f.inverse !== undefined) {
@@ -451,13 +470,13 @@ export const crmConfigSchema = z
             ctx.addIssue({
               code: 'custom',
               path: fPath,
-              message: `its links would be kept in the ${what}, which is ${taken}'s. Rename the field or that object`,
+              message: `its links would be kept in the ${what}, which is ${taken}. Rename the field${taken === own ? '' : ' or that object'}`,
             })
           }
         }
 
-        tableNames.set(name, `${objKey}.${fKey}`)
-        modelNames.set(model, `${objKey}.${fKey}`)
+        tableNames.set(name, `${objKey}.${fKey}'s`)
+        modelNames.set(model, `${objKey}.${fKey}'s`)
 
         // Postgres cuts a longer name short without saying so.
         if (name.length > 63) {

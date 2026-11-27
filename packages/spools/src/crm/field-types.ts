@@ -142,7 +142,7 @@ const plainText = {
 } as const
 
 const recordId = z.string().uuid()
-const recordIds = z.array(recordId).max(LINKS_WRITE, `at most ${LINKS_WRITE} at a time`)
+const recordIds = z.array(recordId)
 const unique = (ids: string[]) => [...new Set(ids)]
 
 /**
@@ -151,13 +151,22 @@ const unique = (ids: string[]) => [...new Set(ids)]
  */
 export type LinksChange = { set: string[] } | { add: string[]; remove: string[] }
 
+const linksSet = z.strictObject({ set: recordIds })
+const linksSome = z.strictObject({ add: recordIds.default([]), remove: recordIds.default([]) })
+
+const counted = (n: number) => n.toLocaleString('en-US')
+
 /**
  * What a `relations` field is written with, under `<field>Ids`: a list of ids
  * or the ids in one string (a form, a CSV row), which replace the set, or
  * `{ add, remove }`. Nothing at all (`null`, `""`) is an empty set.
+ *
+ * Which of the two shapes was sent is settled first, so what is wrong with it
+ * is said about that shape; and a list longer than one write takes
+ * (`LINKS_WRITE`) is refused by saying so.
  */
-const linksInput = z.preprocess(
-  (value) => {
+const linksInput = z
+  .preprocess((value) => {
     if (value === null || value === undefined) {
       return { set: [] }
     }
@@ -174,15 +183,39 @@ const linksInput = z.preprocess(
     }
 
     return Array.isArray(value) ? { set: value } : value
-  },
-  z.union([
-    z.strictObject({ set: recordIds.transform(unique) }),
-    z.strictObject({
-      add: recordIds.default([]).transform(unique),
-      remove: recordIds.default([]).transform(unique),
-    }),
-  ]),
-)
+  }, z.unknown())
+  .transform((value, ctx): LinksChange => {
+    // An object with `set` is a set that replaces; anything else is read as `{ add, remove }`.
+    const sent = z.record(z.string(), z.unknown()).safeParse(value)
+    const replaces = sent.success && Object.hasOwn(sent.data, 'set')
+    const read = (replaces ? linksSet : linksSome).safeParse(value)
+
+    if (!read.success) {
+      for (const issue of read.error.issues) {
+        ctx.addIssue({ code: 'custom', path: [...issue.path], message: issue.message })
+      }
+
+      return z.NEVER
+    }
+
+    // Counted as they were sent, before an id named twice is taken once.
+    const long = Object.entries(read.data).filter(([, ids]) => ids.length > LINKS_WRITE)
+
+    for (const [list, ids] of long) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `${list === 'set' ? 'this names' : `"${list}" names`} ${counted(ids.length)} records, and one write takes at most ${counted(LINKS_WRITE)}. Send the rest in further writes, as { "add": [...] }`,
+      })
+    }
+
+    if (long.length > 0) {
+      return z.NEVER
+    }
+
+    return 'set' in read.data
+      ? { set: unique(read.data.set) }
+      : { add: unique(read.data.add), remove: unique(read.data.remove) }
+  })
 
 /** A checked value of a `relations` field, read back as the change it is. */
 export const linksChangeSchema: z.ZodType<LinksChange> = z.union([

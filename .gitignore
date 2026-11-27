@@ -51,3 +51,7 @@ packages/create-spools/template/
 
 # Editors
 .idea/
+
+# The relations fixture's Prisma schema, contract and migration refs, made by `bun run db:push:relations`
+packages/spools/tests/fixtures/relations/prisma/
+packages/spools/tests/fixtures/relations/migrations/

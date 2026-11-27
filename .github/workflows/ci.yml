@@ -100,6 +100,15 @@ jobs:
         if: matrix.store != 'pglite'
         working-directory: apps/starter
         run: bun run db:push
+      # The many-to-many tests have a config of their own, and so a database of their own beside this one.
+      - name: Create the relations fixture's tables
+        if: matrix.store != 'pglite'
+        working-directory: packages/spools
+        run: bun run db:push:relations
+      - name: Check that a second push of them changes nothing
+        if: matrix.store != 'pglite'
+        working-directory: packages/spools
+        run: bun run db:push:relations
       - name: Test
         run: bun run test:integration
       # The example adapter in examples/ is shown in the docs: prove it against a real Postgres.
