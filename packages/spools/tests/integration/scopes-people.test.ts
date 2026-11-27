@@ -70,10 +70,20 @@ test('a person is told the scopes they may switch between, and which is active',
     active: 'north',
     key: 'north',
     canWrite: true,
+    writes: ['north'],
   })
 
   // Read-only people get no edit controls.
-  expect(await sys(scopeSession(ned))).toMatchObject({ active: 'north', canWrite: false })
+  expect(await sys(scopeSession(ned))).toMatchObject({
+    active: 'north',
+    canWrite: false,
+    writes: [],
+  })
+
+  // The browser is told which scopes can be written, for someone who writes some and reads others.
+  expect((await sys(scopeSession(bo, null)))?.writes).toEqual(['north', 'south'])
+  expect((await sys(scopeSession(hana, null)))?.writes).toBe('all')
+  expect((await sys(scopeSession(hana, 'south')))?.writes).toEqual(['south'])
 
   // Bo switches, or works in both at once.
   expect(await sys(scopeSession(bo))).toMatchObject({ held: [north, south], active: 'north' })
@@ -95,6 +105,7 @@ test('a person is told the scopes they may switch between, and which is active',
     active: null,
     key: '',
     canWrite: false,
+    writes: [],
   })
 })
 

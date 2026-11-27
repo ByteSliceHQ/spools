@@ -5,6 +5,7 @@ import { type ReactNode, useState } from 'react'
 import { Button, Count, cx } from '../crm/ui/kit'
 import { TopBar } from '../crm/ui/shell'
 import { TaskDialog, type TaskItem, TaskRow } from '../crm/ui/workspace'
+import { useWriteReach } from '../crm/ui/write-reach'
 
 const route = getRouteApi('/_crm/tasks')
 
@@ -14,6 +15,7 @@ export function Tasks(): ReactNode {
   const tasks = route.useLoaderData()
   const { scope = 'mine' } = route.useSearch()
   const [adding, setAdding] = useState(false)
+  const canAdd = useWriteReach().any
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -55,14 +57,16 @@ export function Tasks(): ReactNode {
           {scopeLink('mine', 'My tasks')}
           {scopeLink('all', 'All tasks')}
         </div>
-        <Button
-          variant="primary"
-          className="ml-auto"
-          data-guide="new-task"
-          onClick={() => setAdding(true)}
-        >
-          <Plus className="size-3.5" /> New task
-        </Button>
+        {canAdd && (
+          <Button
+            variant="primary"
+            className="ml-auto"
+            data-guide="new-task"
+            onClick={() => setAdding(true)}
+          >
+            <Plus className="size-3.5" /> New task
+          </Button>
+        )}
       </div>
       <div className="border-c-line text-c-fg2 flex h-8 shrink-0 items-center gap-2.5 border-y px-3 text-xs">
         <span className="w-4" />
@@ -76,9 +80,11 @@ export function Tasks(): ReactNode {
         {tasks.length === 0 && (
           <div className="text-c-fg3 py-20 text-center">
             <p>No tasks yet.</p>
-            <Button className="mt-3" onClick={() => setAdding(true)}>
-              <Plus className="size-3.5" /> New task
-            </Button>
+            {canAdd && (
+              <Button className="mt-3" onClick={() => setAdding(true)}>
+                <Plus className="size-3.5" /> New task
+              </Button>
+            )}
           </div>
         )}
         {groups

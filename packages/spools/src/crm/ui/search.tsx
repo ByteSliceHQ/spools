@@ -50,6 +50,7 @@ import {
 import { ObjectIcon } from './icons'
 import { cx, Kbd, relativeTime } from './kit'
 import { currentScope, searchIndex } from './session'
+import { useWriteReach } from './write-reach'
 
 /**
  * The search box over the whole CRM (Cmd+K). Records are matched in the
@@ -164,6 +165,7 @@ export function SearchPalette({
   const navigate = useNavigate()
   const router = useRouter()
   const index = useSearchIndex()
+  const canAdd = useWriteReach().any
   const listId = useId()
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
@@ -320,7 +322,8 @@ export function SearchPalette({
         hint: 'View',
         run: go({ to: '/$object', params: { object: v.objectKey }, search: { view: v.id } }),
       })),
-      ...Object.entries(config.objects).map(([key, obj]) => ({
+      // Nothing to create for someone who can't add records.
+      ...(canAdd ? Object.entries(config.objects) : []).map(([key, obj]) => ({
         id: `new:${key}`,
         section: 'Create',
         icon: <Plus className="size-3.5" />,
@@ -531,7 +534,7 @@ export function SearchPalette({
     }
 
     return out
-  }, [q, scope, index, deep, files, recents, favorites, config, navigate, router, onClose])
+  }, [q, scope, index, deep, files, recents, favorites, config, navigate, router, onClose, canAdd])
 
   const current = Math.min(active, Math.max(0, items.length - 1))
   const activeId = items[current] ? `${listId}-${current}` : undefined

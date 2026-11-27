@@ -102,7 +102,13 @@ nobody said, a scoped table refuses the call, so new code that forgets fails clo
   [Swirls](swirls.md#record-scopes). Workflows started from a record do carry one.
 - **Marketing, integrations and guides** are not scoped: the Marketing page and its posts
   are the whole business's.
-- **Read-only people still see edit controls.** The server refuses the change and says why.
+- **Read-only people are shown no edit controls.** Someone who writes nothing gets no
+  buttons to add, import or delete records, no editing in a table cell, a board card or a
+  record's details, no record actions, and nothing to add a task, a note, a logged call or an
+  email, or to upload, rename, move or delete a file. Someone who writes some scopes and only
+  reads others gets them record by record. This is the page being tidy, not the rule: the
+  server refuses each change itself, and says why, whatever a page shows. Starring a favourite
+  is a person's own and stays, and so do saved views, which are shared by everyone.
 - **Only PGlite has been run** with scopes. The guard is the same code for every adapter,
   but run the integration tests on your database (`TEST_STORE`) before relying on it.
 

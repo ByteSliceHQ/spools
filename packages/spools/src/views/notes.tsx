@@ -5,26 +5,30 @@ import { type ReactNode, useState } from 'react'
 import { Button } from '../crm/ui/kit'
 import { TopBar } from '../crm/ui/shell'
 import { NoteCard, NoteDialog, type NoteItem } from '../crm/ui/workspace'
+import { useWriteReach } from '../crm/ui/write-reach'
 
 const route = getRouteApi('/_crm/notes')
 
 export function Notes(): ReactNode {
   const notes = route.useLoaderData()
   const [editing, setEditing] = useState<NoteItem | 'new' | null>(null)
+  const canAdd = useWriteReach().any
 
   return (
     <>
       <TopBar icon={<FileText className="text-c-fg2 size-3.5" />} title="Notes" />
       <div className="border-c-line flex h-11 shrink-0 items-center border-b px-3">
         <span className="text-c-fg2">{notes.length.toLocaleString()} notes</span>
-        <Button
-          variant="primary"
-          className="ml-auto"
-          data-guide="new-note"
-          onClick={() => setEditing('new')}
-        >
-          <Plus className="size-3.5" /> New note
-        </Button>
+        {canAdd && (
+          <Button
+            variant="primary"
+            className="ml-auto"
+            data-guide="new-note"
+            onClick={() => setEditing('new')}
+          >
+            <Plus className="size-3.5" /> New note
+          </Button>
+        )}
       </div>
       <div data-guide="notes-list" className="min-h-0 flex-1 overflow-y-auto p-3">
         {notes.length === 0 ? (

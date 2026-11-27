@@ -63,6 +63,8 @@ export type DriveFolder = {
   items: number | null
   /** The record this folder belongs to, when it is one's own folder. */
   record: RecordRef | null
+  /** Whether whoever asked may rename, move, delete or add to it. Always true in a Spool without record scopes. */
+  canWrite: boolean
 }
 export type DriveFile = {
   /** The store's id for the file: what opens, renames, moves and removes it. */
@@ -87,6 +89,12 @@ export type Listing = {
   record: (RecordRef & { title: string; label: string }) | null
   /** The folder holds more than could be listed. */
   truncated: boolean
+  /**
+   * Whether whoever asked may add to this folder and change what is in it. The
+   * file browser shows its controls by it; the server checks every change
+   * again. Always true in a Spool without record scopes.
+   */
+  canWrite: boolean
 }
 
 const KNOWN_MS = 60_000
@@ -463,12 +471,26 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
 
   const under = trail.map((c) => c.name).join('/')
 
-  // A record's folder is listed only for those who can reach the record.
-  const hidden = yield* foldersOutOfReach(
-    inside.folders.map((f) => ({ id: f.id, path: under ? `${under}/${f.name}` : f.name })),
-  )
+  // A record's folder is listed only for those who can reach the record, and can be changed
+  // only by those who can change it.
+  const access = scopesOn() ? yield* CurrentAccess : null
 
-  const shownFolders = inside.folders.filter((f) => !hidden.has(f.id))
+  const owners = scopesOn()
+    ? yield* ownersOf(
+        inside.folders.map((f) => ({ id: f.id, path: under ? `${under}/${f.name}` : f.name })),
+      )
+    : new Map<string, (string | null)[]>()
+
+  const reaches = (id: string, mode: 'read' | 'write') =>
+    !scopesOn() ||
+    (!!access && (owners.get(id) ?? []).every((scope) => within(access[mode], scope)))
+
+  const shownFolders = inside.folders.filter((f) => reaches(f.id, 'read'))
+
+  const canWrite = yield* folderInReach(folderId, 'write').pipe(
+    Effect.as(true),
+    Effect.catchTag('FilesError', () => Effect.succeed(false)),
+  )
 
   const items = yield* itemsInReach(
     shownFolders.map((f) => ({
@@ -479,7 +501,7 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
   )
 
   // Which of the folders shown are a record's own, for their badge.
-  const owners = new Map<string, RecordRef>()
+  const badges = new Map<string, RecordRef>()
   const shown = shownFolders.map((f) => f.id)
 
   for (let at = 0; at < shown.length; at += 500) {
@@ -491,8 +513,8 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
     })
 
     for (const m of mapped) {
-      if (!owners.has(m.folderId)) {
-        owners.set(m.folderId, { objectKey: m.objectKey, recordId: m.recordId })
+      if (!badges.has(m.folderId)) {
+        badges.set(m.folderId, { objectKey: m.objectKey, recordId: m.recordId })
       }
     }
   }
@@ -504,7 +526,8 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
         id: f.id,
         name: f.name,
         items: items.get(f.id) ?? null,
-        record: owners.get(f.id) ?? null,
+        record: badges.get(f.id) ?? null,
+        canWrite: canWrite && reaches(f.id, 'write'),
       })),
     ),
     files: sortByName(
@@ -512,6 +535,7 @@ export const listFolder = Effect.fn('files.listFolder')(function* (folderId: str
     ),
     record,
     truncated: inside.truncated,
+    canWrite,
   }
 
   return listing

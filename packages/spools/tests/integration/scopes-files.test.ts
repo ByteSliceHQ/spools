@@ -7,10 +7,21 @@ import * as records from '../../src/server/records'
 import { DatabaseError } from '../../src/server/runtime/errors'
 import { FileStore } from '../../src/server/runtime/files'
 import { httpLayer } from '../../src/server/runtime/http'
+import { Scopes, scopeSession } from '../../src/server/scopes'
 import { spool } from '../../src/server/spool'
 import { Store } from '../../src/server/store/store'
 import { RecordFolder } from '../../src/server/store/tables'
-import { as, drive, ids, installWorld, people, scopedWorld, sys } from './scopes-world'
+import {
+  as,
+  branches,
+  drive,
+  grants,
+  ids,
+  installWorld,
+  people,
+  scopedWorld,
+  sys,
+} from './scopes-world'
 
 // Record scopes and the file store, where the two can fall out of step: a
 // folder is made in one place and the row that says whose it is in another.
@@ -165,5 +176,59 @@ test('a file search says there is more only of what the reader could be shown', 
     await installWorld()
     await removeHers()
     await removeHis()
+  }
+})
+
+test('a listing says which folders its reader can change, for the file browser to show its controls by', async () => {
+  const north = await as('nora', files.recordFolder('companies', ids.north.company))
+  const south = await as('sam', files.recordFolder('companies', ids.south.company))
+
+  const shared = async (who: 'ned' | 'nora' | 'bo') => {
+    const top = await as(who, files.listFolder(null), null)
+    const folder = top.folders.find((f) => f.name === 'Companies')
+    const inside = await as(who, files.listFolder(folder?.id ?? ''), null)
+    const can = (id: string) => inside.folders.find((f) => f.id === id)?.canWrite
+    return {
+      top: top.canWrite,
+      shared: folder?.canWrite,
+      north: can(north.folderId),
+      south: can(south.folderId),
+    }
+  }
+
+  // Whoever writes nothing changes nothing, the shared folders included.
+  expect(await shared('ned')).toEqual({ top: false, shared: false, north: false, south: undefined })
+  expect((await as('ned', files.listFolder(north.folderId))).canWrite).toBe(false)
+
+  // Nora writes North. South's folder isn't listed for her at all.
+  expect(await shared('nora')).toEqual({ top: true, shared: true, north: true, south: undefined })
+  expect((await as('nora', files.listFolder(north.folderId))).canWrite).toBe(true)
+
+  // Bo, writing North and only reading South: both are listed, one can be changed.
+  try {
+    await installWorld({
+      scopes: Scopes.layerTest(
+        {
+          ...grants,
+          [people.bo.id]: [
+            { scope: 'north', role: 'member' },
+            { scope: 'south', role: 'viewer' },
+          ],
+        },
+        branches,
+      ),
+    })
+
+    expect(await shared('bo')).toEqual({ top: true, shared: true, north: true, south: false })
+    expect((await as('bo', files.listFolder(north.folderId), null)).canWrite).toBe(true)
+    expect((await as('bo', files.listFolder(south.folderId), null)).canWrite).toBe(false)
+
+    // And the session tells the page the same of records.
+    expect(await sys(scopeSession(people.bo, null))).toMatchObject({
+      canWrite: true,
+      writes: ['north'],
+    })
+  } finally {
+    await installWorld()
   }
 })

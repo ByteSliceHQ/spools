@@ -690,3 +690,32 @@ test('a list sorted by a relation is never in the order of records its reader ca
     }
   }
 })
+
+test('a list says each record’s scope even when asked for a few fields, for the page to show edit controls by', async () => {
+  // A board asks for its cards' fields only.
+  const cards = await as(
+    'bo',
+    records.listRecords({ objectKey: 'deals', fields: ['title', 'stage'], relations: 'none' }),
+    null,
+  )
+
+  expect(cards.map((card) => [card.title, card.branch]).toSorted()).toEqual([
+    ['Alder order', 'north'],
+    ['Birch order', 'south'],
+    ['Birch rebate', 'south'],
+  ])
+
+  // A shared object's records have no scope to say.
+  const products = await as(
+    'bo',
+    records.listRecords({ objectKey: 'products', fields: ['name'], relations: 'none' }),
+    null,
+  )
+
+  expect(Object.keys(products[0] ?? {}).toSorted()).toEqual([
+    'createdAt',
+    'id',
+    'name',
+    'updatedAt',
+  ])
+})

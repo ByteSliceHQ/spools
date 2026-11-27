@@ -19,6 +19,7 @@ import {
 } from './fields'
 import { cx, useDismiss } from './kit'
 import { RelationPopover } from './relation-picker'
+import { useWriteReach } from './write-reach'
 
 /**
  * A field value that edits in place: click to edit, Enter or blur to save,
@@ -37,6 +38,12 @@ type Props = {
   titleFieldOf: (objectKey: string) => string
   /** `cell` fills a table cell; `detail` is a row in the record panel. */
   variant?: 'cell' | 'detail'
+  /**
+   * Shows the value and nothing that changes it. Left out, it follows what the
+   * signed-in person may change (`useWriteReach`): a record of a scope they
+   * only read has no editor.
+   */
+  readOnly?: boolean
 }
 
 const nativeType: Partial<Record<CrmField['type'], string>> = {
@@ -73,9 +80,12 @@ export function InlineField({
   field,
   titleFieldOf,
   variant = 'cell',
+  readOnly,
 }: Props) {
   const router = useRouter()
   const users = useContext(CrmUsersContext)
+  const reach = useWriteReach()
+  const locked = readOnly ?? !reach.record(objectKey, record)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
@@ -122,6 +132,42 @@ export function InlineField({
     variant === 'cell' ? 'px-2.5' : 'rounded-lg px-2 hover:bg-c-hov',
     saving && 'opacity-50',
   )
+
+  // Whoever can't change the record is shown the value, with nothing to click or type into.
+  if (locked) {
+    return (
+      <div className={shell} data-read-only="">
+        {field.type === 'boolean' ? (
+          <span
+            role="img"
+            aria-label={current === true ? 'Yes' : 'No'}
+            className={cx(
+              'flex size-4 items-center justify-center rounded border opacity-60',
+              current === true
+                ? 'border-c-accent bg-c-accent text-white'
+                : 'border-c-line2 bg-c-raised',
+            )}
+          >
+            {current === true && <Check className="size-3" strokeWidth={3} />}
+          </span>
+        ) : (
+          <span
+            className={cx(
+              'min-w-0',
+              field.type === 'longtext' && variant === 'detail' ? 'py-1.5' : 'truncate',
+            )}
+          >
+            <FieldValue
+              field={field}
+              fieldKey={fieldKey}
+              record={record}
+              titleFieldOf={titleFieldOf}
+            />
+          </span>
+        )}
+      </div>
+    )
+  }
 
   // Booleans toggle on click; there is nothing to type.
   if (field.type === 'boolean') {

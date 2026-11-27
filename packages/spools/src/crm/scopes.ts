@@ -132,4 +132,101 @@ export type ScopeSession = {
   key: string
   /** Whether anything can be written in what is on screen: read-only people get no edit controls. */
   canWrite: boolean
+  /**
+   * The scopes whose records can be written in what is on screen. Someone
+   * working in all of theirs may write some and only read others: a record's
+   * edit controls follow the record's own scope (`writeReach`).
+   */
+  writes: 'all' | string[]
+}
+
+/**
+ * What a person may change, as far as the browser can tell, for showing and
+ * hiding the controls that change things. It decides nothing: the server
+ * refuses what can't be done whatever a page shows (src/server/store/scope.ts).
+ */
+export type WriteReach = {
+  /**
+   * Whether anything at all can be changed. It is what adding a record, a
+   * shared object's records, a task or note on no record and a shared folder
+   * all need: whoever writes no scope changes none of them.
+   */
+  readonly any: boolean
+  /**
+   * Whether a record of a scoped object can be changed or deleted, and things
+   * hung on it (tasks, notes, logged calls, emails, files, sequences), by the
+   * scope the record holds: null for a record with none, undefined when the
+   * page wasn't given it. That last is taken to be within reach, and the
+   * server left to say.
+   */
+  readonly scoped: (scope: string | null | undefined) => boolean
+  /**
+   * Whether a row that hangs off a record (a task, a note) can be changed, by
+   * the copy of its record's scope the row carries: "*" on a shared object's
+   * record, nothing when the page wasn't given it.
+   */
+  readonly hanging: (scope: string | null | undefined) => boolean
+}
+
+/** Where there are no scopes, and wherever nothing says otherwise: every control is shown. */
+export const WRITES_EVERYTHING: WriteReach = {
+  any: true,
+  scoped: () => true,
+  hanging: () => true,
+}
+
+/** The parts of the config that say which objects are scoped, by which field, and what kind of field it is. */
+export type ScopedObjects = {
+  readonly scopes?: { readonly objects: Readonly<Record<string, string>> } | undefined
+  readonly objects: Readonly<
+    Record<string, { readonly fields: Readonly<Record<string, { readonly type: string }>> }>
+  >
+}
+
+/**
+ * The key a scoped object's records hold their scope under: a relation's is
+ * its id's (`branchId`), as the store has it. Nothing for a shared object.
+ */
+export function scopeColumnOf(config: ScopedObjects, objectKey: string): string | undefined {
+  const field = Object.hasOwn(config.scopes?.objects ?? {}, objectKey)
+    ? config.scopes?.objects[objectKey]
+    : undefined
+
+  if (field === undefined) {
+    return undefined
+  }
+
+  return config.objects[objectKey]?.fields[field]?.type === 'relation' ? `${field}Id` : field
+}
+
+/**
+ * What the signed-in person may change, from what the session says of their
+ * scopes. No session (a Spool without scopes) means everything, as it always
+ * has. The rules are the guard's: whoever writes no scope changes nothing,
+ * shared records included; a scoped record is changed by whoever writes its
+ * scope; one with no scope only by a role that writes them all.
+ */
+export function writeReach(
+  session: Pick<ScopeSession, 'canWrite' | 'writes'> | null | undefined,
+): WriteReach {
+  if (!session) {
+    return WRITES_EVERYTHING
+  }
+
+  const { writes } = session
+  const any = session.canWrite && (writes === 'all' || writes.length > 0)
+
+  if (!any) {
+    return { any: false, scoped: () => false, hanging: () => false }
+  }
+
+  const within = (scope: string | null): boolean =>
+    writes === 'all' || (scope !== null && scope !== '' && writes.includes(scope))
+
+  return {
+    any,
+    scoped: (scope) => scope === undefined || within(scope),
+    hanging: (scope) =>
+      scope === undefined || scope === null || scope === EVERY_SCOPE || within(scope),
+  }
 }

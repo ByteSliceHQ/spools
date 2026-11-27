@@ -39,6 +39,7 @@ import {
   inputClass,
   relativeTime,
 } from './kit'
+import { useWriteReach } from './write-reach'
 
 /** Shared pieces for tasks, notes, email and the activity timeline. */
 
@@ -132,6 +133,8 @@ export type TaskItem = {
   objectKey: string | null
   recordId: string | null
   recordTitle: string | null
+  /** The record scope the task belongs to, in a Spool that has them: whoever only reads it can't change the task. */
+  scope?: string | null
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -159,6 +162,8 @@ export function TaskRow({ task, showRecord = true }: { task: TaskItem; showRecor
   const done = !!task.completedAt
   const due = dueLabel(task.dueDate)
   const assignee = users.find((u) => u.id === task.assigneeId)
+  // A task of a scope this person only reads is shown, not ticked off or deleted.
+  const canChange = useWriteReach().hanging(task.scope)
 
   const toggle = async () => {
     await updateTaskFn({ data: { id: task.id, completed: !done } })
@@ -175,7 +180,10 @@ export function TaskRow({ task, showRecord = true }: { task: TaskItem; showRecor
       <CheckCircle
         checked={done}
         onChange={toggle}
-        label={done ? 'Mark as not done' : 'Mark as done'}
+        disabled={!canChange}
+        label={
+          canChange ? (done ? 'Mark as not done' : 'Mark as done') : done ? 'Done' : 'Not done'
+        }
       />
       <span className={cx('min-w-0 flex-1 truncate', done && 'text-c-fg3 line-through')}>
         {task.title}
@@ -212,13 +220,17 @@ export function TaskRow({ task, showRecord = true }: { task: TaskItem; showRecor
           </>
         )}
       </span>
-      <IconButton
-        label="Delete task"
-        className="size-6 opacity-0 group-hover/task:opacity-100 focus:opacity-100"
-        onClick={remove}
-      >
-        <Trash2 className="size-3.5" />
-      </IconButton>
+      {canChange ? (
+        <IconButton
+          label="Delete task"
+          className="size-6 opacity-0 group-hover/task:opacity-100 focus:opacity-100"
+          onClick={remove}
+        >
+          <Trash2 className="size-3.5" />
+        </IconButton>
+      ) : (
+        <span className="size-6 shrink-0" />
+      )}
     </div>
   )
 }
@@ -427,6 +439,8 @@ export type NoteItem = {
   objectKey: string | null
   recordId: string | null
   recordTitle: string | null
+  /** The record scope the note belongs to, in a Spool that has them: whoever only reads it can't change the note. */
+  scope?: string | null
 }
 
 export function NoteCard({
@@ -479,6 +493,9 @@ export function NoteDialog({
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  // A note of a scope this person only reads opens to be read: nothing to type into, save or delete.
+  const reach = useWriteReach()
+  const locked = note ? !reach.hanging(note.scope) : !reach.any
 
   const remove = async () => {
     if (!note || !window.confirm('Delete this note?')) {
@@ -502,6 +519,11 @@ export function NoteDialog({
         className="space-y-3"
         onSubmit={async (e) => {
           e.preventDefault()
+
+          if (locked) {
+            return
+          }
+
           const data = new FormData(e.currentTarget)
           setBusy(true)
           setError(undefined)
@@ -529,6 +551,7 @@ export function NoteDialog({
         <input
           name="title"
           defaultValue={note?.title ?? ''}
+          readOnly={locked}
           placeholder="Untitled note"
           aria-label="Title"
           className="placeholder:text-c-fg3 w-full bg-transparent text-lg font-semibold outline-none"
@@ -539,22 +562,25 @@ export function NoteDialog({
           rows={12}
           // oxlint-disable-next-line jsx-a11y/no-autofocus -- The note opens in response to a click.
           autoFocus={!note}
+          readOnly={locked}
           placeholder="Start writing…"
           aria-label="Note"
           className="placeholder:text-c-fg3 w-full resize-none bg-transparent leading-relaxed outline-none"
         />
         {error && <p className="text-c-danger">{error}</p>}
         <div className="border-c-line flex items-center gap-2 border-t pt-3">
-          {note && (
+          {note && !locked && (
             <Button variant="danger" onClick={remove}>
               <Trash2 className="size-3.5" /> Delete
             </Button>
           )}
           <div className="ml-auto flex gap-2">
-            <Button onClick={onClose}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? 'Saving…' : 'Save note'}
-            </Button>
+            <Button onClick={onClose}>{locked ? 'Close' : 'Cancel'}</Button>
+            {!locked && (
+              <Button type="submit" variant="primary" disabled={busy}>
+                {busy ? 'Saving…' : 'Save note'}
+              </Button>
+            )}
           </div>
         </div>
       </form>

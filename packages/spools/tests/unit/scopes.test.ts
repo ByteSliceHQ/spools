@@ -9,12 +9,16 @@ import {
   accessFrom,
   NO_ACCESS,
   type ScopeAccess,
+  scopeColumnOf,
   type ScopeGrant,
   type ScopeRoles,
   scopeKey,
   SYSTEM_ACCESS,
+  writeReach,
+  WRITES_EVERYTHING,
 } from '../../src/crm/scopes'
 import { createIndexStore, type QuickIndex, recentsKey } from '../../src/crm/search'
+import { pageReach } from '../../src/crm/ui/write-reach'
 import { Scopes, wantedScope } from '../../src/server/scopes'
 import { testRuntime } from '../../src/testing/run'
 import scoped from '../fixtures/scoped.config.json' with { type: 'json' }
@@ -150,6 +154,110 @@ describe('what a person may reach', () => {
     expect(scopeKey({ read: ['south', 'north'], write: [], active: null })).toBe('north+south')
     expect(scopeKey(SYSTEM_ACCESS)).toBe('*')
     expect(scopeKey(NO_ACCESS)).toBe('')
+  })
+})
+
+describe('which edit controls a person is shown', () => {
+  const config = crmConfigSchema.parse(scoped)
+
+  const session = (writes: 'all' | string[]) => ({
+    canWrite: writes === 'all' || writes.length > 0,
+    writes,
+  })
+
+  const alder = { id: 'a', name: 'Alder Works', branch: 'north' }
+  const birch = { id: 'b', name: 'Birch Supply', branch: 'south' }
+
+  test('a Spool without scopes shows every control, as it always has', () => {
+    for (const reach of [writeReach(null), writeReach(undefined), WRITES_EVERYTHING]) {
+      expect(reach.any).toBe(true)
+      expect(reach.scoped('south')).toBe(true)
+      expect(reach.scoped(null)).toBe(true)
+      expect(reach.hanging('south')).toBe(true)
+    }
+
+    const page = pageReach(null, config)
+    expect(page.any).toBe(true)
+    expect(page.record('contacts', birch)).toBe(true)
+    expect(page.record('products', { id: 'p' })).toBe(true)
+    expect(page.hanging('south')).toBe(true)
+  })
+
+  test('whoever writes no scope is shown none, on shared records and their own scope’s alike', () => {
+    const reach = writeReach(session([]))
+    expect(reach.any).toBe(false)
+    expect(reach.scoped('north')).toBe(false)
+    expect(reach.scoped(undefined)).toBe(false)
+    expect(reach.hanging('north')).toBe(false)
+    expect(reach.hanging('*')).toBe(false)
+    expect(reach.hanging(null)).toBe(false)
+
+    const page = pageReach(session([]), config)
+    expect(page.record('contacts', alder)).toBe(false)
+    expect(page.record('products', { id: 'p' })).toBe(false)
+    expect(page.record('contacts', null)).toBe(false)
+
+    // What the session says about writing at all is kept to, whatever else it lists.
+    expect(writeReach({ canWrite: false, writes: ['north'] }).scoped('north')).toBe(false)
+  })
+
+  test('a record’s controls follow the record’s own scope, for someone who writes some and reads others', () => {
+    const reach = writeReach(session(['north']))
+    expect(reach.any).toBe(true)
+    expect(reach.scoped('north')).toBe(true)
+    expect(reach.scoped('south')).toBe(false)
+    // A record with no scope is only a role's that writes them all.
+    expect(reach.scoped(null)).toBe(false)
+    expect(reach.scoped('')).toBe(false)
+    expect(writeReach(session('all')).scoped(null)).toBe(true)
+    // A scope the page wasn't given: shown, and the server says.
+    expect(reach.scoped(undefined)).toBe(true)
+
+    // Tasks and notes carry a copy of their record's scope.
+    expect(reach.hanging('north')).toBe(true)
+    expect(reach.hanging('south')).toBe(false)
+    expect(reach.hanging('*')).toBe(true)
+    expect(reach.hanging(null)).toBe(true)
+    expect(reach.hanging(undefined)).toBe(true)
+  })
+
+  test('a page reads a record’s scope from the record it holds', () => {
+    const page = pageReach(session(['north']), config)
+    expect(page.any).toBe(true)
+    expect(page.record('contacts', alder)).toBe(true)
+    expect(page.record('contacts', birch)).toBe(false)
+    expect(page.record('contacts', { id: 'c', branch: null })).toBe(false)
+
+    expect(pageReach(session('all'), config).record('contacts', { id: 'c', branch: null })).toBe(
+      true,
+    )
+
+    // A shared object's records are anyone's who writes anything.
+    expect(page.record('products', { id: 'p', branch: 'south' })).toBe(true)
+    // A record the page holds without its scope, or doesn't hold yet: shown, and the server says.
+    expect(page.record('contacts', { id: 'c' })).toBe(true)
+    expect(page.record('contacts', undefined)).toBe(true)
+    expect(page.record('nothing', birch)).toBe(true)
+    expect(page.hanging('south')).toBe(false)
+  })
+
+  test('a scope kept in a relation is read from the relation’s id', () => {
+    const byRegion = {
+      scopes: { objects: { sites: 'region' } },
+      objects: {
+        sites: { fields: { name: { type: 'text' }, region: { type: 'relation' } } },
+        regions: { fields: { name: { type: 'text' } } },
+      },
+    }
+
+    expect(scopeColumnOf(byRegion, 'sites')).toBe('regionId')
+    expect(scopeColumnOf(byRegion, 'regions')).toBeUndefined()
+    expect(scopeColumnOf(config, 'contacts')).toBe('branch')
+    expect(scopeColumnOf(config, 'constructor')).toBeUndefined()
+
+    const page = pageReach(session(['r1']), byRegion)
+    expect(page.record('sites', { id: 's', regionId: 'r1' })).toBe(true)
+    expect(page.record('sites', { id: 's', regionId: 'r2' })).toBe(false)
   })
 })
 

@@ -1,11 +1,12 @@
 import { getRouteApi, Outlet, redirect } from '@tanstack/react-router'
-import { type ReactNode, useEffect } from 'react'
+import { type ReactNode, useEffect, useMemo } from 'react'
 
 import type { PublicCrmConfig } from '../crm/config'
 import { useAuth } from '../crm/ui/auth'
 import { CrmUsersContext } from '../crm/ui/fields'
 import { crmSession, rememberCrmSession } from '../crm/ui/session'
 import { CrmShell } from '../crm/ui/shell'
+import { pageReach, WriteReachContext } from '../crm/ui/write-reach'
 
 const route = getRouteApi('/_crm')
 
@@ -55,6 +56,9 @@ function CrmLayout(): ReactNode {
     }
   }, [user, config, users, favorites, dueTasks, guides, scopes])
 
+  // Which edit controls this person is shown. The server decides what they can do.
+  const reach = useMemo(() => pageReach(scopes, config ?? { objects: {} }), [scopes, config])
+
   if (!user || !config) {
     return (
       <div className="crm flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
@@ -76,17 +80,20 @@ function CrmLayout(): ReactNode {
   }
 
   return (
-    <CrmShell
-      config={config}
-      user={user}
-      favorites={favorites}
-      dueTasks={dueTasks}
-      guides={guides}
-      scopes={scopes}
-    >
-      <CrmUsersContext value={users}>
-        <Outlet />
-      </CrmUsersContext>
-    </CrmShell>
+    // Around the shell too: its search offers "New ..." only to whoever can add records.
+    <WriteReachContext value={reach}>
+      <CrmShell
+        config={config}
+        user={user}
+        favorites={favorites}
+        dueTasks={dueTasks}
+        guides={guides}
+        scopes={scopes}
+      >
+        <CrmUsersContext value={users}>
+          <Outlet />
+        </CrmUsersContext>
+      </CrmShell>
+    </WriteReachContext>
   )
 }

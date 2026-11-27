@@ -29,7 +29,9 @@ buttons (Right and Left arrows also work while the card has the keyboard), the
 × closes the guide, and so does Esc. On a phone the card is a sheet along the
 bottom, or along the top when what it points at is low on the screen. A step
 about something the page doesn't have is left out: a record with no email
-field has no "Write an email" step.
+field has no "Write an email" step, and someone who can only read what is on
+the page ([record scopes](security.md#record-scopes)) is shown no step about
+adding, importing or changing it.
 
 **Help.** The question mark at the bottom of the sidebar lists every guide,
 marks the ones not yet seen as New, and starts any of them again. A guide that

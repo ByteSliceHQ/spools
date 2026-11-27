@@ -265,6 +265,7 @@ export const scopeSession = Effect.fn('scopes.scopeSession')(function* (
     active: access.active,
     key: scopeKey(access),
     canWrite: access.write === 'all' || access.write.length > 0,
+    writes: access.write === 'all' ? 'all' : [...access.write],
   }
 
   return session
